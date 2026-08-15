@@ -1244,6 +1244,76 @@ This module shares the marks *data* problems already documented in §7.2.x (MK22
 
 ---
 
+### 7.8.x Class Report & Free-Teacher Finder (gaps G3, G4)
+
+Two small pages, grouped because each is a single view with a handful of real defects — the quickest wins in the backlog.
+
+---
+
+#### 7.8.1 Class Report — `t_report` (G3)
+
+**Current state.** One view, one table: every student in a class with their CIE (`get_cie()`) and attendance (`get_attendance()`). It's the closest thing the project has to a consolidated academic record, and it's also one of the most fragile pages.
+
+**Features**
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| RP1 | **Class summary header** | Class average CIE, average attendance, pass/fail counts, headcount — the page shows per-student rows but no aggregate at all | ✅ |
+| RP2 | **At-risk highlighting** | Flag rows where CIE is low **and** attendance is under 75% — the combination is the real signal, and both values are already on the row | ✅ |
+| RP3 | **Sort & filter** | By CIE, by attendance, by name; filter to at-risk only | ✅ |
+| RP4 | **Export to Excel / PDF** | Department records genuinely need this; reuse the fees export pattern | ✅ |
+| RP5 | **Per-component breakdown** | Show the internals behind the CIE, not just the total | ✅ |
+| RP6 | **SEE eligibility column** | Whether each student meets the CIE cut-off to sit the final (pairs with MK7) | ✅ |
+| RP7 | **Comparison across sections** | Same course in CS5A vs CS5B | ✅ |
+| RP8 | **Print stylesheet** | This is a page people actually print | ✅ |
+
+**Defects (verified)**
+
+| # | Issue | Detail |
+|---|---|---|
+| RP9 | **Open to students** | Verified: the `teststud` student account gets **HTTP 200** on `/teacher/<id>/Report/` — so any student can read the whole class's marks and attendance. Same fix as TA-S1/TM17 |
+| RP10 | **Uncaught `DoesNotExist` → 500** | Verified by deleting one `StudentCourse` row: the page raised an **uncaught `StudentCourse.DoesNotExist`** and 500'd (row restored afterwards). The loop does a bare `StudentCourse.objects.get(...)` per student with no `try/except`, unlike `marks_list` which guards it. Any student missing that row takes down the report for the entire class |
+| RP11 | **N+1 — measured at 26 queries for one student** | The row template pulls `get_cie()` (which walks `marks_set`) and `get_attendance()` (which runs the expensive `AttendanceTotal` property chain from AT26). A 45-student class is on the order of **1,000 queries**. Fixing AT26/AT27 fixes most of this page too |
+| RP12 | **No pagination** | Every student rendered in one table |
+
+---
+
+#### 7.8.2 Free-Teacher Finder — `free_teachers` (G4)
+
+**Current state.** Given an `AssignTime` slot, list teachers who are free in that day+period. Useful for arranging a substitute — but currently unreachable from anywhere in the UI except a deep link, and the logic doesn't do quite what the page title claims.
+
+**Features**
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| FT1 | **Surface it in the UI** | The view exists and works but nothing links to it prominently. It belongs next to "cancel class" and on the teacher dashboard (C7) | ✅ |
+| FT2 | **Widen the search scope** | See FT7 — today it only considers teachers already assigned to *this class*, which is not what "free teachers" means | ✅ |
+| FT3 | **Show why each teacher is free** | "Free — no class scheduled" vs "Free — class cancelled today" | ✅ |
+| FT4 | **Filter by department** | A substitute usually needs to be from the same department | ✅ |
+| FT5 | **Show current teaching load** | Prefer the teacher with the lightest week, rather than the first name in the list | ✅ |
+| FT6 | **Request-a-substitute action** | Turn the list into an action: notify the chosen teacher and record the arrangement (pairs with TA21) | ❌ |
+
+**Defects**
+
+| # | Issue | Detail |
+|---|---|---|
+| FT7 | **The page doesn't find "free teachers"** | `Teacher.objects.filter(assign__class_id__id=asst.assign.class_id_id)` restricts the candidate pool to teachers **already teaching this class**. So it answers "which of this class's own teachers are free in this slot" — a much narrower question than the page title, and useless for finding an outside substitute. Widening the pool to the department (or the institution) is a one-line change |
+| FT8 | **Duplicate rows — no `.distinct()`** | Filtering `Teacher` across the `assign` join returns one row per matching `Assign`, so a teacher who takes two courses for the same class appears **twice** in the list. Standard Django join behaviour; `.distinct()` is missing. *Noted by inspection — I could not reproduce it locally because the dev database has only one `Course`, so no teacher has two assignments to the same class* |
+| FT9 | **N+1 in the availability check** | The loop runs `AssignTime.objects.filter(assign__teacher=t)` once per candidate teacher, then does the day/period comparison **in Python**. Measured 7 queries while scanning a single teacher. Should be one query: exclude teachers who have any `AssignTime` matching that day and period |
+| FT10 | **Cancelled classes ignored** | A teacher whose session was cancelled (`AttendanceClass.status == 2`) is genuinely free but still counted as busy, because availability is computed from the static timetable only |
+| FT11 | **No authorization check** | `@login_required()` only — same pattern as the rest of the teacher views |
+
+**Recommended order for both pages**
+
+1. **RP10, RP9** — the 500 crash and the open access on the report page
+2. **FT7, FT8** — make the finder actually find free teachers, and stop duplicating them
+3. **RP11, FT9** — the N+1s (RP11 mostly falls out of the AT26/AT27 fix)
+4. **RP1, RP2, RP4** — summary header, at-risk highlighting, export
+5. **FT1, FT4, FT5** — surface the finder and make its output useful
+6. **FT10, FT6** — cancelled-class awareness, then the substitute-request workflow
+
+---
+
 ## 8. Coverage Audit — what still has no spec
 
 Every view in `info/views.py` (33 total), checked against what this document actually specs out.
@@ -1261,6 +1331,8 @@ Every view in `info/views.py` (33 total), checked against what this document act
 | Notice board | `notices`, `add_notice` | §7.5.x (NB1–NB22) |
 | Fees | `fees`, `fees_export`, `t_fees`, `add_fee`, `edit_fee` | §7.6.x (FE1–FE32) |
 | Marks entry — teacher | `t_marks_list`, `t_marks_entry`, `marks_confirm`, `edit_marks`, `student_marks` | §7.7.x (TM1–TM24) |
+| Class report | `t_report` | §7.8.1 (RP1–RP12) |
+| Free-teacher finder | `free_teachers` | §7.8.2 (FT1–FT11) |
 
 ### ❌ Not yet specced — remaining gaps
 
@@ -1268,8 +1340,8 @@ Every view in `info/views.py` (33 total), checked against what this document act
 |---|---|---|---|
 | ~~G1~~ | ~~Fees~~ | — | ✅ **Now specced — see §7.6.x (FE1–FE32)** |
 | ~~G2~~ | ~~Marks entry — teacher side~~ | — | ✅ **Now specced — see §7.7.x (TM1–TM24)** |
-| **G3** | **Class report** | `t_report` | Unspecced, and it has a crash path: `StudentCourse.objects.get(student=stud, course=ass.course)` runs inside a loop with **no `try/except`**, unlike the equivalent code in `marks_list`. Any student missing a `StudentCourse` row 500s the whole class report. It's also N+1 — one query per student |
-| **G4** | **Free-teacher finder** | `free_teachers` | Two defects found while auditing: (a) `Teacher.objects.filter(assign__class_id__id=...)` joins through `Assign` with **no `.distinct()`**, so a teacher who takes two courses for the same class appears twice in the list; (b) it queries `AssignTime` once per teacher — N+1. Also a scope question: it only considers teachers *already assigned to this class*, so it finds "teachers of this class who are free", not "free teachers" as the page title claims |
+| ~~G3~~ | ~~Class report~~ | — | ✅ **Now specced — see §7.8.1 (RP1–RP12)** |
+| ~~G4~~ | ~~Free-teacher finder~~ | — | ✅ **Now specced — see §7.8.2 (FT1–FT11)** |
 | **G5** | **Add student / add teacher** | `add_student`, `add_teacher` | Flagged in §3 (guessable generated passwords, no forced reset) but never specced as pages. Should cover: validation, duplicate USN/ID handling, forced password change on first login, and bulk import (Tier 1 #8) |
 | **G6** | **Class & session management** | `t_clas`, `cancel_class`, `t_extra_class`, `e_confirm` | Partially covered by TA18–TA21, but the `t_clas` "choice" parameter (`1`=attendance, `2`=marks, `3`=reports as a bare integer in the URL) deserves its own look — it's an unlabelled magic number driving navigation |
 | **G7** | **REST API** | `apis/` — 4 endpoints | Described in §1, never specced. Student-only, read-only, unreachable from the UI, leaks raw exception strings to clients, and duplicates the `type='I'` crash bug from MK22. Needs: the same auth fixes, `drf-spectacular` docs (Tier 1 #7), and a decision on whether to expand it or remove it |
@@ -1283,7 +1355,7 @@ Every view in `info/views.py` (33 total), checked against what this document act
 
 1. ~~G1 (Fees)~~ — ✅ done, §7.6.x
 2. ~~G2 (Teacher marks entry)~~ — ✅ done, §7.7.x
-3. **G3, G4** — small pages, real bugs, quick wins
+3. ~~G3, G4~~ — ✅ done, §7.8.x
 4. **G5, G10** — account lifecycle: creation, first-login password change, self-service
 5. **G7 (API)** — decide expand vs. remove, then document it
 6. **G8, G9, G11, G12** — polish
