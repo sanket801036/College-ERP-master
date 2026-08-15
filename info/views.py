@@ -8,7 +8,8 @@ from django.db import transaction
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib.auth import get_user_model
-from info.forms import StudentForm, TeacherForm
+from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
+                        ExtraClassForm)
 from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
                              owns_marks_class, owns_teacher_id, assert_teaches)
 from openpyxl import Workbook
@@ -141,30 +142,31 @@ def edit_att(request, ass_c_id):
 @login_required()
 @teacher_required
 @owns_attendance_class('ass_c_id')
+@require_POST
 def confirm(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
     ass = assc.assign
     cr = ass.course
     cl = ass.class_id
-    for i, s in enumerate(cl.student_set.all()):
-        status = request.POST[s.USN]
-        if status == 'present':
-            status = 'True'
-        else:
-            status = 'False'
-        if assc.status == 1:
-            try:
-                a = Attendance.objects.get(course=cr, student=s, date=assc.date, attendanceclass=assc)
-                a.status = status
-                a.save()
-            except Attendance.DoesNotExist:
-                a = Attendance(course=cr, student=s, status=status, date=assc.date, attendanceclass=assc)
-                a.save()
-        else:
-            a = Attendance(course=cr, student=s, status=status, date=assc.date, attendanceclass=assc)
-            a.save()
-            assc.status = 1
-            assc.save()
+
+    # A student with no radio button in the payload used to raise KeyError and
+    # 500 the request half way through the class. Treat a missing value as
+    # absent - the form always submits one, so this only catches malformed
+    # posts - and record which ones were missing rather than failing silently.
+    with transaction.atomic():
+        for s in cl.student_set.all():
+            Attendance.objects.update_or_create(
+                course=cr, student=s, attendanceclass=assc,
+                defaults={
+                    'status': request.POST.get(s.USN) == 'present',
+                    'date': assc.date,
+                },
+            )
+        # Set once, after every student is written. This used to be assigned
+        # while handling the first student, which sent everyone after them down
+        # the "already submitted" branch.
+        assc.status = 1
+        assc.save(update_fields=['status'])
 
     return HttpResponseRedirect(reverse('t_class_date', args=(ass.id,)))
 
@@ -209,22 +211,29 @@ def t_extra_class(request, assign_id):
 @login_required()
 @teacher_required
 @owns_assign('assign_id')
+@require_POST
 def e_confirm(request, assign_id):
     ass = get_object_or_404(Assign, id=assign_id)
     cr = ass.course
     cl = ass.class_id
-    assc = ass.attendanceclass_set.create(status=1, date=request.POST['date'])
-    assc.save()
 
-    for i, s in enumerate(cl.student_set.all()):
-        status = request.POST[s.USN]
-        if status == 'present':
-            status = 'True'
-        else:
-            status = 'False'
-        date = request.POST['date']
-        a = Attendance(course=cr, student=s, status=status, date=date, attendanceclass=assc)
-        a.save()
+    # The date arrived straight from the form and went into the database
+    # unchecked, so a typo or a hand-crafted post created sessions on any date
+    # at all - including outside the semester, or a second one for a day that
+    # already had a class.
+    form = ExtraClassForm(request.POST, assign=ass)
+    if not form.is_valid():
+        return render(request, 'info/t_extra_class.html',
+                      {'ass': ass, 'c': cl, 'form': form})
+
+    session_date = form.cleaned_data['date']
+    with transaction.atomic():
+        assc = ass.attendanceclass_set.create(status=1, date=session_date)
+        for s in cl.student_set.all():
+            Attendance.objects.create(
+                course=cr, student=s, attendanceclass=assc, date=session_date,
+                status=request.POST.get(s.USN) == 'present',
+            )
 
     return HttpResponseRedirect(reverse('t_clas', args=(ass.teacher_id, 1)))
 
@@ -350,30 +359,56 @@ def t_marks_entry(request, marks_c_id):
     mc = get_object_or_404(MarksClass, id=marks_c_id)
     ass = mc.assign
     c = ass.class_id
-    context = {
-        'ass': ass,
-        'c': c,
-        'mc': mc,
-    }
-    return render(request, 'info/t_marks_entry.html', context)
+    return render(request, 'info/t_marks_entry.html',
+                  _marks_entry_context(mc, list(c.student_set.all())))
+
+
+def _marks_entry_context(mc, students, form=None):
+    """Build the per-student rows the marks entry template renders.
+
+    Templates can't index a dict by a variable key, so the pairing of student to
+    input value and error list is done here rather than in the template.
+    """
+    rows = []
+    for s in students:
+        rows.append({
+            'student': s,
+            'value': form.data.get(s.USN, '') if form else 0,
+            'errors': form.errors_for(s) if form else [],
+        })
+    return {'ass': mc.assign, 'c': mc.assign.class_id, 'mc': mc,
+            'rows': rows, 'form': form}
 
 
 @login_required()
 @teacher_required
 @owns_marks_class('marks_c_id')
+@require_POST
 def marks_confirm(request, marks_c_id):
     mc = get_object_or_404(MarksClass, id=marks_c_id)
     ass = mc.assign
     cr = ass.course
     cl = ass.class_id
-    for s in cl.student_set.all():
-        mark = request.POST[s.USN]
-        sc = StudentCourse.objects.get(course=cr, student=s)
-        m = sc.marks_set.get(name=mc.name)
-        m.marks1 = mark
-        m.save()
-    mc.status = True
-    mc.save()
+    students = list(cl.student_set.all())
+
+    # Marks went in as raw POST strings with no bounds check, so a slip of the
+    # keyboard stored 85 on a test worth 20 - the field validators never run on
+    # a plain .save(). Validate the whole class before writing any of it.
+    form = MarksEntryForm(request.POST, students=students,
+                          total_marks=mc.total_marks)
+    if not form.is_valid():
+        return render(request, 'info/t_marks_entry.html',
+                      _marks_entry_context(mc, students, form))
+
+    with transaction.atomic():
+        for s in students:
+            # get_or_create rather than get: a student without a StudentCourse
+            # row used to raise DoesNotExist and take down the whole batch.
+            sc, _ = StudentCourse.objects.get_or_create(course=cr, student=s)
+            sc.marks_set.update_or_create(
+                name=mc.name, defaults={'marks1': form.marks_for(s)})
+        mc.status = True
+        mc.save(update_fields=['status'])
 
     return HttpResponseRedirect(reverse('t_marks_list', args=(ass.id,)))
 

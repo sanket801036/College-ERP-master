@@ -1,14 +1,19 @@
 {% extends 'info/base.html' %}
 {% block content %}
-{% if c.student_set.all %}
+{% if rows %}
 
 <form action="{% url 'marks_confirm' mc.id %}" method="post">
             {% csrf_token %}
     <div class="card mb-3">
         <div class="card-header">
           <i class="fas fa-table"></i>
-         <b>{{ dept1.name }}</b></div>
+         <b>{{ mc.name }} &mdash; {{ ass.course.name }}</b></div>
         <div class="card-body">
+          {% if form.errors %}
+            <div class="alert alert-danger">
+              Nothing was saved. Correct the marks highlighted below and submit again.
+            </div>
+          {% endif %}
           <div class="table-responsive">
             <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
               <thead>
@@ -19,12 +24,17 @@
                 </tr>
               </thead>
                 <tbody>
-                {% for s in c.student_set.all %}
+                {% for row in rows %}
                     <tr>
-                    <td>{{s.name}}</td>
+                    <td>{{ row.student.name }}</td>
                     <td>{{ mc.total_marks }}</td>
                     <td>
-                        <input type="number" name="{{ s.USN }}" min="0" max="{{ mc.total_marks }}" value="0">
+                        <input type="number" name="{{ row.student.USN }}"
+                               min="0" max="{{ mc.total_marks }}"
+                               value="{{ row.value }}">
+                        {% for error in row.errors %}
+                          <div class="text-danger small mt-1">{{ error }}</div>
+                        {% endfor %}
                     </td>
                     </tr>
                 {% endfor %}

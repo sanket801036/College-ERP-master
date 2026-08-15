@@ -5,7 +5,10 @@
 <form action="{% url 'e_confirm' ass.id %}" method="post">
             {% csrf_token %}
     <label for="date">Enter Date: </label>
-    <input type="date" name="date">
+    <input type="date" name="date" value="{{ form.data.date|default:'' }}">
+    {% for error in form.errors.date %}
+      <div class="text-danger small mt-1">{{ error }}</div>
+    {% endfor %}
 
 
     <div class="card mb-3">

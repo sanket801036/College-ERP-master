@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.utils.crypto import get_random_string
 
-from info.models import Student, Teacher
+from info.models import AttendanceRange, Student, Teacher
 
 User = get_user_model()
 
@@ -101,3 +101,63 @@ class TeacherForm(_PersonForm):
     def build_username(self):
         first = self.cleaned_data['name'].split(' ')[0].lower()
         return '%s_%s' % (first, self.cleaned_data['id'])
+
+
+class MarksEntryForm(forms.Form):
+    """Validates a whole class's marks before any of them are written.
+
+    The entry template posts one field per student, keyed by USN, so the fields
+    are built at runtime rather than declared.
+    """
+
+    def __init__(self, data=None, students=None, total_marks=20, **kwargs):
+        super().__init__(data, **kwargs)
+        self.students = students or []
+        self.total_marks = total_marks
+        for student in self.students:
+            self.fields[student.USN] = forms.IntegerField(
+                label=student.name,
+                min_value=0,
+                max_value=total_marks,
+                error_messages={
+                    'max_value': 'Maximum for this test is %d.' % total_marks,
+                    'min_value': 'Marks cannot be negative.',
+                    'required': 'Enter a mark.',
+                    'invalid': 'Enter a whole number.',
+                },
+            )
+
+    def marks_for(self, student):
+        return self.cleaned_data[student.USN]
+
+    def errors_for(self, student):
+        return self.errors.get(student.USN, [])
+
+
+class ExtraClassForm(forms.Form):
+    """Checks the date of an ad-hoc session before it is created."""
+
+    date = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date'}),
+        error_messages={'required': 'Pick a date.',
+                        'invalid': 'Enter a valid date.'},
+    )
+
+    def __init__(self, data=None, assign=None, **kwargs):
+        super().__init__(data, **kwargs)
+        self.assign = assign
+
+    def clean_date(self):
+        value = self.cleaned_data['date']
+
+        date_range = AttendanceRange.objects.first()
+        if date_range and not (date_range.start_date <= value <= date_range.end_date):
+            raise forms.ValidationError(
+                'Pick a date inside the current term (%s to %s).'
+                % (date_range.start_date, date_range.end_date))
+
+        if self.assign and self.assign.attendanceclass_set.filter(date=value).exists():
+            raise forms.ValidationError(
+                'This class already has a session on that date.')
+
+        return value
