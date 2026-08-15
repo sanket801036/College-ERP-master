@@ -796,6 +796,98 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 
 ---
 
+### 7.3.x Teacher Attendance Module — Full Feature Set
+
+⚠️ **Read the security block (Phase D) first.** This module has the most serious defects in the project — they are authorization holes, not cosmetic issues, and they should be fixed before any UI work here.
+
+#### Phase A — Marking flow (the daily workhorse)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| TA1 | **"Take attendance for today" one-click** | Today's session is derivable from `AssignTime.day` + `AttendanceClass.date`. Right now the teacher navigates Classes → class → ClassDates → pick date → form: four clicks, every day, for something that is unambiguous. Put one button on the dashboard | ✅ |
+| TA2 | **Mark-all-present default, then uncheck absentees** | Typical attendance is 80–95% present, so defaulting everyone to present and unchecking the few absentees is far less work than ticking 45 boxes | ✅ |
+| TA3 | **Live present/absent counter** | "38 / 45 present" updating as boxes toggle, so the teacher can sanity-check against a head count before submitting | ✅ |
+| TA4 | **Keyboard-first entry** | Arrow keys to move down the roster, space to toggle, `A` = all present, `N` = all absent. A teacher marking 45 students daily will use this every time | ✅ |
+| TA5 | **Search / filter within the roster** | Jump to a student by name or USN in a large class | ✅ |
+| TA6 | **Student photos on the roster** | Makes marking far faster and less error-prone for a teacher who doesn't know every name | ❌ needs a photo field (Tier 2 #13) |
+| TA7 | **Explicit session states** | `AttendanceClass.status` uses bare integers — `0` not taken, `1` taken, `2` cancelled — with no `choices` and no constants. Surface these as real labels: ⏳ Pending · ✅ Submitted · 🚫 Cancelled · 🔒 Future | ✅ |
+| TA8 | **Unsaved-changes guard** | Warn before navigating away mid-marking — losing a 45-student roster to a stray click is an easy and infuriating failure | ✅ |
+| TA9 | **Bulk-import attendance** | Upload a CSV/XLSX roster for a session; `openpyxl` is already a dependency | ✅ |
+| TA10 | **Offline-tolerant entry** | Draft state in `localStorage` so a dropped connection mid-marking doesn't lose the work | ✅ |
+
+#### Phase B — Teacher's class overview
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| TA11 | **Pending-sessions to-do list** | `AttendanceClass.status == 0` with a past date is exactly "attendance you still owe". Turns the dashboard from a menu into a work queue | ✅ |
+| TA12 | **At-risk student list** | Students below 75% in this teacher's classes, so intervention happens before it's too late | ✅ |
+| TA13 | **Class attendance trend** | Session-by-session attendance rate — reveals which days/periods students skip | ✅ |
+| TA14 | **Per-session drill-down** | Who was absent on a given date, exportable | ✅ |
+| TA15 | **Compare sections** | CS5A vs CS5B attendance for the same course | ✅ |
+| TA16 | **Export class attendance** | Excel/PDF for department records — reuse the fees export pattern | ✅ |
+| TA17 | **Consecutive-absence flag** | "Rahul has missed 5 in a row" — a stronger early-warning signal than a percentage, which moves slowly | ✅ |
+
+#### Phase C — Scheduling
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| TA18 | **Extra class with validation** | `e_confirm` currently accepts whatever `date` is posted. Needs: date inside the semester (`AttendanceRange` already stores the bounds), not a duplicate of an existing session, and a sane rule about future dates | ✅ |
+| TA19 | **Cancel with a reason** | `cancel_class` sets `status = 2` and records nothing else — no reason, no who, no when | ⚠️ |
+| TA20 | **Reschedule** | Move a session instead of cancel-and-recreate | ⚠️ |
+| TA21 | **Substitute teacher** | Assign a stand-in who can mark attendance for that session only — pairs with the existing (currently buried) free-teachers finder | ❌ |
+
+#### Phase D — 🔴 Security: missing authorization (fix before anything else)
+
+**Every view in this module is protected by `@login_required()` and nothing else.** There is no check that the caller is a teacher, and no check that the caller owns the class being modified.
+
+I verified this against the running app, logged in as the **student** account `teststud` (`is_teacher=False`, `is_superuser=False`):
+
+| Endpoint | URL tested | Result |
+|---|---|---|
+| `t_student` — whole class's attendance | `/teacher/1/Students/attendance/` | **HTTP 200 — allowed** |
+| `t_class_date` — session list | `/teacher/1/ClassDates/` | **HTTP 200 — allowed** |
+| `t_report` — full class report (marks + attendance) | `/teacher/1/Report/` | **HTTP 200 — allowed** |
+| `t_marks_list` | `/teacher/1/marks_list/` | **HTTP 200 — allowed** |
+
+So a student can already read every classmate's marks and attendance. The write endpoints share the identical decorator set and have the same absence of checks (established by reading the code — the local DB has no `AttendanceClass`/`Attendance` rows to exercise them against):
+
+| # | Issue | Detail |
+|---|---|---|
+| TA-S1 | **No role check on any teacher view** | Verified above. Fix: a `@teacher_required` decorator (ties to Tier 1 #3) |
+| TA-S2 | **No ownership check** | Even a legitimate teacher can open and modify *another* teacher's class by changing the ID in the URL. Every view must assert `assign.teacher == request.user.teacher` |
+| TA-S3 | **`change_att` — IDOR on a single record** | `change_att(request, att_id)` does `get_object_or_404(Attendance, id=att_id)` then `a.status = not a.status; a.save()`, with `@login_required()` as the only guard. Any authenticated user can flip **any** attendance record in the database by guessing a sequential integer ID — including a student flipping their own absences to present. This is the single most serious defect in the project |
+| TA-S4 | **`change_att` mutates on GET** | A state change behind a `GET` bypasses CSRF protection entirely and can be triggered by a page merely embedding `<img src="/teacher/42/change_attendance/">`. Must be `POST` |
+| TA-S5 | **`confirm` / `e_confirm` accept any authenticated POST** | A non-teacher could submit an entire class's attendance, or create a fabricated extra-class session |
+| TA-S6 | **`cancel_class` unprotected** | Any authenticated user can cancel any scheduled session |
+| TA-S7 | **No audit trail on any of it** | Attendance can be altered with no record of who changed what, when, or why — the same gap as MK19 for marks. Once TA-S1–S3 are fixed, an audit log is what makes the fix *demonstrable* |
+
+**Why this matters in an interview:** finding, explaining, and fixing an IDOR in your own project is a much stronger story than never having had one. Worth writing up in the README as a "security review" section, with the before/after.
+
+#### Phase E — Correctness & performance
+
+| # | Issue | Detail |
+|---|---|---|
+| TA-C1 | **No transaction around `confirm()`** | The view loops over students saving `Attendance` rows one at a time. If it raises partway — and `request.POST[s.USN]` raises `KeyError` whenever a checkbox is missing — half the class is saved, `assc.status` may already be flipped to `1`, and the session looks submitted when it isn't. Wrap in `@transaction.atomic` |
+| TA-C2 | **`assc.status = 1` is set inside the loop** | It's assigned while processing the *first* student, so every student after that takes the `if assc.status == 1` branch and runs an `Attendance.objects.get()` that always misses before falling back to create. Wasted query per student, and it entangles loop state with session state. Set it once, after the loop |
+| TA-C3 | **Unvalidated POST access throughout** | `request.POST[s.USN]` (KeyError → 500) and `request.POST['date']` in `e_confirm` (arbitrary/invalid date accepted). Same root cause as MK25 — no forms anywhere |
+| TA-C4 | **Magic numbers for session status** | `0/1/2` with no `choices` and no named constants; `2` (cancelled) is documented nowhere |
+| TA-C5 | **Severe N+1 — measured** | `/teacher/<id>/Students/attendance/` fired **28 queries for a class containing a single student**. The per-student cost is the same expensive `AttendanceTotal` property chain described in AT26 (~19–24 queries each), so a realistic 45-student class is on the order of **900+ queries for one page load**. This is the worst hot spot found anywhere in the project. Fixing AT26 and AT27 fixes this page too — they share the root cause |
+| TA-C6 | **`t_class_date` shows only past sessions** | Filtered `date__lte=now`, so a teacher cannot see or prepare for upcoming sessions. TA1 depends on changing this |
+
+#### Recommended order for this module
+
+1. **TA-S1, TA-S2, TA-S3, TA-S4** — the authorization holes. Nothing else in this module should ship first; a student being able to edit their own attendance invalidates the entire feature
+2. **TA-C1, TA-C2, TA-C3** — transaction, loop-state bug, and forms/validation
+3. **TA-C5** — the N+1, shared with AT26/AT27 in the attendance module
+4. **TA-S7** — audit log, which makes the security fixes provable
+5. **TA1, TA2, TA3, TA4, TA7, TA11** — the actual UX work: one-click marking, all-present default, live counter, keyboard entry, session states, pending queue
+6. **TA12, TA13, TA16, TA17** — analytics and export
+7. **TA18–TA21** — scheduling improvements
+
+**Shared work across modules:** TA-S1/TA-S2 (role + ownership decorators) fix the marks views in the same pass — `t_marks_list`, `marks_confirm` and `edit_marks` have exactly the same exposure. Do it once, apply everywhere.
+
+---
+
 ### 7.4 Timetable Page Redesign (Student)
 
 **Current state:**
