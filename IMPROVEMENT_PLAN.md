@@ -1110,6 +1110,50 @@ Published (15)
 
 ---
 
+## 8. Coverage Audit — what still has no spec
+
+Every view in `info/views.py` (33 total), checked against what this document actually specs out.
+
+### ✅ Specced in detail
+
+| Module | Views covered | Section |
+|---|---|---|
+| Login / auth | `login`, `logout` | §5, §5.1, §5.2 |
+| Dashboards | `index` (all three roles) | §6, §6.5 |
+| Attendance — student | `attendance`, `attendance_detail` | §7.1.x (AT1–AT30) |
+| Marks — student | `marks_list` | §7.2.x (MK1–MK27) |
+| Attendance — teacher | `t_student`, `t_class_date`, `t_attendance`, `confirm`, `edit_att`, `change_att`, `cancel_class`, `t_attendance_detail`, `t_extra_class`, `e_confirm` | §7.3.x (TA1–TA21) |
+| Timetable | `timetable`, `t_timetable` | §7.4.x (TT1–TT16) |
+| Notice board | `notices`, `add_notice` | §7.5.x (NB1–NB22) |
+
+### ❌ Not yet specced — remaining gaps
+
+| # | Module | Views | Why it matters |
+|---|---|---|---|
+| **G1** | **Fees — whole module** | `fees`, `fees_export`, `t_fees`, `add_fee`, `edit_fee` | **Biggest gap.** Five views, zero spec. It's also the newest module and the one with the most obvious product depth still missing: `Fee.paid_amount` is a single running total with no transaction history, so there are no receipts, no partial-payment log, and no record of *when* money arrived (already noted as Tier 2 #10). Worth a full §7.6 |
+| **G2** | **Marks entry — teacher side** | `t_marks_list`, `t_marks_entry`, `marks_confirm`, `edit_marks`, `student_marks` | §7.2 specs the *student's* marks view. The teacher's entry flow only appears via MK25 (no validation). It needs the same treatment §7.3 gave teacher attendance — including the same authorization audit, since `marks_confirm` and `edit_marks` are exposed exactly like the teacher attendance views |
+| **G3** | **Class report** | `t_report` | Unspecced, and it has a crash path: `StudentCourse.objects.get(student=stud, course=ass.course)` runs inside a loop with **no `try/except`**, unlike the equivalent code in `marks_list`. Any student missing a `StudentCourse` row 500s the whole class report. It's also N+1 — one query per student |
+| **G4** | **Free-teacher finder** | `free_teachers` | Two defects found while auditing: (a) `Teacher.objects.filter(assign__class_id__id=...)` joins through `Assign` with **no `.distinct()`**, so a teacher who takes two courses for the same class appears twice in the list; (b) it queries `AssignTime` once per teacher — N+1. Also a scope question: it only considers teachers *already assigned to this class*, so it finds "teachers of this class who are free", not "free teachers" as the page title claims |
+| **G5** | **Add student / add teacher** | `add_student`, `add_teacher` | Flagged in §3 (guessable generated passwords, no forced reset) but never specced as pages. Should cover: validation, duplicate USN/ID handling, forced password change on first login, and bulk import (Tier 1 #8) |
+| **G6** | **Class & session management** | `t_clas`, `cancel_class`, `t_extra_class`, `e_confirm` | Partially covered by TA18–TA21, but the `t_clas` "choice" parameter (`1`=attendance, `2`=marks, `3`=reports as a bare integer in the URL) deserves its own look — it's an unlabelled magic number driving navigation |
+| **G7** | **REST API** | `apis/` — 4 endpoints | Described in §1, never specced. Student-only, read-only, unreachable from the UI, leaks raw exception strings to clients, and duplicates the `type='I'` crash bug from MK22. Needs: the same auth fixes, `drf-spectacular` docs (Tier 1 #7), and a decision on whether to expand it or remove it |
+| **G8** | **Django admin** | `/admin/` | The admin is currently the *only* way to manage Dept, Course, Class, Assign and AttendanceRange — i.e. all the setup data. No spec covers customising it (inlines, list filters, bulk actions, clash validation on `Assign`) |
+| **G9** | **Error pages** | — | No custom 404/500 templates (noted in §3). With `DEBUG=False` in production, users currently get Django's bare default pages |
+| **G10** | **Profile / self-service** | — | Doesn't exist at all: no password change, no profile edit, no photo upload (Tier 2 #13). Every user is stuck with their generated password forever |
+| **G11** | **Student directory / search** | — | There's a commented-out `student_search` URL in `info/urls.py`. No way to look up a student anywhere except the fees page's search box |
+| **G12** | **Logout** | `logout` | Trivial page, but it's the one screen that still looks unstyled |
+
+### Suggested order for filling the gaps
+
+1. **G1 (Fees)** — a whole module with real product depth, and the one a reviewer is most likely to click into after the dashboard
+2. **G2 (Teacher marks entry)** — completes the marks story and shares the authorization fixes with §7.3
+3. **G3, G4** — small pages, real bugs, quick wins
+4. **G5, G10** — account lifecycle: creation, first-login password change, self-service
+5. **G7 (API)** — decide expand vs. remove, then document it
+6. **G8, G9, G11, G12** — polish
+
+---
+
 ## Navigation & Sequencing
 
 **Recommended build order for pages:**
