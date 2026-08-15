@@ -1394,6 +1394,121 @@ If `usn` already belongs to an existing student, this does **not** raise `Integr
 
 ---
 
+### 7.10.x REST API (gap G7)
+
+**Current state.** Four read-only, student-only endpoints in the `apis` app: `/api/details/`, `/api/attendance/`, `/api/marks/`, `/api/timetable/`. DRF is configured with `IsAuthenticated` plus Token and Session authentication. djoser is wired at `/info/api/auth/`.
+
+#### 🔴 The API does not work as shipped
+
+Verified by calling all four endpoints:
+
+| Auth method | Result |
+|---|---|
+| Logged-in **session** user (a real student) | **HTTP 400 — `{"message": "User not authenticated"}` on all four endpoints** |
+| Explicit **token** in the `Authorization` header | HTTP 200, data returned |
+| No authentication at all | HTTP 401 (correct) |
+
+The cause: every view hand-rolls its own auth check on top of DRF's:
+
+```python
+us = Token.objects.filter(user=request.user)
+if us:
+    user = User.objects.filter(auth_token=us[0]).first()
+    ...
+else:
+    return Response({'message': 'User not authenticated'}, status=400)
+```
+
+DRF has **already authenticated the request** by the time the view runs — `request.user` is populated. Re-deriving the user from a `Token` row means any correctly authenticated session user without a token row is rejected. And because **nothing in the application ever issues a token** (verified: 0 rows in the token table), the API returns 400 for every user until someone creates a token by hand in the shell or Django admin. As shipped, all four endpoints are unreachable.
+
+**Fix:** delete the token lookup entirely and use `request.user.student`. That one change fixes the auth bug, removes 3 queries per request, and deletes most of the body of each view.
+
+#### Phase A — Correctness
+
+| # | Issue | Detail |
+|---|---|---|
+| API1 | **Hand-rolled auth rejects valid sessions** | As above. `permission_classes = [IsAuthenticated]` is already doing the job |
+| API2 | **`/api/attendance/` returns no attendance data** | Verified response: `{"user_attendance": [{"id": 2, "course": "CS101", "student": "1CS20CS001"}]}`. `AttendanceSerializer` uses `fields = '__all__'` on `AttendanceTotal`, but every useful value — `attendance`, `att_class`, `total_class`, `classes_to_attend` — is a **Python property**, not a model field, so DRF omits them all. The endpoint returns identifiers and nothing else. Fix: declare them as `SerializerMethodField`s or explicit read-only fields |
+| API3 | **`/api/timetable/` returns its data under the key `user_marks`** | Verified: `{"user_marks": []}` from the timetable endpoint. Copy-paste from `MarksView`. Any client written against this has to read timetable data out of a field called `user_marks` |
+| API4 | **A GET endpoint writes to the database** | `AttendanceView` creates missing `AttendanceTotal` rows inside a GET handler. A read request should not mutate state — it breaks caching assumptions and makes the endpoint non-idempotent |
+| API5 | **Raw exception text returned to clients** | Every view ends with `except Exception as e: return Response(str(e), status=400)`, so internal errors — including database messages — are handed to the caller. Also flattens genuine 404/500 conditions into 400 |
+| API6 | **Wrong status codes** | "Not authenticated" returns **400**; it should be 401. A missing student profile should be 404, not 400 |
+| API7 | **Same unguarded `StudentCourse.objects.get()`** | `MarksView` repeats the crash path from TM19/RP10 — a missing row raises, and is then swallowed by API5 into an opaque 400 |
+| API8 | **`fields = '__all__'` leaks personal data** | `/api/details/` returns `DOB` (verified). Given that passwords are derived from the birth year (AC9), this is precisely the field that should not be exposed. Same issue as AC13 |
+| API9 | **Dead imports** | `chain`, `mixins`, `generics`, `PageNumberPagination`, `post_save`, `get_object_or_404`, `Sum`, `Count`, `settings`, `render` are all imported and unused. `PageNumberPagination` in particular signals pagination that was never implemented |
+| API10 | **Wildcard import** | `from info.models import *` (noted in §3) |
+| API11 | **No pagination** | Every endpoint returns a complete list |
+| API12 | **No tests** | Zero coverage — and the endpoints are pure request/response functions, the easiest thing in the project to test |
+
+#### Phase B — What the API should become
+
+The strategic question is **expand or remove**. Recommendation: **expand, but deliberately** — a documented API is a strong portfolio item, and a half-built one is a liability.
+
+| # | Feature | Detail |
+|---|---|---|
+| API13 | **OpenAPI/Swagger docs** | `drf-spectacular` gives a live, browsable schema (Tier 1 #7). This is what makes an API demonstrable in an interview rather than something you have to describe |
+| API14 | **Teacher and admin endpoints** | Currently student-only. Attendance marking, marks entry, class lists — the same authorization model as the web views (TA-S1/TA-S2) applies |
+| API15 | **Write endpoints** | POST attendance, PATCH marks — with the same validation layer as the forms work |
+| API16 | **Proper token lifecycle** | Nothing issues tokens today. Either expose a login endpoint that returns one (djoser is already installed for exactly this) or move to JWT with refresh |
+| API17 | **Consistent envelope** | Responses currently vary: `{"data": ...}`, `{"user_attendance": ...}`, `{"user_marks": ...}` — including on the timetable endpoint. Pick one shape |
+| API18 | **Rate limiting** | DRF throttling, especially once write endpoints exist |
+| API19 | **Versioning** | `/api/v1/` before anything consumes it |
+| API20 | **Filtering & pagination** | Date ranges on attendance, course filters on marks |
+
+#### Recommended order
+
+1. **API1** — the auth bug. Nothing else matters while every endpoint returns 400
+2. **API2, API3** — the attendance endpoint returning no data, and the timetable key. Both are "this API has clearly never been called" bugs
+3. **API5, API6, API7** — error handling and status codes
+4. **API8, API10, API9** — serializer field lists, wildcard import, dead imports
+5. **API13** — Swagger docs, which immediately makes the rest demonstrable
+6. **API16** — token issuance, so the API is reachable without shell access
+7. **API12** — tests
+8. **API14, API15, API17–API20** — expansion, only once the base is sound
+
+---
+
+### 7.11.x Remaining Small Gaps (G6, G8, G9, G12)
+
+#### 7.11.1 Class & session navigation — `t_clas` (G6)
+
+| # | Issue / feature | Detail |
+|---|---|---|
+| CS1 | **Magic-number `choice` parameter** | `/teacher/<id>/<choice>/Classes/` uses a bare integer to decide context: `1` = attendance, `2` = marks, `3` = reports. Unlabelled, undocumented, and validated nowhere — `/teacher/1/7/Classes/` renders a page with no meaningful mode. Use named URLs (`/classes/attendance/`) or a slug |
+| CS2 | **No authorization** | Same `@login_required()`-only pattern; a teacher can view any other teacher's class list by changing the ID |
+| CS3 | **No class context** | The list shows classes but not student counts, pending attendance, or pending marks — all of which are one query away and would turn it into a useful landing page (pairs with TA11/C1) |
+
+#### 7.11.2 Django admin (G8)
+
+The admin is currently the **only** way to manage `Dept`, `Course`, `Class`, `Assign`, `AssignTime` and `AttendanceRange` — i.e. all of the setup data that the rest of the app depends on.
+
+| # | Feature | Detail |
+|---|---|---|
+| AD1 | **Clash validation on `Assign`/`AssignTime`** | The uniqueness constraint from TT12 should be enforced here, with a friendly admin error rather than a 500 on the student timetable |
+| AD2 | **Inlines** | Edit `AssignTime` rows inline on `Assign`; `Marks` inline on `StudentCourse` |
+| AD3 | **List filters and search** | On department, class, semester — the model registrations are currently minimal |
+| AD4 | **Guard the `AttendanceRange` reset** | Changing the semester date range triggers attendance regeneration through the signals. That's a destructive operation reachable from a plain admin form with no warning |
+| AD5 | **Read-only audit fields** | Once audit models exist (FE29/MK19/TA-S7), surface them read-only |
+| AD6 | **Restrict staff access** | Any `is_staff` user reaches the full admin; scope it with permissions |
+
+#### 7.11.3 Error pages (G9)
+
+| # | Feature | Detail |
+|---|---|---|
+| ER1 | **Custom 404 / 500 / 403 templates** | With `DEBUG=False` in production (which is the case on Render), users currently get Django's bare default pages. Given how many 500s this document has catalogued, these will be seen |
+| ER2 | **Error logging** | No logging configuration at all — production 500s vanish silently. Add `LOGGING` with a console handler at minimum; Sentry if you want the polished version |
+| ER3 | **Friendly permission-denied page** | Every unauthorized access currently `redirect('/')` with no explanation, so a legitimate user hitting a page they can't access just bounces to the dashboard with no idea why |
+
+#### 7.11.4 Logout page (G12)
+
+| # | Feature | Detail |
+|---|---|---|
+| LO1 | **Styling** | The one screen still on the old unstyled template — it doesn't use the login page's design language |
+| LO2 | **`index` falls through to `logout.html`** | In `index()`, a user who is neither student, teacher nor superuser renders the logout template. That's the orphan-account case from AC2, and the result is a confusing dead end rather than an explanatory message |
+| LO3 | **Logout should be POST** | `/accounts/logout` as a GET link is CSRF-triggerable; Django 4.1+ prefers POST, and Django 5 requires it |
+
+---
+
 ## 8. Coverage Audit — what still has no spec
 
 Every view in `info/views.py` (33 total), checked against what this document actually specs out.
@@ -1414,6 +1529,8 @@ Every view in `info/views.py` (33 total), checked against what this document act
 | Class report | `t_report` | §7.8.1 (RP1–RP12) |
 | Free-teacher finder | `free_teachers` | §7.8.2 (FT1–FT11) |
 | Account lifecycle | `add_student`, `add_teacher`, + self-service (new) | §7.9.x (AC1–AC24) |
+| REST API | `apis/` — 4 endpoints | §7.10.x (API1–API20) |
+| Class navigation, admin, error pages, logout | `t_clas`, `/admin/`, 404/500, `logout` | §7.11.x (CS/AD/ER/LO) |
 
 ### ❌ Not yet specced — remaining gaps
 
@@ -1424,13 +1541,13 @@ Every view in `info/views.py` (33 total), checked against what this document act
 | ~~G3~~ | ~~Class report~~ | — | ✅ **Now specced — see §7.8.1 (RP1–RP12)** |
 | ~~G4~~ | ~~Free-teacher finder~~ | — | ✅ **Now specced — see §7.8.2 (FT1–FT11)** |
 | ~~G5~~ | ~~Add student / add teacher~~ | — | ✅ **Now specced — see §7.9.x (AC1–AC24)** |
-| **G6** | **Class & session management** | `t_clas`, `cancel_class`, `t_extra_class`, `e_confirm` | Partially covered by TA18–TA21, but the `t_clas` "choice" parameter (`1`=attendance, `2`=marks, `3`=reports as a bare integer in the URL) deserves its own look — it's an unlabelled magic number driving navigation |
-| **G7** | **REST API** | `apis/` — 4 endpoints | Described in §1, never specced. Student-only, read-only, unreachable from the UI, leaks raw exception strings to clients, and duplicates the `type='I'` crash bug from MK22. Needs: the same auth fixes, `drf-spectacular` docs (Tier 1 #7), and a decision on whether to expand it or remove it |
-| **G8** | **Django admin** | `/admin/` | The admin is currently the *only* way to manage Dept, Course, Class, Assign and AttendanceRange — i.e. all the setup data. No spec covers customising it (inlines, list filters, bulk actions, clash validation on `Assign`) |
-| **G9** | **Error pages** | — | No custom 404/500 templates (noted in §3). With `DEBUG=False` in production, users currently get Django's bare default pages |
+| ~~G6~~ | ~~Class & session management~~ | — | ✅ **Now specced — see §7.11.1 (CS1–CS3) — scheduling parts in §7.3.x TA18–TA21** |
+| ~~G7~~ | ~~REST API~~ | — | ✅ **Now specced — see §7.10.x (API1–API20)** |
+| ~~G8~~ | ~~Django admin~~ | — | ✅ **Now specced — see §7.11.2 (AD1–AD6)** |
+| ~~G9~~ | ~~Error pages~~ | — | ✅ **Now specced — see §7.11.3 (ER1–ER3)** |
 | ~~G10~~ | ~~Profile / self-service~~ | — | ✅ **Now specced — see §7.9.x, Phase C** |
 | ~~G11~~ | ~~Student directory / search~~ | — | ✅ **Now specced — see §7.9.x, AC20** |
-| **G12** | **Logout** | `logout` | Trivial page, but it's the one screen that still looks unstyled |
+| ~~G12~~ | ~~Logout~~ | — | ✅ **Now specced — see §7.11.4 (LO1–LO3)** |
 
 ### Suggested order for filling the gaps
 
@@ -1438,8 +1555,10 @@ Every view in `info/views.py` (33 total), checked against what this document act
 2. ~~G2 (Teacher marks entry)~~ — ✅ done, §7.7.x
 3. ~~G3, G4~~ — ✅ done, §7.8.x
 4. ~~G5, G10, G11~~ — ✅ done, §7.9.x
-5. **G7 (API)** — decide expand vs. remove, then document it
-6. **G8, G9, G11, G12** — polish
+5. ~~G7 (API)~~ — ✅ done, §7.10.x (recommendation: **expand deliberately**, don't remove)
+6. ~~G6, G8, G9, G12~~ — ✅ done, §7.11.x
+
+**All 12 gaps are now specced.** The document covers every view in the project.
 
 ---
 
