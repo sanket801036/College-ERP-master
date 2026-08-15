@@ -2,7 +2,10 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.utils.crypto import get_random_string
 
-from info.models import AttendanceRange, Student, Teacher
+from django.utils import timezone
+
+from info.models import (AttendanceRange, Fee, FeeTransaction, Student,
+                         Teacher)
 
 User = get_user_model()
 
@@ -161,3 +164,63 @@ class ExtraClassForm(forms.Form):
                 'This class already has a session on that date.')
 
         return value
+
+
+class FeeForm(forms.ModelForm):
+    """Raising a fee.
+
+    Everything here used to come straight off request.POST: fee_type was never
+    checked against the choices, so an arbitrary string could be stored and the
+    fee then vanished from every audience filter, and a bad amount or date threw
+    an unhandled exception.
+    """
+
+    class Meta:
+        model = Fee
+        fields = ['student', 'fee_type', 'description', 'amount', 'due_date']
+        widgets = {'due_date': forms.DateInput(attrs={'type': 'date'})}
+
+    def clean_amount(self):
+        amount = self.cleaned_data['amount']
+        if amount <= 0:
+            raise forms.ValidationError('Amount must be greater than zero.')
+        return amount
+
+
+class FeeTransactionForm(forms.ModelForm):
+    """Recording a payment against a fee.
+
+    This replaces editing the running total by hand, which meant staff did the
+    arithmetic themselves, nothing recorded when or how the money arrived, and
+    two people recording payments at once silently lost one of them.
+    """
+
+    class Meta:
+        model = FeeTransaction
+        fields = ['amount', 'mode', 'reference', 'paid_on', 'note']
+        widgets = {'paid_on': forms.DateInput(attrs={'type': 'date'})}
+
+    def __init__(self, *args, fee=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fee = fee
+        if fee is not None:
+            self.fields['amount'].widget.attrs.update(
+                {'max': fee.balance, 'step': '0.01'})
+
+    def clean_amount(self):
+        amount = self.cleaned_data['amount']
+        if amount <= 0:
+            raise forms.ValidationError('Payment must be greater than zero.')
+        # A fee of 10,000 accepted a paid_amount of 99,999 before this, leaving
+        # a balance of -89,999 reported as "Paid".
+        if self.fee is not None and amount > self.fee.balance:
+            raise forms.ValidationError(
+                'That is more than the outstanding balance of %s.'
+                % self.fee.balance)
+        return amount
+
+    def clean_paid_on(self):
+        paid_on = self.cleaned_data['paid_on']
+        if paid_on > timezone.localdate():
+            raise forms.ValidationError('Payment date cannot be in the future.')
+        return paid_on

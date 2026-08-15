@@ -1,9 +1,11 @@
 from django.db import models
 import math
+from decimal import Decimal
 from django.db.models.functions import Coalesce
 from django.utils.functional import cached_property
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
 from django.contrib.auth.models import AbstractUser
 from django.db.models.signals import post_save, post_delete
 from datetime import timedelta
@@ -413,11 +415,25 @@ fee_type_choice = (
 )
 
 
+payment_mode_choice = (
+    ('Cash', 'Cash'),
+    ('UPI', 'UPI'),
+    ('Card', 'Card'),
+    ('Cheque', 'Cheque'),
+    ('Bank transfer', 'Bank transfer'),
+)
+
+
 class Fee(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='fees')
     fee_type = models.CharField(max_length=50, choices=fee_type_choice, default='Tuition Fee')
     description = models.CharField(max_length=200, blank=True)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2,
+                                 validators=[MinValueValidator(Decimal('0.01'))])
+    # Kept as a column so totals can be summed in the database, but it is
+    # derived from the transaction rows rather than written to directly -
+    # see recalculate_paid(). Editing it in place is what lost the payment
+    # history in the first place.
     paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     due_date = models.DateField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -428,17 +444,66 @@ class Fee(models.Model):
     def __str__(self):
         return '%s : %s' % (self.student.name, self.fee_type)
 
+    def recalculate_paid(self):
+        """Re-derive paid_amount from the transactions and save it."""
+        total = self.transactions.aggregate(
+            total=Coalesce(models.Sum('amount'), Decimal('0')))['total']
+        self.paid_amount = total
+        self.save(update_fields=['paid_amount'])
+        return total
+
     @property
     def balance(self):
         return self.amount - self.paid_amount
 
     @property
     def status(self):
-        if self.paid_amount <= 0:
-            return 'Unpaid'
+        # The zero check came first, so a fully waived fee of 0 reported
+        # "Unpaid" for ever and could never reach "Paid".
+        if self.amount <= 0:
+            return 'Paid'
         if self.paid_amount >= self.amount:
             return 'Paid'
+        if self.paid_amount <= 0:
+            return 'Unpaid'
         return 'Partial'
+
+    @property
+    def is_overdue(self):
+        return self.balance > 0 and self.due_date < timezone.localdate()
+
+
+class FeeTransaction(models.Model):
+    """One payment against a fee.
+
+    Fee.paid_amount used to be a single running total that staff overwrote by
+    hand, so there was no record of when money arrived, how much came in each
+    time, who took it or how it was paid - and two people recording payments at
+    once silently lost one of them.
+    """
+    fee = models.ForeignKey(Fee, on_delete=models.CASCADE,
+                            related_name='transactions')
+    amount = models.DecimalField(max_digits=10, decimal_places=2,
+                                 validators=[MinValueValidator(Decimal('0.01'))])
+    mode = models.CharField(max_length=20, choices=payment_mode_choice,
+                            default='Cash')
+    reference = models.CharField(max_length=100, blank=True,
+                                 help_text='UPI reference, cheque number, etc.')
+    note = models.CharField(max_length=200, blank=True)
+    paid_on = models.DateField(default=timezone.localdate)
+    received_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name='fee_receipts')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-paid_on', '-id']
+
+    def __str__(self):
+        return '%s %s on %s' % (self.receipt_no, self.amount, self.paid_on)
+
+    @property
+    def receipt_no(self):
+        return 'RCP-%06d' % self.pk if self.pk else ''
 
 
 notice_audience_choice = (

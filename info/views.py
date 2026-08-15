@@ -9,7 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib.auth import get_user_model
 from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
-                        ExtraClassForm)
+                        ExtraClassForm, FeeForm, FeeTransactionForm)
 from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
                              owns_marks_class, owns_teacher_id, assert_teaches)
 from openpyxl import Workbook
@@ -584,36 +584,48 @@ def add_fee(request):
         return redirect('/')
 
     if request.method == 'POST':
-        stud = get_object_or_404(Student, USN=request.POST['student'])
-        Fee(
-            student=stud,
-            fee_type=request.POST['fee_type'],
-            description=request.POST.get('description', ''),
-            amount=request.POST['amount'],
-            paid_amount=request.POST.get('paid_amount') or 0,
-            due_date=request.POST['due_date'],
-        ).save()
-        return redirect('t_fees')
+        form = FeeForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('t_fees')
+    else:
+        form = FeeForm()
 
-    context = {
-        'all_students': Student.objects.order_by('class_id_id', 'name'),
-        'fee_types': fee_type_choice,
-    }
-    return render(request, 'info/add_fee.html', context)
+    return render(request, 'info/add_fee.html', {'form': form})
 
 
 @login_required()
 def edit_fee(request, fee_id):
+    """Record a payment against a fee.
+
+    This used to overwrite paid_amount with a new running total, so staff had to
+    do the arithmetic themselves, a mistake was unrecoverable, and nothing
+    recorded when the money came in or who took it.
+    """
     if not (request.user.is_superuser or request.user.is_teacher):
         return redirect('/')
 
-    fee = get_object_or_404(Fee, id=fee_id)
-    if request.method == 'POST':
-        fee.paid_amount = request.POST['paid_amount']
-        fee.save()
-        return redirect('t_fees')
+    fee = get_object_or_404(Fee.objects.select_related('student'), id=fee_id)
 
-    return render(request, 'info/edit_fee.html', {'fee': fee})
+    if request.method == 'POST':
+        form = FeeTransactionForm(request.POST, fee=fee)
+        if form.is_valid():
+            with transaction.atomic():
+                payment = form.save(commit=False)
+                payment.fee = fee
+                payment.received_by = request.user
+                payment.save()
+                fee.recalculate_paid()
+            return redirect('edit_fee', fee_id=fee.id)
+    else:
+        form = FeeTransactionForm(fee=fee,
+                                  initial={'amount': fee.balance or None})
+
+    return render(request, 'info/edit_fee.html', {
+        'fee': fee,
+        'form': form,
+        'payments': fee.transactions.select_related('received_by'),
+    })
 
 
 # ---------------------------------------------------------------------------

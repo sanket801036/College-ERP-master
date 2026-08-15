@@ -5,7 +5,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.http import HttpResponseRedirect
 from django.urls import path
 
-from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AssignTime, AttendanceClass
+from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AssignTime, AttendanceClass, FeeTransaction
 from .models import StudentCourse, Marks, User, AttendanceRange, Fee, Notice
 
 # Register your models here.
@@ -133,11 +133,32 @@ class AttendanceClassAdmin(admin.ModelAdmin):
         return HttpResponseRedirect("../")
 
 
+class FeeTransactionInline(admin.TabularInline):
+    model = FeeTransaction
+    extra = 0
+    readonly_fields = ('created_at',)
+
+
 class FeeAdmin(admin.ModelAdmin):
+    inlines = [FeeTransactionInline]
+    # paid_amount is derived from the transactions, so editing it here would
+    # only be overwritten by the next recalculation.
+    readonly_fields = ('paid_amount',)
     list_display = ('student', 'fee_type', 'amount', 'paid_amount', 'status', 'due_date')
     search_fields = ('student__name', 'student__USN', 'fee_type')
     list_filter = ('fee_type', 'due_date')
     ordering = ['-due_date']
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        form.instance.recalculate_paid()
+
+
+class FeeTransactionAdmin(admin.ModelAdmin):
+    list_display = ('receipt_no', 'fee', 'amount', 'mode', 'paid_on', 'received_by')
+    search_fields = ('fee__student__name', 'fee__student__USN', 'reference')
+    list_filter = ('mode', 'paid_on')
+    ordering = ['-paid_on']
 
 
 class NoticeAdmin(admin.ModelAdmin):
@@ -157,4 +178,5 @@ admin.site.register(Assign, AssignAdmin)
 admin.site.register(StudentCourse, StudentCourseAdmin)
 admin.site.register(AttendanceClass, AttendanceClassAdmin)
 admin.site.register(Fee, FeeAdmin)
+admin.site.register(FeeTransaction, FeeTransactionAdmin)
 admin.site.register(Notice, NoticeAdmin)
