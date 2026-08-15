@@ -7,8 +7,81 @@
 
 <div class="mb-4">
   <h2 class="text-capitalize mb-0">Welcome back, {{ request.user.student.name }}</h2>
-  <p class="text-muted">Here's a quick look at what you can do today.</p>
+  <p class="text-muted mb-0">
+    {{ request.user.student.class_id }} &middot; {{ request.user.student.USN }}
+  </p>
 </div>
+
+<div class="row mb-2">
+  <div class="col-md-4 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Overall attendance</div>
+      {% if overall_attendance is None %}
+        <div class="erp-stat-value text-muted">&mdash;</div>
+        <div class="small text-muted">No classes held yet</div>
+      {% else %}
+        <div class="erp-stat-value {% if overall_attendance < 75 %}text-danger{% endif %}">
+          {{ overall_attendance }}%
+        </div>
+        <div class="small text-muted">Across all courses</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-md-4 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Courses below 75%</div>
+      <div class="erp-stat-value {% if at_risk %}text-danger{% endif %}">{{ at_risk|length }}</div>
+      <div class="small text-muted">Exam eligibility threshold</div>
+    </div>
+  </div>
+  <div class="col-md-4 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Fees outstanding</div>
+      <div class="erp-stat-value {% if overdue_count %}text-danger{% endif %}">&#8377;{{ fees_due }}</div>
+      <div class="small text-muted">
+        {% if next_due %}Next due {{ next_due.due_date }}{% else %}Nothing outstanding{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if at_risk %}
+<div class="card mb-4 border-danger">
+  <div class="card-header"><i class="fas fa-exclamation-triangle text-danger"></i><b>Attendance shortfall</b></div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">
+      Assuming you attend every remaining class in that course.
+    </p>
+    <ul class="list-unstyled mb-0">
+      {% for t in at_risk %}
+        <li class="mb-2">
+          <span class="erp-badge erp-badge-danger mr-2">{{ t.attendance }}%</span>
+          <b>{{ t.course.name }}</b> &mdash;
+          attend <b>{{ t.classes_to_attend }}</b> more in a row to reach 75%
+          <span class="text-muted small">({{ t.att_class }}/{{ t.total_class }} so far)</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{% if can_skip %}
+<div class="card mb-4">
+  <div class="card-header"><i class="fas fa-couch"></i><b>Room to spare</b></div>
+  <div class="card-body">
+    <ul class="list-unstyled mb-0">
+      {% for t in can_skip %}
+        <li class="mb-2">
+          <span class="erp-badge erp-badge-success mr-2">{{ t.attendance }}%</span>
+          <b>{{ t.course.name }}</b> &mdash;
+          you can miss <b>{{ t.classes_can_skip }}</b> more and stay above 75%
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
 
 <div class="row">
 

@@ -31,6 +31,37 @@
   </div>
 </div>
 
+<div class="row mb-3">
+  <div class="col-md-4 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Average attendance</div>
+      {% if avg_attendance is None %}
+        <div class="erp-stat-value text-muted">&mdash;</div>
+        <div class="small text-muted">No classes held yet</div>
+      {% else %}
+        <div class="erp-stat-value {% if avg_attendance < 75 %}text-danger{% endif %}">
+          {{ avg_attendance }}%
+        </div>
+        <div class="small text-muted">Across every course</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-md-4 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Students below 75%</div>
+      <div class="erp-stat-value {% if at_risk_count %}text-danger{% endif %}">{{ at_risk_count }}</div>
+      <div class="small text-muted">In at least one course</div>
+    </div>
+  </div>
+  <div class="col-md-4 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Fees outstanding</div>
+      <div class="erp-stat-value {% if overdue_count %}text-danger{% endif %}">&#8377;{{ fees_outstanding }}</div>
+      <div class="small text-muted">{{ overdue_count }} past their due date</div>
+    </div>
+  </div>
+</div>
+
 <div class="row">
 
   <div class="col-lg-3 col-md-6 mb-4">

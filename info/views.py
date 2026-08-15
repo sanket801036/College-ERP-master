@@ -5,6 +5,7 @@ from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, A
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Count, Q
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import PasswordChangeView
 from django.views.decorators.http import require_POST
@@ -25,22 +26,143 @@ User = get_user_model()
 @login_required
 def index(request):
     if request.user.is_teacher:
-        latest_notices = Notice.objects.filter(audience__in=['All', 'Teachers'])[:3]
-        return render(request, 'info/t_homepage.html', {'latest_notices': latest_notices})
+        return render(request, 'info/t_homepage.html',
+                      _teacher_dashboard(request.user.teacher))
     if request.user.is_student:
-        latest_notices = Notice.objects.filter(audience__in=['All', 'Students'])[:3]
-        return render(request, 'info/homepage.html', {'latest_notices': latest_notices})
+        return render(request, 'info/homepage.html',
+                      _student_dashboard(request.user.student))
     if request.user.is_superuser:
-        latest_notices = Notice.objects.all()[:3]
-        context = {
-            'latest_notices': latest_notices,
-            'student_count': Student.objects.count(),
-            'teacher_count': Teacher.objects.count(),
-            'dept_count': Dept.objects.count(),
-            'recent_activity': AuditLog.objects.all()[:10],
-        }
-        return render(request, 'info/admin_page.html', context)
+        return render(request, 'info/admin_page.html', _admin_dashboard())
     return render(request, 'info/logout.html')
+
+
+def _student_dashboard(student):
+    """Attendance standing, fees due and notices, rather than four links.
+
+    Everything here is already computed elsewhere - classes_to_attend and
+    classes_can_skip have been model properties all along and were never shown
+    anywhere.
+    """
+    courses = Course.objects.filter(assign__class_id=student.class_id_id).distinct()
+    AttendanceTotal.objects.bulk_create(
+        [AttendanceTotal(student=student, course=c) for c in courses],
+        ignore_conflicts=True,
+    )
+    totals = list(AttendanceTotal.objects
+                  .filter(student=student, course__in=courses)
+                  .select_related('course')
+                  .with_counts())
+
+    held = sum(t.total_class for t in totals)
+    attended = sum(t.att_class for t in totals)
+    fees = list(student.fees.all())
+
+    return {
+        'latest_notices': Notice.objects.filter(
+            audience__in=['All', 'Students'])[:3],
+        # Weighted across all sessions, not the mean of the percentages, which
+        # would over-weight a course with only a handful of classes.
+        'overall_attendance': round(attended / held * 100, 2) if held else None,
+        'at_risk': [t for t in totals if t.has_classes and t.attendance < 75],
+        'can_skip': [t for t in totals if t.has_classes and t.classes_can_skip],
+        'fees_due': sum(f.balance for f in fees),
+        'next_due': min((f for f in fees if f.balance > 0),
+                        key=lambda f: f.due_date, default=None),
+        'overdue_count': sum(1 for f in fees if f.is_overdue),
+    }
+
+
+def _attendance_rows(students=None, courses=None):
+    """Per (student, course) attendance, computed straight from Attendance.
+
+    The dashboards must not depend on AttendanceTotal rows existing - those are
+    only backfilled when someone opens the attendance page, so a dashboard would
+    read as empty until then. AttendanceTotal holds no data of its own anyway.
+    """
+    rows = Attendance.objects.all()
+    if students is not None:
+        rows = rows.filter(student__in=students)
+    if courses is not None:
+        rows = rows.filter(course__in=courses)
+
+    summary = (rows.values('student', 'course')
+               .annotate(held=Count('pk'),
+                         attended=Count('pk', filter=Q(status=True))))
+
+    students_by_id = {s.USN: s for s in Student.objects.filter(
+        USN__in={r['student'] for r in summary})}
+    courses_by_id = {c.id: c for c in Course.objects.filter(
+        id__in={r['course'] for r in summary})}
+
+    out = []
+    for row in summary:
+        total = AttendanceTotal(student=students_by_id[row['student']],
+                                course=courses_by_id[row['course']])
+        total._held = row['held']
+        total._attended = row['attended']
+        out.append(total)
+    return out
+
+
+def _teacher_dashboard(teacher):
+    """What still needs doing, rather than a menu of sections."""
+    today = timezone.localdate()
+    assigns = list(Assign.objects.filter(teacher=teacher)
+                   .select_related('course', 'class_id'))
+
+    # status 0 means the session happened but nobody submitted it.
+    pending_sessions = (AttendanceClass.objects
+                        .filter(assign__in=assigns, status=0, date__lte=today)
+                        .select_related('assign__course', 'assign__class_id')
+                        .order_by('-date')[:10])
+    pending_marks = (MarksClass.objects
+                     .filter(assign__in=assigns, status=False)
+                     .select_related('assign__course', 'assign__class_id'))
+
+    student_count = Student.objects.filter(
+        class_id__in={a.class_id_id for a in assigns}).count()
+
+    at_risk = [t for t in _attendance_rows(
+        students=Student.objects.filter(
+            class_id__in={a.class_id_id for a in assigns}),
+        courses=[a.course_id for a in assigns])
+        if t.has_classes and t.attendance < 75]
+
+    return {
+        'latest_notices': Notice.objects.filter(
+            audience__in=['All', 'Teachers'])[:3],
+        'assigns': assigns,
+        'class_count': len(assigns),
+        'student_count': student_count,
+        'pending_sessions': pending_sessions,
+        'pending_sessions_count': AttendanceClass.objects.filter(
+            assign__in=assigns, status=0, date__lte=today).count(),
+        'pending_marks': pending_marks,
+        'at_risk': sorted(at_risk, key=lambda t: t.attendance)[:10],
+        'at_risk_count': len(at_risk),
+    }
+
+
+def _admin_dashboard():
+    with_classes = [t for t in _attendance_rows() if t.has_classes]
+    held = sum(t.total_class for t in with_classes)
+    attended = sum(t.att_class for t in with_classes)
+
+    fees = Fee.objects.all()
+    outstanding = sum(f.balance for f in fees)
+
+    return {
+        'latest_notices': Notice.objects.all()[:3],
+        'student_count': Student.objects.count(),
+        'teacher_count': Teacher.objects.count(),
+        'dept_count': Dept.objects.count(),
+        'avg_attendance': round(attended / held * 100, 2) if held else None,
+        'at_risk_count': len({t.student.USN for t in with_classes
+                              if t.attendance < 75}),
+        'fees_outstanding': outstanding,
+        'overdue_count': sum(1 for f in fees if f.is_overdue),
+        'recent_activity': AuditLog.objects.all()[:10],
+    }
 
 
 @login_required()

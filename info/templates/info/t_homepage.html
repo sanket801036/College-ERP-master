@@ -7,8 +7,105 @@
 
 <div class="mb-4">
   <h2 class="text-capitalize mb-0">Welcome back, {{ request.user.teacher.name }}</h2>
-  <p class="text-muted">Manage your classes, attendance, marks and reports.</p>
+  <p class="text-muted mb-0">{{ request.user.teacher.dept.name }}</p>
 </div>
+
+<div class="row mb-2">
+  <div class="col-md-3 col-6 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Classes</div>
+      <div class="erp-stat-value">{{ class_count }}</div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Students</div>
+      <div class="erp-stat-value">{{ student_count }}</div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Attendance pending</div>
+      <div class="erp-stat-value {% if pending_sessions_count %}text-danger{% endif %}">
+        {{ pending_sessions_count }}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6 mb-3">
+    <div class="erp-stat">
+      <div class="erp-stat-label">Students below 75%</div>
+      <div class="erp-stat-value {% if at_risk_count %}text-danger{% endif %}">{{ at_risk_count }}</div>
+    </div>
+  </div>
+</div>
+
+{% if pending_sessions %}
+<div class="card mb-4 border-danger">
+  <div class="card-header"><i class="fas fa-clipboard-list text-danger"></i><b>Attendance still to take</b></div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead class="thead-light">
+          <tr><th>Date</th><th>Class</th><th>Course</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for s in pending_sessions %}
+          <tr>
+            <td class="text-nowrap">{{ s.date }}</td>
+            <td>{{ s.assign.class_id }}</td>
+            <td>{{ s.assign.course.name }}</td>
+            <td class="text-right">
+              <a class="btn btn-primary btn-sm" href="{% url 't_attendance' s.id %}">Take attendance</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if pending_marks %}
+<div class="card mb-4">
+  <div class="card-header"><i class="fas fa-edit"></i><b>Marks not entered</b></div>
+  <div class="card-body">
+    <ul class="list-unstyled mb-0">
+      {% for m in pending_marks %}
+        <li class="mb-2">
+          <b>{{ m.name }}</b> &mdash; {{ m.assign.course.name }}, {{ m.assign.class_id }}
+          <a class="btn btn-outline-primary btn-sm ml-2" href="{% url 't_marks_entry' m.id %}">Enter marks</a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{% if at_risk %}
+<div class="card mb-4">
+  <div class="card-header"><i class="fas fa-user-clock"></i><b>Students below 75%</b></div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead class="thead-light">
+          <tr><th>Student</th><th>Course</th><th>Attended</th><th>Attendance</th></tr>
+        </thead>
+        <tbody>
+          {% for t in at_risk %}
+          <tr>
+            <td>{{ t.student.name }}</td>
+            <td>{{ t.course.name }}</td>
+            <td>{{ t.att_class }}/{{ t.total_class }}</td>
+            <td><span class="erp-badge erp-badge-danger">{{ t.attendance }}%</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="row">
 
