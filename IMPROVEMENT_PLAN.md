@@ -223,5 +223,164 @@ Four options, cheapest to most impressive:
 
 ---
 
-## Next steps
-Mark up this file — what to keep, drop, reprioritize, or add — and send it back. Once we agree on the list, we'll turn the selected items into a concrete implementation plan before any code changes.
+## 6. Home / Dashboard Pages (Post-Login, Role-Specific)
+
+After successful login, each role sees their own dashboard. Currently they exist but are minimal. Let's redesign them to be the "welcome center" — at a glance, students/teachers/admins see their key metrics, quick actions, and announcements.
+
+### 6.1 Student Home (`/`)
+
+**Current state:**
+- 4 feature cards (Attendance, Marks, Timetable, Fees) + latest 3 notices
+- No stats, no profile completeness indicator, no quick-access sidebar
+
+**Proposed redesign:**
+
+**Top section: Welcome + Quick Stats**
+```
+╔════════════════════════════════════════════════════╗
+║  Welcome, Aarav Patel!                             ║
+║  Computer Science · Semester 5 (VTU)              ║
+║                                                    ║
+║  [Attendance: 87%]  [GPA: 3.8]  [Fees: ₹2500 due] ║
+╚════════════════════════════════════════════════════╝
+```
+- Pull real data from `Student.class_id`, `AttendanceTotal` averages, `Fee` balance, grades
+- Use color-coded badges: green (healthy), orange (warning), red (urgent)
+  - Attendance <75% → red
+  - Fees due > 0 → red
+  - GPA based on marks
+
+**Middle section: Quick Action Cards (2x2 grid on desktop, stack on mobile)**
+| Card | Icon | Action | Goes to |
+|---|---|---|---|
+| Attendance | 📋 | View my attendance % | `/student/<usn>/attendance/` |
+| Marks | 📊 | Check marks | `/student/<usn>/marks_list/` |
+| Timetable | 🕐 | My class schedule | `/student/<class>/timetable/` |
+| Fees | 💳 | Pay fees | `/student/<usn>/fees/` |
+
+Each card shows a small metric inline (e.g., "Attended 87 / 100 classes").
+
+**Bottom section: Latest Notices (Inbox-style)**
+- Notices tagged "All" or "Students"
+- Show 5 most recent, each with: title, date, snippet (truncated to 100 chars), "Read more" link
+- A "View all" button goes to `/notices/`
+- Empty state: "No new notices"
+
+**New data to fetch for this page:**
+- Student's current attendance % (query `AttendanceTotal`)
+- Latest semester exam marks (query `Marks`, filter by category="SEE" or recent)
+- Fee balance (query `Fee`, sum unpaid amounts)
+- Fee due date (next unpaid fee's `due_date`)
+- Notices for this role
+
+---
+
+### 6.2 Teacher Home (`/`)
+
+**Current state:**
+- Same 4 feature cards (Attendance, Marks, Timetable, Reports) + notices
+- No info about which classes they teach, no workload snapshot
+
+**Proposed redesign:**
+
+**Top section: Welcome + Workload Snapshot**
+```
+╔════════════════════════════════════════════════════╗
+║  Welcome, Dr. Ravi Shankar!                        ║
+║  Electronics & Communication Department            ║
+║                                                    ║
+║  [Classes: 3]  [Students: 87]  [Pending Marks: 2] ║
+╚════════════════════════════════════════════════════╝
+```
+- `Classes`: count of `Assign` records for this teacher
+- `Students`: sum of student count across assigned classes
+- `Pending Marks`: count of `MarksClass` records with `is_submitted=False`
+
+**Middle section: This Semester's Classes (Table or Cards)**
+| Class | Students | Next Session | Pending marks? |
+|---|---|---|---|
+| CS5A | 45 | 15 Aug, 2:15 PM | ❌ No |
+| CS5B | 42 | 15 Aug, 3:15 PM | ⚠️ Yes |
+| ... | | | |
+
+- Each row links to the attendance/marks entry page for that class
+- Red highlight on rows with pending marks → visual "to-do"
+
+**Bottom section: Latest Notices + Announcements**
+- Same as student (notices filtered for "All" or "Teachers")
+
+**New data to fetch:**
+- Classes assigned to this teacher (query `Assign`)
+- Student count per class (query `Assign.class_id.student_set.count()`)
+- Next scheduled session for each class (query `AttendanceClass`, order by `date` ASC, filter by future)
+- Pending marks batches (query `MarksClass`, filter by `is_submitted=False`)
+
+---
+
+### 6.3 Admin Home (`/`)
+
+**Current state:**
+- Counts (students, teachers, departments)
+- Quick links to Django admin, add-student, add-teacher
+
+**Proposed redesign:**
+
+**Top section: System Overview**
+```
+╔════════════════════════════════════════════════════╗
+║  College ERP Dashboard                             ║
+║  System is healthy • Last updated 2 mins ago       ║
+║                                                    ║
+║  [Students: 450]  [Teachers: 28]  [Depts: 4]      ║
+║  [Pending notices: 2]  [Fee issues: 12]           ║
+╚════════════════════════════════════════════════════╝
+```
+
+**Middle section: At-a-Glance Metrics (4-column grid)**
+| Metric | Value | Trend |
+|---|---|---|
+| Avg Attendance | 82% | ↑ 3% (vs. last month) |
+| Students at risk (attendance <75%) | 47 | ↑ 5 |
+| Fees pending | ₹85,000 | ↑ ₹15,000 |
+| Courses offered | 24 | — |
+
+**Middle-lower section: Admin Tasks (Pinned to-do list)**
+- [ ] Add student (quick-link form)
+- [ ] Add teacher (quick-link form)
+- [ ] Review support requests (shows unresolved count)
+- [ ] Manage notices (shows draft vs. published)
+- [ ] Fee collection report (drill-down to see by department/class)
+
+**Bottom section: Recent Activity Log**
+- Last 10 actions system-wide: who logged in, who added a student, who submitted marks, etc. (ties into audit trail from Tier 3)
+- Each line: timestamp, actor (teacher/admin name), action, target (class/student/course)
+
+**New data to fetch:**
+- Student/teacher/department counts (straightforward queries)
+- Average attendance across all students
+- Students with attendance <75% (query filter)
+- Total fees due (sum of `Fee.balance`)
+- Support requests unresolved (count `SupportRequest` where `status != "Resolved"`)
+- Recent activity/audit log (if implemented; otherwise placeholder)
+
+---
+
+### 6.4 Mobile Responsiveness & Accessibility
+
+All three dashboards should:
+- Stack to single column on phones (<640px)
+- Use readable font sizes (base 16px, scale up for headings)
+- Have sufficient color contrast (WCAG AA minimum)
+- Be keyboard-navigable (tab order, focus outlines)
+- Use semantic HTML (`<main>`, `<section>`, `<article>`)
+
+---
+
+## Next steps (PAUSED — awaiting your review)
+
+**Login page (§5)** + **dashboards (§6)** specs are now complete. Before we code anything:
+1. Review both — does the flow/layout make sense?
+2. Any metrics missing, extra, or should be different?
+3. Approve the approach, then we start building code.
+
+Mark up this file with your feedback, then send it back.
