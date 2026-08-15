@@ -947,6 +947,103 @@ Next:
 
 ---
 
+### 7.4.x Timetable Module — Full Feature Set
+
+**How it works today:** `timetable()` builds a 6×12 matrix — column 0 is the day label, columns 4 and 8 are blank break columns, and the remaining 9 columns map to the 9 entries in `time_slots`. The counter `t` is deliberately not incremented on skipped columns, so the mapping does line up. It works, but it's held together by magic numbers.
+
+#### Phase A — Responsive views
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| TT1 | **Mobile "today" view** | Below 768px the 12-column grid is unusable. Show today's sessions as a vertical list instead — this is what a student actually opens between classes | ✅ |
+| TT2 | **"Right now" indicator** | Highlight the current period and show "22 min remaining", plus "Next: OS at 12:40". Needs only the current time compared against `time_slots` | ✅ |
+| TT3 | **Tablet day-selector** | Mon–Sat pills across the top, selected day's schedule below | ✅ |
+| TT4 | **Today's column highlighted on desktop** | Keep the weekly grid, tint the current day and current period | ✅ |
+| TT5 | **Free-period gaps shown explicitly** | Empty slots currently render as blank cells that read as a rendering fault. Label them "Free" | ✅ |
+| TT6 | **Show more than a course code** | The student grid stores only `a.assign.course_id`, so the cell shows a bare code like `CS502`. Show course name + teacher on hover/tap — both are one join away via `assign` | ✅ |
+| TT7 | **Room / location** | There is no room field anywhere in the schema. Genuinely useful, needs a small migration | ❌ `Assign.room` or `AssignTime.room` |
+| TT8 | **Export / subscribe** | Download as PDF, or emit an `.ics` feed so the timetable lands in the student's phone calendar. The `.ics` option is a small amount of code for a disproportionately impressive result | ✅ |
+| TT9 | **Next-class notification** | Browser/push reminder 10 minutes before each session | ⚠️ |
+| TT10 | **Week navigation** | Previous/next week, so extra classes and cancellations are visible in context | ⚠️ needs merging `AttendanceClass` dates into the view |
+
+#### Phase B — Correctness & performance
+
+| # | Issue | Detail |
+|---|---|---|
+| TT11 | **57 queries to render an empty timetable — measured** | The view calls `asst.get(period=..., day=...)` inside a 6×9 nested loop — **54 individual queries**, one per cell, plus overhead. I measured **57 queries on a class with zero `AssignTime` rows**: every cell misses, raises `DoesNotExist`, and is swallowed. Exception-driven control flow as the normal path. Fix: fetch all `AssignTime` rows for the class in **one** query and index them by `(day, period)` in a dict. 57 → 2 |
+| TT12 | **Unhandled `MultipleObjectsReturned` → 500** | `AssignTime` has **no uniqueness constraint** (verified: `unique_together == []`, `constraints == []`), so nothing stops two courses being scheduled for the same class, day and period. When that happens `asst.get()` raises `MultipleObjectsReturned` — and the `except` clause catches only `DoesNotExist`. The exception propagates and the timetable page **500s for every student in that class**, with no clue as to why. This is the concrete failure behind the "timetable clash detection" item in Tier 3 (#15), and it's a data-integrity bug, not just a missing feature. Fix: add `unique_together = (('assign', 'day', 'period'),)` plus a clash check at assignment time |
+| TT13 | **Teacher timetable has the same two bugs** | `t_timetable()` is the same loop with the same `.get()` and the same narrow `except`. A double-booked teacher — which nothing prevents — 500s their own timetable page |
+| TT14 | **Hard-coded 12 columns and break positions** | `range(12)` with `j == 4` and `j == 8` skipped assumes exactly 9 periods and exactly 2 breaks in fixed positions. Adding a period or moving a break silently misaligns every cell. Derive the layout from `time_slots` instead of hard-coding it |
+| TT15 | **`t_timetable` initialises its matrix to `True`** | `[[True for i in range(12)] ...]` — free slots render as the literal string `True` unless the template guards against it, where the student version uses `''`. Two implementations of the same grid that don't agree |
+| TT16 | **No ownership check** | `timetable(request, class_id)` is `@login_required()` only, so any authenticated user can view any class's timetable by editing the URL. Low severity — timetables aren't confidential — but it's the same missing-authorization pattern as TA-S1/TA-S2 and should be fixed in the same pass |
+
+#### Recommended order
+
+1. **TT12** — add the uniqueness constraint and catch the exception; a 500 on a core page is the priority
+2. **TT11** — one query instead of 54, while rewriting the loop anyway
+3. **TT14, TT15** — derive the grid from `time_slots`, unify the student and teacher implementations
+4. **TT1, TT2, TT4, TT5** — the responsive work: mobile today-view, "right now", highlighting, free slots
+5. **TT6, TT8** — richer cells and the `.ics` export
+6. **TT7** — room field, if a migration is acceptable
+
+---
+
+### 7.5.x Notice Board Module — Full Feature Set
+
+**Current state:** `Notice` has exactly six fields — `id`, `title`, `message`, `audience`, `posted_by`, `created_at` (verified). The list view filters by audience and returns **every** matching notice, unpaginated. Everything the redesign proposes is genuinely new.
+
+**Worth noting:** `add_notice` *does* check `is_superuser or is_teacher` before allowing a post — one of the few views in the project with a real role check. Keep that pattern and apply it elsewhere.
+
+#### Phase A — Reading experience (student/teacher)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| NB1 | **Search** | Free-text over title and body — `icontains` to start; Postgres full-text search if it needs to scale | ✅ |
+| NB2 | **Date filters** | This week / This month / All | ✅ `created_at` |
+| NB3 | **Pagination** | The view currently returns every notice for the audience with no limit. Fine at 1 notice, breaks at 500 | ✅ |
+| NB4 | **Unread badge + mark-as-read** | Per-user read state. A `readers` M2M is the simple version; a through-model with `read_at` is barely more work and gives you "read 2 days ago" and read counts | ❌ `NoticeRead` (or `readers` M2M) |
+| NB5 | **Category tags** | Exam / Fee / Event / Administrative / Holiday, with colour coding and filtering | ⚠️ `Notice.category` |
+| NB6 | **Pinned notices** | Important announcements stick to the top regardless of date | ⚠️ `Notice.pinned` |
+| NB7 | **Snippet + detail page** | Truncate to ~120 characters in the list, full text on its own page. There is no per-notice URL today — every notice is dumped in full into one list | ✅ |
+| NB8 | **Attachments** | PDFs, circulars, exam schedules — what a real college notice board is mostly made of | ❌ needs `FileField` + media storage |
+| NB9 | **Empty state** | "No notices yet" instead of a blank page | ✅ |
+
+#### Phase B — Authoring (teacher/admin)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| NB10 | **Draft / publish workflow** | Write now, publish later. Students only see published notices | ⚠️ `is_draft` + `published_at` |
+| NB11 | **Scheduled publishing** | Set a future `publish_at`; a periodic task (or a filter on read) makes it live | ⚠️ |
+| NB12 | **Expiry** | Auto-hide after a date — a notice board that only accumulates becomes unusable | ⚠️ `expires_at` |
+| NB13 | **Edit / delete** | Neither exists today. A notice, once posted, is permanent from the UI | ✅ views only |
+| NB14 | **Narrower targeting** | Audience is only All / Students / Teachers. Real use needs per-class, per-department, per-semester targeting | ⚠️ |
+| NB15 | **Rich text** | Bold, lists, links — a plain `TextField` renders as one undifferentiated block. Must sanitise on output; do not trust stored HTML | ⚠️ |
+| NB16 | **Read receipts for the author** | "Seen by 342 of 450" — falls out of NB4 for free | ❌ (with NB4) |
+| NB17 | **Email/push on publish** | Notify the target audience; reuses the SMTP setup from §5.1 | ⚠️ |
+
+#### Phase C — Correctness & security
+
+| # | Issue | Detail |
+|---|---|---|
+| NB18 | **Unvalidated POST in `add_notice`** | `request.POST['title'] / ['message'] / ['audience']` are read directly — a missing field raises `KeyError` → 500, and `audience` is never checked against `notice_audience_choice`, so an arbitrary string can be stored and the notice becomes invisible to every audience filter. Same root cause as MK25 and TA-C3: use a `ModelForm` |
+| NB19 | **No length limit on message** | `TextField` with no cap; a paste-bomb becomes everyone's homepage |
+| NB20 | **XSS risk once rich text lands (NB15)** | Django auto-escapes today, so this is safe **only while notices remain plain text**. The moment `|safe` or a rich-text editor is introduced without sanitisation (bleach or equivalent), any teacher account can inject script into every student's page. Worth stating explicitly in the spec so it isn't discovered the hard way |
+| NB21 | **No ordering guarantee on the list** | `Notice.Meta.ordering = ['-created_at']` is set, so this one is actually fine — noted here only because the same assumption is broken in `Marks` (MK23) |
+| NB22 | **Teachers can post to "All"** | Any teacher can address the entire institution, including all staff. Probably should be admin-only, or at least flagged | ✅ policy decision |
+
+#### Recommended order
+
+1. **NB18** — validation, alongside the forms work in the other modules
+2. **NB3, NB7, NB9** — pagination, detail page, empty state: all pure view/template work
+3. **NB1, NB2** — search and date filters
+4. **NB5, NB6, NB10** — one migration adds `category`, `pinned`, `is_draft`, `published_at` together
+5. **NB4, NB16** — read tracking and read receipts (one model, two features)
+6. **NB13, NB12** — edit/delete and expiry
+7. **NB15 + NB20 together** — never ship rich text without sanitisation in the same change
+8. **NB8, NB17** — attachments and notifications
+
+---
+
 ### 7.5 Notice Board Redesign
 
 **Current state:**
