@@ -1110,6 +1110,82 @@ Published (15)
 
 ---
 
+### 7.6.x Fees Module — Full Feature Set (gap G1)
+
+**Current state.** `Fee` has eight fields — `id`, `student`, `fee_type`, `description`, `amount`, `paid_amount`, `due_date`, `created_at` (verified) — plus `balance` and `status` properties. Five views: student list + Excel export, staff list with search, add, and edit (which only edits `paid_amount`).
+
+**The central design problem:** `paid_amount` is a single running total that gets **overwritten** on every payment. There is no record of when money arrived, how much came in each time, who recorded it, or how it was paid. Everything below in Phase A follows from fixing that one thing.
+
+**Credit where due:** unlike the teacher attendance views, the fees views *do* carry real authorization — `fees`/`fees_export` allow only the owning student or a superuser, and `t_fees`/`add_fee`/`edit_fee` require teacher or superuser. `t_fees` also already uses `select_related`, so its list is 6 queries, not N+1. This module is the best-behaved in the project; the gaps are product and validation, not access control.
+
+#### Phase A — Payment history (the foundation)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| FE1 | **`FeeTransaction` model** | One `Fee` → many transactions: `amount`, `paid_on`, `mode`, `reference`, `received_by`, `note`, `receipt_no`. `Fee.paid_amount` becomes a derived `Sum` instead of a stored value that gets clobbered. This single change unlocks FE2–FE6 and fixes FE18 | ❌ new model |
+| FE2 | **Payment history on the student page** | "₹5,000 on 12 Aug via UPI · ₹5,000 on 3 Sep via cash" — currently impossible to display because the data was never kept | ❌ (with FE1) |
+| FE3 | **Receipts** | Sequential receipt number per payment, downloadable PDF with college header. `reportlab` is installed and still unused — this is its most natural use in the whole project | ❌ (with FE1) |
+| FE4 | **Payment mode** | Cash / UPI / Card / Cheque / Bank transfer, plus a reference number for reconciliation | ❌ (with FE1) |
+| FE5 | **Who recorded it** | `received_by` FK to `User` — accountability for cash handling, and the audit trail an interviewer will ask about | ❌ (with FE1) |
+| FE6 | **Reversal / correction** | Wrong entry gets a compensating reversal transaction, never a silent edit — how financial records are actually kept | ❌ (with FE1) |
+
+#### Phase B — Student-facing
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| FE7 | **Due countdown + urgency** | "Tuition Fee ₹12,000 — due in 6 days" ramping to red once overdue. Same component as B5 on the dashboard | ✅ `due_date` |
+| FE8 | **Overdue banner** | Persistent warning while anything is past due | ✅ |
+| FE9 | **Fee summary by type** | Tuition / Exam / Hostel / Library totals rather than one flat list | ✅ |
+| FE10 | **Download receipt** | Per payment (needs FE1/FE3) | ❌ |
+| FE11 | **Payment instructions panel** | Bank details, UPI QR, office hours — what a student actually needs next after seeing a balance | ⚠️ config |
+| FE12 | **Online payment (mock gateway)** | A simulated Razorpay/Stripe checkout flow: order creation, callback handling, idempotent confirmation, failure paths. Clearly labelled as a demo — **no real credentials, no real money**. Payment-flow correctness (idempotency, webhook replay, partial failure) is a strong senior-level talking point | ❌ |
+| FE13 | **Better Excel export** | Existing export is decent — add totals row, date of export, and the transaction history once FE1 lands | ✅ |
+
+#### Phase C — Staff / admin
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| FE14 | **Bulk fee assignment** | Assign "Semester 5 Exam Fee ₹2,000" to an entire class or department in one action, rather than adding it student by student. This is the most obviously missing staff feature | ✅ views only |
+| FE15 | **Defaulters report** | Overdue + balance > 0, sorted by amount, filterable by class/department, exportable. Same as D3 on the admin dashboard | ✅ |
+| FE16 | **Collection dashboard** | Collected vs. outstanding, by department, class and fee type, with a trend over time | ✅ |
+| FE17 | **Pagination + filters on `/fees/`** | The staff list currently returns **every fee record in the institution** unpaginated. The query itself is efficient (6 queries thanks to `select_related`) — the problem is page size, not query count. Add pagination plus filters for status, class, fee type and date range | ✅ |
+| FE18 | **Record-payment form instead of edit-total** | Today "recording a payment" means overwriting `paid_amount` with a new total, so staff must do the arithmetic themselves and any mistake is unrecoverable. Replace with "add a payment of ₹X" | ❌ (with FE1) |
+| FE19 | **Waivers, scholarships, discounts** | A concession is not a payment and shouldn't be recorded as one — it needs its own type so reporting can separate "collected" from "waived" | ❌ |
+| FE20 | **Installment plans** | Split a fee into scheduled instalments with their own due dates | ❌ |
+| FE21 | **Late fee / penalty rules** | Auto-add a penalty after the due date, with a configurable rule | ❌ |
+| FE22 | **Payment reminders** | Email N days before due and on overdue; reuses the SMTP work from §5.1 | ⚠️ |
+| FE23 | **Academic year / semester tagging** | Fees currently accumulate forever with no period. Without this, "outstanding" grows across a student's whole degree and no year-wise report is possible | ⚠️ `Fee.academic_year` / `semester` |
+
+#### Phase D — Validation & correctness (all verified by running the code)
+
+| # | Issue | Detail |
+|---|---|---|
+| FE24 | **Overpayment accepted silently** | Verified: a fee of **₹10,000 accepted a `paid_amount` of ₹99,999**, producing `balance = -₹89,999` with status **"Paid"**. `edit_fee` writes `request.POST['paid_amount']` straight onto the model with no bound check, so a typo in the payments desk becomes a negative balance in the ledger |
+| FE25 | **Negative amounts accepted** | Verified: `amount = -5000` saves cleanly — a fee that owes negative money. Likewise `paid_amount = -500` saved against a ₹1,000 fee gives `balance = ₹1,500`, i.e. a balance larger than the fee itself. Neither field has a `MinValueValidator`, and raw `.save()` skips validators anyway (same root cause as MK25) |
+| FE26 | **Zero-amount fee is permanently "Unpaid"** | The `status` property checks `paid_amount <= 0` **before** `paid_amount >= amount`, so a fully-waived ₹0 fee reports "Unpaid" forever and can never reach "Paid". Verified. Reorder the checks and handle the zero case explicitly |
+| FE27 | **No validation on `add_fee`** | `fee_type` is never checked against `fee_type_choice`, so an arbitrary string can be stored; `amount` and `due_date` are raw strings from POST, so bad input raises an unhandled exception → 500. A `ModelForm` fixes all of it — the same fix already needed in MK25, TA-C3 and NB18 |
+| FE28 | **Lost update on concurrent payments** | `edit_fee` does read-modify-write on `paid_amount` with no locking. Two staff recording payments for the same student at the same time: last write wins, one payment vanishes. FE1 removes this class of bug entirely, since transactions are inserts rather than overwrites |
+| FE29 | **No audit trail** | Nothing records who created a fee or who changed `paid_amount`. For money, that's the gap a reviewer will go straight to — and it's the same gap as MK19 (marks) and TA-S7 (attendance) |
+| FE30 | **Totals computed in Python** | `fees()` does `sum(f.amount for f in fee_list)` over the queryset instead of `aggregate(Sum(...))`. Harmless at demo scale, wrong habit at real scale |
+| FE31 | **Teacher can list fees but not open one** | `t_fees` allows teachers, but `fees(stud_id)` allows only the student or a superuser — so a teacher sees fee rows in the list and gets redirected to `/` when clicking through. Decide the policy and make the two views agree |
+| FE32 | **No tests** | Balance/status logic plus the transaction sum are pure functions over model data — ideal first unit tests, including the boundaries proven broken above (overpayment, zero amount, negative values) |
+
+#### Recommended order
+
+1. **FE24–FE27** — validation and the status-logic bug. This is money; wrong numbers here are worse than a missing feature
+2. **FE1** — introduce `FeeTransaction` and make `paid_amount` derived. This is the structural change everything else depends on, and it retires FE28 as a side effect
+3. **FE18, FE2, FE5** — record-a-payment form, visible history, accountability
+4. **FE3, FE10** — receipts (finally puts `reportlab` to work)
+5. **FE14, FE17, FE15** — bulk assignment, pagination/filters, defaulters report
+6. **FE7, FE8, FE9** — the student-facing polish
+7. **FE16, FE22, FE23** — collection dashboard, reminders, year tagging
+8. **FE12** — mock payment gateway, once the ledger underneath it is trustworthy
+9. **FE19–FE21** — waivers, instalments, penalties
+
+**Cross-module note:** FE1's transaction-log pattern is the same shape as the audit models needed for MK19 (marks) and TA-S7 (attendance). Design the audit/ledger approach once and reuse it across all three.
+
+---
+
 ## 8. Coverage Audit — what still has no spec
 
 Every view in `info/views.py` (33 total), checked against what this document actually specs out.
@@ -1125,12 +1201,13 @@ Every view in `info/views.py` (33 total), checked against what this document act
 | Attendance — teacher | `t_student`, `t_class_date`, `t_attendance`, `confirm`, `edit_att`, `change_att`, `cancel_class`, `t_attendance_detail`, `t_extra_class`, `e_confirm` | §7.3.x (TA1–TA21) |
 | Timetable | `timetable`, `t_timetable` | §7.4.x (TT1–TT16) |
 | Notice board | `notices`, `add_notice` | §7.5.x (NB1–NB22) |
+| Fees | `fees`, `fees_export`, `t_fees`, `add_fee`, `edit_fee` | §7.6.x (FE1–FE32) |
 
 ### ❌ Not yet specced — remaining gaps
 
 | # | Module | Views | Why it matters |
 |---|---|---|---|
-| **G1** | **Fees — whole module** | `fees`, `fees_export`, `t_fees`, `add_fee`, `edit_fee` | **Biggest gap.** Five views, zero spec. It's also the newest module and the one with the most obvious product depth still missing: `Fee.paid_amount` is a single running total with no transaction history, so there are no receipts, no partial-payment log, and no record of *when* money arrived (already noted as Tier 2 #10). Worth a full §7.6 |
+| ~~G1~~ | ~~Fees~~ | — | ✅ **Now specced — see §7.6.x (FE1–FE32)** |
 | **G2** | **Marks entry — teacher side** | `t_marks_list`, `t_marks_entry`, `marks_confirm`, `edit_marks`, `student_marks` | §7.2 specs the *student's* marks view. The teacher's entry flow only appears via MK25 (no validation). It needs the same treatment §7.3 gave teacher attendance — including the same authorization audit, since `marks_confirm` and `edit_marks` are exposed exactly like the teacher attendance views |
 | **G3** | **Class report** | `t_report` | Unspecced, and it has a crash path: `StudentCourse.objects.get(student=stud, course=ass.course)` runs inside a loop with **no `try/except`**, unlike the equivalent code in `marks_list`. Any student missing a `StudentCourse` row 500s the whole class report. It's also N+1 — one query per student |
 | **G4** | **Free-teacher finder** | `free_teachers` | Two defects found while auditing: (a) `Teacher.objects.filter(assign__class_id__id=...)` joins through `Assign` with **no `.distinct()`**, so a teacher who takes two courses for the same class appears twice in the list; (b) it queries `AssignTime` once per teacher — N+1. Also a scope question: it only considers teachers *already assigned to this class*, so it finds "teachers of this class who are free", not "free teachers" as the page title claims |
@@ -1145,7 +1222,7 @@ Every view in `info/views.py` (33 total), checked against what this document act
 
 ### Suggested order for filling the gaps
 
-1. **G1 (Fees)** — a whole module with real product depth, and the one a reviewer is most likely to click into after the dashboard
+1. ~~G1 (Fees)~~ — ✅ done, §7.6.x
 2. **G2 (Teacher marks entry)** — completes the marks story and shares the authorization fixes with §7.3
 3. **G3, G4** — small pages, real bugs, quick wins
 4. **G5, G10** — account lifecycle: creation, first-login password change, self-service
