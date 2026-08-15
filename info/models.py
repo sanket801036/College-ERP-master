@@ -625,3 +625,67 @@ post_save.connect(create_marks, sender=Assign)
 post_save.connect(create_marks_class, sender=Assign)
 post_save.connect(create_attendance, sender=AssignTime)
 post_delete.connect(delete_marks, sender=Assign)
+
+
+audit_action_choice = (
+    ('attendance.marked', 'Attendance marked'),
+    ('attendance.changed', 'Attendance changed'),
+    ('attendance.cancelled', 'Class cancelled'),
+    ('marks.entered', 'Marks entered'),
+    ('marks.changed', 'Marks changed'),
+    ('fee.payment', 'Payment recorded'),
+)
+
+
+class AuditLog(models.Model):
+    """Who changed a mark, an attendance record or a fee, when, and from what.
+
+    None of these kept any history. A teacher could flip an attendance record or
+    overwrite a mark and nothing recorded the previous value, the person, or the
+    time - which for grades and money is the first thing anyone asks about.
+
+    Deliberately append-only and denormalised: `student_name` and `summary` are
+    stored rather than joined, so an entry still reads correctly after the row
+    it describes has been edited or deleted.
+    """
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                              blank=True, related_name='audit_entries')
+    actor_name = models.CharField(max_length=150, blank=True)
+    action = models.CharField(max_length=40, choices=audit_action_choice)
+    target_type = models.CharField(max_length=40)
+    target_id = models.CharField(max_length=100, blank=True)
+    student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True,
+                                blank=True, related_name='audit_entries')
+    student_name = models.CharField(max_length=200, blank=True)
+    summary = models.CharField(max_length=255)
+    changes = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['student', '-created_at']),
+        ]
+
+    def __str__(self):
+        return '%s: %s' % (self.get_action_display(), self.summary)
+
+    @classmethod
+    def record(cls, actor, action, target, summary, student=None, changes=None):
+        return cls.objects.create(
+            actor=actor if actor and actor.is_authenticated else None,
+            actor_name=getattr(actor, 'username', '') or '',
+            action=action,
+            target_type=type(target).__name__ if target is not None else '',
+            target_id=str(getattr(target, 'pk', '') or ''),
+            student=student,
+            student_name=student.name if student else '',
+            summary=summary,
+            changes=changes or {},
+        )
+
+    @classmethod
+    def record_many(cls, entries):
+        """Bulk variant for batch submissions."""
+        return cls.objects.bulk_create(entries)

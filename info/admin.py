@@ -5,7 +5,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.http import HttpResponseRedirect
 from django.urls import path
 
-from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AssignTime, AttendanceClass, FeeTransaction
+from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AssignTime, AttendanceClass, FeeTransaction, AuditLog
 from .models import StudentCourse, Marks, User, AttendanceRange, Fee, Notice
 
 # Register your models here.
@@ -161,6 +161,25 @@ class FeeTransactionAdmin(admin.ModelAdmin):
     ordering = ['-paid_on']
 
 
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'action', 'actor_name', 'student_name', 'summary')
+    list_filter = ('action', 'created_at')
+    search_fields = ('summary', 'actor_name', 'student_name')
+    date_hierarchy = 'created_at'
+    ordering = ['-created_at']
+
+    # Append-only: the point of the log is that it cannot be tidied up after
+    # the fact.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 class NoticeAdmin(admin.ModelAdmin):
     list_display = ('title', 'audience', 'posted_by', 'created_at')
     search_fields = ('title', 'message')
@@ -179,4 +198,5 @@ admin.site.register(StudentCourse, StudentCourseAdmin)
 admin.site.register(AttendanceClass, AttendanceClassAdmin)
 admin.site.register(Fee, FeeAdmin)
 admin.site.register(FeeTransaction, FeeTransactionAdmin)
+admin.site.register(AuditLog, AuditLogAdmin)
 admin.site.register(Notice, NoticeAdmin)

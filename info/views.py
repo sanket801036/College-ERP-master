@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
-    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice
+    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.db import transaction
@@ -37,6 +37,7 @@ def index(request):
             'student_count': Student.objects.count(),
             'teacher_count': Teacher.objects.count(),
             'dept_count': Dept.objects.count(),
+            'recent_activity': AuditLog.objects.all()[:10],
         }
         return render(request, 'info/admin_page.html', context)
     return render(request, 'info/logout.html')
@@ -112,6 +113,9 @@ def cancel_class(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
     assc.status = 2
     assc.save()
+    AuditLog.record(
+        actor=request.user, action='attendance.cancelled', target=assc,
+        summary='Class cancelled: %s on %s' % (assc.assign.class_id, assc.date))
     return HttpResponseRedirect(reverse('t_class_date', args=(assc.assign_id,)))
 
 
@@ -158,15 +162,38 @@ def confirm(request, ass_c_id):
     # 500 the request half way through the class. Treat a missing value as
     # absent - the form always submits one, so this only catches malformed
     # posts - and record which ones were missing rather than failing silently.
+    resubmission = assc.status == 1
     with transaction.atomic():
+        previous = {a.student_id: a.status for a in
+                    Attendance.objects.filter(attendanceclass=assc)}
+        entries = []
         for s in cl.student_set.all():
+            present = request.POST.get(s.USN) == 'present'
             Attendance.objects.update_or_create(
                 course=cr, student=s, attendanceclass=assc,
-                defaults={
-                    'status': request.POST.get(s.USN) == 'present',
-                    'date': assc.date,
-                },
+                defaults={'status': present, 'date': assc.date},
             )
+            was = previous.get(s.USN)
+            # On a first submission there is nothing to compare against, so log
+            # the batch rather than a change per student.
+            if resubmission and was is not None and was != present:
+                entries.append(AuditLog(
+                    actor=request.user, actor_name=request.user.username,
+                    action='attendance.changed', target_type='Attendance',
+                    student=s, student_name=s.name,
+                    summary='%s on %s for %s' % (
+                        'Marked present' if present else 'Marked absent',
+                        assc.date, cr.id),
+                    changes={'status': {'from': was, 'to': present}},
+                ))
+        AuditLog.record_many(entries)
+
+        if not resubmission:
+            AuditLog.record(
+                actor=request.user, action='attendance.marked', target=assc,
+                summary='Attendance submitted for %s on %s'
+                        % (cl, assc.date))
+
         # Set once, after every student is written. This used to be assigned
         # while handling the first student, which sent everyone after them down
         # the "already submitted" branch.
@@ -195,8 +222,17 @@ def change_att(request, att_id):
     # POST now, and restricted to the teacher who takes that course.
     a = get_object_or_404(Attendance, id=att_id)
     assert_teaches(request, a.course_id, a.student)
+    was = a.status
     a.status = not a.status
     a.save()
+    AuditLog.record(
+        actor=request.user, action='attendance.changed', target=a,
+        student=a.student,
+        summary='%s on %s for %s' % (
+            'Marked present' if a.status else 'Marked absent',
+            a.date, a.course_id),
+        changes={'status': {'from': was, 'to': a.status}},
+    )
     return HttpResponseRedirect(reverse('t_attendance_detail', args=(a.student.USN, a.course_id)))
 
 
@@ -419,13 +455,37 @@ def marks_confirm(request, marks_c_id):
         return render(request, 'info/t_marks_entry.html',
                       _marks_entry_context(mc, students, form))
 
+    revision = mc.status
     with transaction.atomic():
+        entries = []
         for s in students:
             # get_or_create rather than get: a student without a StudentCourse
             # row used to raise DoesNotExist and take down the whole batch.
             sc, _ = StudentCourse.objects.get_or_create(course=cr, student=s)
-            sc.marks_set.update_or_create(
-                name=mc.name, defaults={'marks1': form.marks_for(s)})
+            scored = form.marks_for(s)
+            existing = sc.marks_set.filter(name=mc.name).first()
+            was = existing.marks1 if existing else None
+            sc.marks_set.update_or_create(name=mc.name,
+                                          defaults={'marks1': scored})
+            # Overwriting a grade with no record of the old value is the gap
+            # people ask about first.
+            if revision and was is not None and was != scored:
+                entries.append(AuditLog(
+                    actor=request.user, actor_name=request.user.username,
+                    action='marks.changed', target_type='Marks',
+                    student=s, student_name=s.name,
+                    summary='%s for %s changed from %s to %s'
+                            % (mc.name, cr.id, was, scored),
+                    changes={'marks1': {'from': was, 'to': scored}},
+                ))
+        AuditLog.record_many(entries)
+
+        if not revision:
+            AuditLog.record(
+                actor=request.user, action='marks.entered', target=mc,
+                summary='%s entered for %s (%d students)'
+                        % (mc.name, cl, len(students)))
+
         mc.status = True
         mc.save(update_fields=['status'])
 
@@ -617,6 +677,14 @@ def edit_fee(request, fee_id):
                 payment.received_by = request.user
                 payment.save()
                 fee.recalculate_paid()
+                AuditLog.record(
+                    actor=request.user, action='fee.payment', target=payment,
+                    student=fee.student,
+                    summary='%s of %s for %s (%s)'
+                            % (payment.receipt_no, payment.amount,
+                               fee.fee_type, payment.mode),
+                    changes={'paid_amount': {'to': str(fee.paid_amount)}},
+                )
             return redirect('edit_fee', fee_id=fee.id)
     else:
         form = FeeTransactionForm(fee=fee,
