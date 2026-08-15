@@ -311,6 +311,11 @@ class StudentCourse(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
 
+    # Populated lazily by get_cie/get_attendance, or in bulk by
+    # attach_attendance(), so a class listing does not query per row.
+    _cie_cache = None
+    _attendance_cache = None
+
     class Meta:
         unique_together = (('student', 'course'),)
         verbose_name_plural = 'Marks'
@@ -319,13 +324,49 @@ class StudentCourse(models.Model):
         return '%s : %s' % (self.student.name, self.course.shortname)
 
     def get_cie(self):
-        scored = {m.name: m.marks1 for m in self.marks_set.all()}
-        return math.ceil(sum(scored.get(name, 0) for name in CIE_COMPONENTS) / 2)
+        # Templates reference this twice per row (once to pick a colour, once
+        # to print it), so memoise rather than walking the marks each time.
+        if self._cie_cache is None:
+            scored = {m.name: m.marks1 for m in self.marks_set.all()}
+            self._cie_cache = math.ceil(
+                sum(scored.get(name, 0) for name in CIE_COMPONENTS) / 2)
+        return self._cie_cache
 
     def get_attendance(self):
-        total = AttendanceTotal.objects.filter(student=self.student,
-                                               course=self.course).first()
-        return total.attendance if total else 0
+        """Attendance percentage for this student on this course.
+
+        Views rendering a whole class should call attach_attendance() first;
+        otherwise this falls back to a query per row.
+        """
+        if self._attendance_cache is None:
+            total = AttendanceTotal.objects.filter(student=self.student,
+                                                   course=self.course).first()
+            self._attendance_cache = total.attendance if total else 0
+        return self._attendance_cache
+
+    @property
+    def marks_in_order(self):
+        """The six components in the order the marks table's headers list them.
+
+        The template used to iterate marks_set.all() straight into columns
+        headed Internals 1-3 / Events / SEE, but Marks has no Meta.ordering, so
+        a value could land under the wrong heading.
+        """
+        scored = {m.name: m for m in self.marks_set.all()}
+        return [scored.get(name) for name, _ in test_name]
+
+    @staticmethod
+    def attach_attendance(student_courses, course):
+        """Fill the attendance cache for a list of rows in one query."""
+        rows = list(student_courses)
+        totals = (AttendanceTotal.objects
+                  .filter(course=course,
+                          student__in=[sc.student_id for sc in rows])
+                  .with_counts())
+        by_student = {t.student_id: t.attendance for t in totals}
+        for sc in rows:
+            sc._attendance_cache = by_student.get(sc.student_id, 0)
+        return rows
 
 
 class Marks(models.Model):

@@ -26,8 +26,8 @@
                     <tr>
                         <td>{{ sc.course_id }}</td>
                         <td>{{sc.course.name}}</td>
-                        {% for m in sc.marks_set.all %}
-                            <td>{{ m.marks1 }}</td>
+                        {% for m in sc.marks_in_order %}
+                            <td>{{ m.marks1|default:"-" }}</td>
                         {% endfor %}
                     </tr>
                     {% empty %}

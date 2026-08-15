@@ -259,6 +259,9 @@ def t_report(request, assign_id):
                .filter(student__in=students, course=ass.course)
                .select_related('student', 'course')
                .prefetch_related('marks_set'))
+    # Otherwise each row looks up its own attendance, and the template asks for
+    # it twice - roughly five queries per student.
+    sc_list = StudentCourse.attach_attendance(sc_list, ass.course)
     return render(request, 'info/t_report.html', {'sc_list': sc_list})
 
 
@@ -335,22 +338,22 @@ def free_teachers(request, asst_id):
 
 @login_required()
 def marks_list(request, stud_id):
-    stud = Student.objects.get(USN=stud_id, )
-    ass_list = Assign.objects.filter(class_id_id=stud.class_id)
-    sc_list = []
-    for ass in ass_list:
-        try:
-            sc = StudentCourse.objects.get(student=stud, course=ass.course)
-        except StudentCourse.DoesNotExist:
-            sc = StudentCourse(student=stud, course=ass.course)
-            sc.save()
-            sc.marks_set.create(type='I', name='Internal test 1')
-            sc.marks_set.create(type='I', name='Internal test 2')
-            sc.marks_set.create(type='I', name='Internal test 3')
-            sc.marks_set.create(type='E', name='Event 1')
-            sc.marks_set.create(type='E', name='Event 2')
-            sc.marks_set.create(type='S', name='Semester End Exam')
-        sc_list.append(sc)
+    stud = get_object_or_404(Student, USN=stud_id)
+    courses = Course.objects.filter(assign__class_id=stud.class_id_id).distinct()
+
+    # The old fallback here passed type='I' to marks_set.create(), but Marks has
+    # no `type` field - it raised TypeError. It only ran when a StudentCourse
+    # row was missing, which the signals normally prevent, so the page worked by
+    # luck. bulk_create with ignore_conflicts covers the same gap without the
+    # per-course round trips.
+    StudentCourse.objects.bulk_create(
+        [StudentCourse(student=stud, course=c) for c in courses],
+        ignore_conflicts=True,
+    )
+    sc_list = (StudentCourse.objects
+               .filter(student=stud, course__in=courses)
+               .select_related('course')
+               .prefetch_related('marks_set'))
 
     return render(request, 'info/marks_list.html', {'sc_list': sc_list})
 
