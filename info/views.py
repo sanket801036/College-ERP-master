@@ -2,10 +2,11 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
     DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.db import transaction
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import PasswordChangeView
 from django.views.decorators.http import require_POST
 from django.contrib.auth import get_user_model
 from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
@@ -661,3 +662,19 @@ def add_notice(request):
         return redirect('notices')
 
     return render(request, 'info/add_notice.html')
+
+class ErpPasswordChangeView(PasswordChangeView):
+    """Django's password change, plus clearing the must-change flag.
+
+    Without this the middleware would keep redirecting a user who had just
+    picked a new password straight back to this page.
+    """
+    template_name = 'info/password_change.html'
+    success_url = reverse_lazy('password_change_done')
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        if self.request.user.must_change_password:
+            self.request.user.must_change_password = False
+            self.request.user.save(update_fields=['must_change_password'])
+        return response

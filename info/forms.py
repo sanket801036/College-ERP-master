@@ -62,6 +62,9 @@ class _PersonForm(forms.ModelForm):
             username=_unique_username(self.build_username()),
             email=self.cleaned_data['email'],
             password=password,
+            # The admin reads this off the screen and hands it over, so it is
+            # only good until the user signs in once.
+            must_change_password=True,
         )
         return user, password
 

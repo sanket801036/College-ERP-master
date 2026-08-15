@@ -56,6 +56,10 @@ test_name = (
 
 
 class User(AbstractUser):
+    # Set when an admin creates the account, cleared once the user picks their
+    # own password. See info.middleware.ForcePasswordChangeMiddleware.
+    must_change_password = models.BooleanField(default=False)
+
     @property
     def is_student(self):
         if hasattr(self, 'student'):
