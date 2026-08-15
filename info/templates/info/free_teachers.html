@@ -1,13 +1,23 @@
+{% extends 'info/base.html' %}
 {% load static %}
 
-<!-- Bootstrap core CSS-->
-<link href="{% static '/info/bootstrap/vendor/bootstrap/css/bootstrap.min.css' %}" rel="stylesheet">
+{% block title %}Free Teachers{% endblock %}
 
-<!-- Custom fonts for this template-->
-<link href="{% static '/info/bootstrap/vendor/fontawesome-free/css/all.min.css' %}" rel="stylesheet" type="text/css">
-    <h2 class="text-center">List Of Free Teachers</h2>
+{% block content %}
+
+<div class="card mb-3">
+  <div class="card-header"><i class="fas fa-user-check"></i><b>Free Teachers</b></div>
+  <div class="card-body">
     <ul class="list-group">
-        {% for t in ft_list %}
-            <li class="list-group-item list-group-item-success">{{ t }}</li>
-        {% endfor %}
+      {% for t in ft_list %}
+        <li class="list-group-item d-flex align-items-center">
+          <span class="erp-badge erp-badge-success mr-2">Free</span> {{ t }}
+        </li>
+      {% empty %}
+        <li class="list-group-item text-muted">No free teachers for this slot.</li>
+      {% endfor %}
     </ul>
+  </div>
+</div>
+
+{% endblock %}

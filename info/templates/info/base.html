@@ -38,30 +38,30 @@
 
       <a class="navbar-brand mr-1" href="{% url 'index' %}">CollegeERP</a>
 
-      <button class="btn btn-link btn-sm text-white order-1 order-sm-0" id="sidebarToggle" href="#">
-        <i class="fas fa-bars"></i>
-      </button>
-
       <!-- Navbar -->
         <div class="collapse navbar-collapse" id="navbarResponsive">
           <ul class="navbar-nav ml-auto align-items-center">
-            <li class="nav-item d-flex align-items-center">
-                {% if request.user.is_student %}
-                    <span class="erp-avatar">{{ request.user.student.name|first|upper }}</span>
-                    <a class="nav-link text-capitalize p-0">{{ request.user.student.name }}</a>
-                {% elif request.user.is_teacher %}
-                    <span class="erp-avatar">{{ request.user.teacher.name|first|upper }}</span>
-                    <a class="nav-link text-capitalize p-0">{{ request.user.teacher.name }}</a>
-                {% elif request.user.is_superuser %}
-                    <span class="erp-avatar">{{ request.user.username|first|upper }}</span>
-                    <a class="nav-link text-capitalize p-0">{{ request.user.username }}</a>
-                {% endif %}
-            </li>
             <li class="nav-item">
               <a class="nav-link" href="{% url 'notices' %}" title="Notices"><i class="fas fa-bell"></i></a>
             </li>
-            <li class="nav-item">
-                <a class="nav-link" href="#" data-toggle="modal" data-target="#logoutModal"><i class="fas fa-sign-out-alt"></i> Logout</a>
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle d-flex align-items-center pr-0" href="#" id="userMenu" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                {% if request.user.is_student %}
+                    <span class="erp-avatar">{{ request.user.student.name|first|upper }}</span>
+                    <span class="text-capitalize d-none d-sm-inline">{{ request.user.student.name }}</span>
+                {% elif request.user.is_teacher %}
+                    <span class="erp-avatar">{{ request.user.teacher.name|first|upper }}</span>
+                    <span class="text-capitalize d-none d-sm-inline">{{ request.user.teacher.name }}</span>
+                {% elif request.user.is_superuser %}
+                    <span class="erp-avatar">{{ request.user.username|first|upper }}</span>
+                    <span class="text-capitalize d-none d-sm-inline">{{ request.user.username }}</span>
+                {% endif %}
+              </a>
+              <div class="dropdown-menu dropdown-menu-right shadow-sm" aria-labelledby="userMenu">
+                <a class="dropdown-item" href="#" data-toggle="modal" data-target="#logoutModal">
+                  <i class="fas fa-sign-out-alt mr-2 text-muted"></i>Logout
+                </a>
+              </div>
             </li>
           </ul>
         </div>

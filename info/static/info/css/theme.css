@@ -49,6 +49,29 @@ body {
   font-weight: 500;
 }
 
+.navbar .dropdown-toggle::after {
+  margin-left: .5rem;
+  vertical-align: .1em;
+}
+
+.navbar .dropdown-menu {
+  border: 1px solid var(--erp-border);
+  border-radius: 10px;
+  padding: .4rem;
+  margin-top: .5rem;
+}
+
+.navbar .dropdown-item {
+  border-radius: 8px;
+  padding: .5rem .75rem;
+  font-weight: 500;
+}
+
+.navbar .dropdown-item:hover {
+  background: var(--erp-primary-light);
+  color: var(--erp-primary-dark);
+}
+
 .erp-avatar {
   width: 32px;
   height: 32px;
@@ -63,32 +86,49 @@ body {
   margin-right: .5rem;
 }
 
-/* ---------- Sidebar ---------- */
+/* ---------- Sidebar ----------
+   The vendored SB Admin 2 stylesheet collapses this into an icon-only rail
+   below 768px and fights any width we set with `!important`. We don't want
+   a collapsing rail at all, so every rule here matches or exceeds that
+   specificity+importance to force one consistent, always-labeled sidebar. */
 .sidebar {
+  width: 270px !important;
   background: var(--erp-surface);
   border-right: 1px solid var(--erp-border);
-  padding-top: 1rem;
+  padding-top: 1.25rem;
+  flex-shrink: 0;
 }
 
 .sidebar .nav-item {
   width: 100%;
 }
 
+.sidebar .nav-item .nav-link,
 .sidebar .nav-link {
+  width: auto !important;
   color: var(--erp-muted);
   font-weight: 500;
+  text-align: left !important;
   border-radius: 10px;
-  margin: 2px 10px;
-  padding: .65rem .9rem;
-  display: flex;
+  margin: 2px 12px;
+  padding: .7rem .9rem !important;
+  display: flex !important;
   align-items: center;
-  gap: .65rem;
+  gap: .7rem;
   transition: background .15s ease, color .15s ease;
+}
+
+.sidebar .nav-item .nav-link span,
+.sidebar .nav-link span {
+  display: inline !important;
+  font-size: .92rem !important;
+  white-space: nowrap;
 }
 
 .sidebar .nav-link i,
 .sidebar .nav-link .erp-icon {
   width: 18px;
+  flex-shrink: 0;
   text-align: center;
   color: var(--erp-primary);
 }
@@ -102,6 +142,10 @@ body {
   background: var(--erp-primary-light);
   color: var(--erp-primary-dark);
   font-weight: 700;
+}
+
+#wrapper #content-wrapper {
+  padding-left: 0 !important;
 }
 
 /* ---------- Cards ---------- */
