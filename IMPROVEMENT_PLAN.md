@@ -1314,6 +1314,86 @@ Two small pages, grouped because each is a single view with a handful of real de
 
 ---
 
+### 7.9.x Account Lifecycle — Add Student / Add Teacher / Self-Service (gaps G5, G10)
+
+Covers `add_student`, `add_teacher`, and the profile/self-service pages that don't exist yet.
+
+#### 🔴 The headline bug: adding a duplicate USN silently overwrites an existing student
+
+`Student.USN` and `Teacher.id` are both **primary keys**. When a model instance is saved with its primary key already set, Django attempts an `UPDATE` before falling back to `INSERT`. So:
+
+```python
+Student(user=user, USN=usn, class_id=..., name=..., sex=..., DOB=...).save()
+```
+
+If `usn` already belongs to an existing student, this does **not** raise `IntegrityError` — it **overwrites that student's record in place**: name, class, sex, date of birth, and the `user` foreign key all get replaced. The consequences:
+
+- The original student's record is destroyed, with no error and no warning — the admin sees a success redirect
+- Their account link is reassigned to the newly created `User`, so **they are locked out of their own account**
+- Their old `User` row is left orphaned
+- `Student.user` is `on_delete=CASCADE`, so if anyone later deletes that orphaned `User`, the student record, plus their `StudentCourse`, `Marks` and `Fee` rows, are all cascade-deleted
+
+**This was observed directly, not theorised** — it was triggered accidentally while probing the failure path of `add_student` on the dev database, which destroyed the test student's record and its dependent rows (since restored). `add_teacher` has the identical shape via `Teacher.id`.
+
+**Fix:** use `Student.objects.create(...)`, or check `Student.objects.filter(USN=usn).exists()` first and reject the submission with a form error, or set `force_insert=True`. A `ModelForm` with a `unique` check on the primary key handles it properly.
+
+#### Phase A — Fixing account creation
+
+| # | Issue | Detail |
+|---|---|---|
+| AC1 | **Duplicate PK silently overwrites** | As above. The single most destructive defect found in the project |
+| AC2 | **No transaction around the two saves** | `User.objects.create_user()` runs, then `Student(...).save()`. If the second fails, the `User` row persists as an orphan — an account that can log in, has a working password, matches no role, and lands on the logout template. Retrying the same form then fails on the duplicate username. Wrap both in `@transaction.atomic` |
+| AC3 | **Username collisions unhandled** | The username is `firstname + '_' + USN[-3:]` for students and `firstname + '_' + id` for teachers. Two students named Rahul whose USNs end in the same three digits collide → `IntegrityError` → 500 (and, thanks to AC2, an orphaned `User`). In any real intake this is a matter of when, not if |
+| AC4 | **No email is collected — this blocks §5.1 entirely** | `create_user()` is called with only `username` and `password`. Verified on the dev database: **2 of 3 accounts have an empty email**, and neither student nor teacher creation ever asks for one. The OTP password-reset flow in §5.1, the fee reminders in FE22, and the notice notifications in NB17 all have nowhere to send mail. **Collecting an email address is a prerequisite for those features, not an optional extra** |
+| AC5 | **Fragile name parsing** | `name.split(" ")[0]` breaks on a single-word name, a leading space, or an empty string — the last of which produces a username like `_001` |
+| AC6 | **Date parsing assumes ISO format** | `dob.replace("-","")[:4]` relies on the browser sending `YYYY-MM-DD`. Correct for `<input type="date">`, but silently produces a nonsense password for any other input path |
+| AC7 | **No validation anywhere** | Raw `request.POST[...]` throughout — missing field → `KeyError` → 500. Same root cause as MK25, TA-C3, NB18, FE27. `ModelForm` is the shared fix |
+| AC8 | **No bulk import** | Adding a 60-student intake means 60 manual form submissions. `openpyxl`/`pandas` are already dependencies (Tier 1 #8) |
+
+#### Phase B — Credential security
+
+| # | Issue | Detail |
+|---|---|---|
+| AC9 | **Both halves of the credential are derived from public data** | Username = first name + last 3 digits of USN. Password = first name + birth year. Every input is printed on a college ID card. Anyone who knows a classmate's name, USN and birth year can log in as them — no brute force required. Verified against the dev record: `Test Student`, USN `1CS20CS001`, DOB `2000-01-01` yields username `test_001`, password `test_2000` |
+| AC10 | **No forced password change on first login** | The generated password is permanent unless an admin intervenes. Fix: a `must_change_password` flag set at creation, and middleware that redirects to the change-password page until it's cleared |
+| AC11 | **Password is never shown to the admin** | The admin creating the account has no way to see or print the generated credential to hand over — they'd have to re-derive it from the documented formula. Show it once, at creation, then never again |
+| AC12 | **No password strength enforcement on the generated value** | `create_user` bypasses `AUTH_PASSWORD_VALIDATORS`, so `test_2000` is accepted even though it would fail Django's own similarity/common-password checks if entered through a form |
+| AC13 | **`DetailSerializer` exposes every Student field** | `fields = '__all__'` on the student API serializer returns `DOB` and everything else. Combined with a birth-year-derived password scheme, that is exactly the wrong field to expose. Use an explicit field list |
+
+#### Phase C — Self-service (G10 — none of this exists today)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| AC14 | **Change password** | Django's `PasswordChangeView` is built in and unused. The single most conspicuous omission — currently no user can ever change their own password | ✅ |
+| AC15 | **Profile page** | View own details; edit contact fields (phone, address, email) while keeping USN/class admin-only | ⚠️ needs contact fields |
+| AC16 | **Profile photo upload** | Also feeds TA6 (photos on the attendance roster) | ❌ `ImageField` + media config |
+| AC17 | **Email address management** | Add/verify an email — the prerequisite for AC4 on existing accounts | ⚠️ |
+| AC18 | **Session management** | "Signed in on 2 devices", with the ability to sign out elsewhere | ✅ |
+| AC19 | **Login history** | Last login time and location — a cheap, credible security feature | ⚠️ |
+
+#### Phase D — Admin-side improvements
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| AC20 | **Student/teacher directory with search** | There is a commented-out `student_search` URL in `info/urls.py` and no directory page anywhere (gap G11). Search by name, USN, class, department | ✅ |
+| AC21 | **Edit / deactivate an account** | Neither exists. Records can only be created, never corrected — except via Django admin, and except via the accidental-overwrite path in AC1 |
+| AC22 | **Soft delete / alumni status** | Deleting a `User` cascades away the student, their marks, attendance and fees. Graduating students need deactivation, not deletion |
+| AC23 | **Bulk credential export** | Generate a printable slip per student for distributing initial logins (pairs with AC10/AC11) |
+| AC24 | **Audit log on account changes** | Who created or modified an account, and when — the same audit pattern as FE29/MK19/TA-S7 |
+
+#### Recommended order
+
+1. **AC1** — the silent-overwrite bug. Data loss with no error message outranks everything else in this document
+2. **AC2, AC3** — transaction and username collisions (AC2 also prevents the orphan accounts that AC3 currently creates)
+3. **AC4** — collect an email address. §5.1's OTP flow, FE22 and NB17 are all blocked until this exists
+4. **AC9, AC10, AC11** — stop deriving passwords from public data; force a change on first login; show the credential once at creation
+5. **AC14** — change-password page (Django provides it; this is mostly wiring)
+6. **AC7** — `ModelForm` validation, shared with every other module
+7. **AC13** — tighten the API serializer
+8. **AC8, AC20, AC21, AC22** — bulk import, directory, edit/deactivate, soft delete
+
+---
+
 ## 8. Coverage Audit — what still has no spec
 
 Every view in `info/views.py` (33 total), checked against what this document actually specs out.
@@ -1333,6 +1413,7 @@ Every view in `info/views.py` (33 total), checked against what this document act
 | Marks entry — teacher | `t_marks_list`, `t_marks_entry`, `marks_confirm`, `edit_marks`, `student_marks` | §7.7.x (TM1–TM24) |
 | Class report | `t_report` | §7.8.1 (RP1–RP12) |
 | Free-teacher finder | `free_teachers` | §7.8.2 (FT1–FT11) |
+| Account lifecycle | `add_student`, `add_teacher`, + self-service (new) | §7.9.x (AC1–AC24) |
 
 ### ❌ Not yet specced — remaining gaps
 
@@ -1342,13 +1423,13 @@ Every view in `info/views.py` (33 total), checked against what this document act
 | ~~G2~~ | ~~Marks entry — teacher side~~ | — | ✅ **Now specced — see §7.7.x (TM1–TM24)** |
 | ~~G3~~ | ~~Class report~~ | — | ✅ **Now specced — see §7.8.1 (RP1–RP12)** |
 | ~~G4~~ | ~~Free-teacher finder~~ | — | ✅ **Now specced — see §7.8.2 (FT1–FT11)** |
-| **G5** | **Add student / add teacher** | `add_student`, `add_teacher` | Flagged in §3 (guessable generated passwords, no forced reset) but never specced as pages. Should cover: validation, duplicate USN/ID handling, forced password change on first login, and bulk import (Tier 1 #8) |
+| ~~G5~~ | ~~Add student / add teacher~~ | — | ✅ **Now specced — see §7.9.x (AC1–AC24)** |
 | **G6** | **Class & session management** | `t_clas`, `cancel_class`, `t_extra_class`, `e_confirm` | Partially covered by TA18–TA21, but the `t_clas` "choice" parameter (`1`=attendance, `2`=marks, `3`=reports as a bare integer in the URL) deserves its own look — it's an unlabelled magic number driving navigation |
 | **G7** | **REST API** | `apis/` — 4 endpoints | Described in §1, never specced. Student-only, read-only, unreachable from the UI, leaks raw exception strings to clients, and duplicates the `type='I'` crash bug from MK22. Needs: the same auth fixes, `drf-spectacular` docs (Tier 1 #7), and a decision on whether to expand it or remove it |
 | **G8** | **Django admin** | `/admin/` | The admin is currently the *only* way to manage Dept, Course, Class, Assign and AttendanceRange — i.e. all the setup data. No spec covers customising it (inlines, list filters, bulk actions, clash validation on `Assign`) |
 | **G9** | **Error pages** | — | No custom 404/500 templates (noted in §3). With `DEBUG=False` in production, users currently get Django's bare default pages |
-| **G10** | **Profile / self-service** | — | Doesn't exist at all: no password change, no profile edit, no photo upload (Tier 2 #13). Every user is stuck with their generated password forever |
-| **G11** | **Student directory / search** | — | There's a commented-out `student_search` URL in `info/urls.py`. No way to look up a student anywhere except the fees page's search box |
+| ~~G10~~ | ~~Profile / self-service~~ | — | ✅ **Now specced — see §7.9.x, Phase C** |
+| ~~G11~~ | ~~Student directory / search~~ | — | ✅ **Now specced — see §7.9.x, AC20** |
 | **G12** | **Logout** | `logout` | Trivial page, but it's the one screen that still looks unstyled |
 
 ### Suggested order for filling the gaps
@@ -1356,7 +1437,7 @@ Every view in `info/views.py` (33 total), checked against what this document act
 1. ~~G1 (Fees)~~ — ✅ done, §7.6.x
 2. ~~G2 (Teacher marks entry)~~ — ✅ done, §7.7.x
 3. ~~G3, G4~~ — ✅ done, §7.8.x
-4. **G5, G10** — account lifecycle: creation, first-login password change, self-service
+4. ~~G5, G10, G11~~ — ✅ done, §7.9.x
 5. **G7 (API)** — decide expand vs. remove, then document it
 6. **G8, G9, G11, G12** — polish
 
