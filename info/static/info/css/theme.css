@@ -1,0 +1,289 @@
+/* College ERP — modern theme overlay (loads after Bootstrap 4 / SB Admin 2) */
+
+:root {
+  --erp-primary: #4f46e5;
+  --erp-primary-dark: #4338ca;
+  --erp-primary-light: #eef2ff;
+  --erp-accent: #06b6d4;
+  --erp-success: #16a34a;
+  --erp-danger: #dc2626;
+  --erp-warning: #d97706;
+  --erp-ink: #1e293b;
+  --erp-muted: #64748b;
+  --erp-border: #e2e8f0;
+  --erp-bg: #f4f6fb;
+  --erp-surface: #ffffff;
+  --erp-radius: 14px;
+  --erp-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px rgba(15, 23, 42, .06);
+  --erp-shadow-hover: 0 4px 10px rgba(15, 23, 42, .06), 0 16px 32px rgba(15, 23, 42, .10);
+}
+
+body {
+  background: var(--erp-bg);
+  color: var(--erp-ink);
+  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* ---------- Topbar ---------- */
+.navbar.bg-dark {
+  background: linear-gradient(90deg, var(--erp-primary) 0%, var(--erp-primary-dark) 100%) !important;
+  box-shadow: 0 2px 12px rgba(67, 56, 202, .25);
+  border: 0;
+}
+
+.navbar-brand {
+  font-weight: 700;
+  letter-spacing: .3px;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.navbar-brand::before {
+  content: '\f19d';
+  font-family: 'Font Awesome 5 Free';
+  font-weight: 900;
+}
+
+.navbar .nav-link {
+  font-weight: 500;
+}
+
+.erp-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: .85rem;
+  margin-right: .5rem;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  background: var(--erp-surface);
+  border-right: 1px solid var(--erp-border);
+  padding-top: 1rem;
+}
+
+.sidebar .nav-item {
+  width: 100%;
+}
+
+.sidebar .nav-link {
+  color: var(--erp-muted);
+  font-weight: 500;
+  border-radius: 10px;
+  margin: 2px 10px;
+  padding: .65rem .9rem;
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  transition: background .15s ease, color .15s ease;
+}
+
+.sidebar .nav-link i,
+.sidebar .nav-link .erp-icon {
+  width: 18px;
+  text-align: center;
+  color: var(--erp-primary);
+}
+
+.sidebar .nav-link:hover {
+  background: var(--erp-primary-light);
+  color: var(--erp-primary-dark);
+}
+
+.sidebar .nav-link.active {
+  background: var(--erp-primary-light);
+  color: var(--erp-primary-dark);
+  font-weight: 700;
+}
+
+/* ---------- Cards ---------- */
+.card {
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius);
+  box-shadow: var(--erp-shadow);
+  transition: box-shadow .18s ease, transform .18s ease;
+}
+
+.card:hover {
+  box-shadow: var(--erp-shadow-hover);
+}
+
+.card-header {
+  background: var(--erp-surface);
+  border-bottom: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius) var(--erp-radius) 0 0 !important;
+  font-weight: 700;
+  color: var(--erp-ink);
+}
+
+.card-header i {
+  color: var(--erp-primary);
+  margin-right: .4rem;
+}
+
+/* Feature / action cards on dashboards */
+.erp-feature-card {
+  text-align: center;
+  overflow: hidden;
+}
+
+.erp-feature-card:hover {
+  transform: translateY(-4px);
+}
+
+.erp-feature-icon {
+  width: 64px;
+  height: 64px;
+  margin: 1.5rem auto .5rem;
+  border-radius: 16px;
+  background: var(--erp-primary-light);
+  color: var(--erp-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+}
+
+/* ---------- Buttons ---------- */
+.btn-primary {
+  background: var(--erp-primary);
+  border-color: var(--erp-primary);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background: var(--erp-primary-dark);
+  border-color: var(--erp-primary-dark);
+}
+
+.btn {
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+/* ---------- Tables ---------- */
+.table thead th {
+  background: var(--erp-bg);
+  color: var(--erp-muted);
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-bottom: 2px solid var(--erp-border);
+  font-weight: 700;
+}
+
+.table td, .table th {
+  vertical-align: middle;
+}
+
+/* ---------- Badges / status pills ---------- */
+.erp-badge {
+  display: inline-block;
+  padding: .3rem .65rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.erp-badge-success { background: #dcfce7; color: var(--erp-success); }
+.erp-badge-danger  { background: #fee2e2; color: var(--erp-danger); }
+.erp-badge-warning { background: #fef3c7; color: var(--erp-warning); }
+.erp-badge-info    { background: #e0f2fe; color: #0369a1; }
+
+/* Recolor legacy inline bg-success/bg-danger table cells to pill-style */
+.table td.bg-success,
+.table td.bg-danger {
+  border-radius: 999px !important;
+  font-weight: 700;
+}
+
+/* ---------- Login page ---------- */
+.erp-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top left, #6366f1 0%, #4338ca 45%, #1e1b4b 100%);
+  padding: 1.5rem;
+}
+
+.erp-login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--erp-surface);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, .35);
+  padding: 2.25rem 2rem;
+  border: 0;
+}
+
+.erp-login-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--erp-primary-light);
+  color: var(--erp-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin: 0 auto 1rem;
+}
+
+.erp-login-card input {
+  border-radius: 10px;
+  padding: .5rem .9rem;
+  border: 1px solid var(--erp-border);
+  width: 100%;
+  display: block;
+}
+
+.erp-login-card .btn {
+  width: 100%;
+  padding: .65rem;
+}
+
+/* ---------- Notices ---------- */
+.erp-notice {
+  border-left: 4px solid var(--erp-primary);
+  border-radius: 10px;
+  background: var(--erp-surface);
+  padding: .9rem 1.1rem;
+  margin-bottom: .75rem;
+  box-shadow: var(--erp-shadow);
+}
+
+.erp-notice .erp-notice-meta {
+  color: var(--erp-muted);
+  font-size: .8rem;
+}
+
+/* ---------- Stat tiles ---------- */
+.erp-stat {
+  border-radius: var(--erp-radius);
+  padding: 1.1rem 1.3rem;
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border);
+  box-shadow: var(--erp-shadow);
+}
+
+.erp-stat .erp-stat-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--erp-ink);
+}
+
+.erp-stat .erp-stat-label {
+  color: var(--erp-muted);
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}

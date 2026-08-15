@@ -1,0 +1,25 @@
+{% extends 'info/base.html' %}
+{% load static %}
+
+{% block title %}Edit Fee{% endblock %}
+
+{% block content %}
+
+<div class="card mb-3 mx-auto" style="max-width: 480px;">
+  <div class="card-header"><i class="fas fa-edit"></i><b>Update Payment — {{ fee.student.name }}</b></div>
+  <div class="card-body">
+    <p><b>Fee Type:</b> {{ fee.fee_type }}</p>
+    <p><b>Amount:</b> ₹{{ fee.amount }}</p>
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-group">
+        <label>Paid Amount</label>
+        <input type="number" step="0.01" min="0" max="{{ fee.amount }}" name="paid_amount" class="form-control" value="{{ fee.paid_amount }}" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Update</button>
+      <a class="btn btn-secondary" href="{% url 't_fees' %}">Cancel</a>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

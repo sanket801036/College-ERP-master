@@ -9,82 +9,31 @@
     <meta name="description" content="">
     <meta name="author" content="">
 
-    <title>{% block title %}{% endblock %}</title>
+    <title>Logged out · College ERP</title>
+
       {% load static %}
 
-    <!-- Bootstrap core CSS-->
     <link href="{% static '/info/bootstrap/vendor/bootstrap/css/bootstrap.min.css' %}" rel="stylesheet">
-
-    <!-- Custom fonts for this template-->
     <link href="{% static '/info/bootstrap/vendor/fontawesome-free/css/all.min.css' %}" rel="stylesheet" type="text/css">
-
-    <!-- Page level plugin CSS-->
-    <link href="{% static '/info/bootstrap/vendor/datatables/dataTables.bootstrap4.css' %}" rel="stylesheet">
-
-    <!-- Custom styles for this template-->
     <link href="{% static '/info/bootstrap/css/sb-admin.css' %}" rel="stylesheet">
-
-    <!-- Latest compiled and minified CSS -->
-
-
-      {% block css %}
-      {% endblock %}
+    <link href="{% static '/info/css/theme.css' %}" rel="stylesheet">
 
   </head>
 
-  <body id="page-top">
+  <body>
 
-    <nav class="navbar navbar-expand navbar-dark bg-dark static-top">
-
-      <a class="navbar-brand mr-1" href="{% url 'index' %}">CollegeERP</a>
-
-      <button class="btn btn-link btn-sm text-white order-1 order-sm-0" id="sidebarToggle" href="#">
-        <i class="fas fa-bars"></i>
-      </button>
-
-
-    </nav>
-
-    <div id="wrapper">
-
-
-      <div id="content-wrapper">
-
-        <div class="container-fluid">
-
-            <div class="text-center h3">
-                you have been logged out
-                <br><br>
-                <a class="btn btn-success" href="/accounts/login">login?</a>
-            </div>
-
-        </div>
-        <!-- /.container-fluid -->
-
+    <div class="erp-login-page">
+      <div class="erp-login-card text-center">
+        <div class="erp-login-logo"><i class="fas fa-check"></i></div>
+        <h4 class="mb-2">You've been logged out</h4>
+        <p class="text-muted small mb-4">Thanks for using College ERP.</p>
+        <a class="btn btn-primary" href="/accounts/login"><i class="fas fa-sign-in-alt"></i> Login again</a>
       </div>
-      <!-- /.content-wrapper -->
-
     </div>
-    <!-- /#wrapper -->
 
-    <!-- Scroll to Top Button-->
-    <a class="scroll-to-top rounded" href="#page-top">
-      <i class="fas fa-angle-up"></i>
-    </a>
-
-
-    <!-- Bootstrap core JavaScript-->
     <script src="{% static '/info/bootstrap/vendor/jquery/jquery.min.js' %}"></script>
     <script src="{% static '/info/bootstrap/vendor/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
 
-    <!-- Core plugin JavaScript-->
-    <script src="{% static '/info/bootstrap/vendor/jquery-easing/jquery.easing.min.js' %}"></script>
-
-    <!-- Custom scripts for all pages-->
-    <script src="{% static '/info/bootstrap/js/sb-admin.min.js' %}"></script>
-
-   {% block scripts %}
-    {% endblock %}
   </body>
 
 </html>

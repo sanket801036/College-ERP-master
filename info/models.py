@@ -263,6 +263,64 @@ class AttendanceRange(models.Model):
     end_date = models.DateField()
 
 
+fee_type_choice = (
+    ('Tuition Fee', 'Tuition Fee'),
+    ('Exam Fee', 'Exam Fee'),
+    ('Hostel Fee', 'Hostel Fee'),
+    ('Library Fee', 'Library Fee'),
+    ('Other', 'Other'),
+)
+
+
+class Fee(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='fees')
+    fee_type = models.CharField(max_length=50, choices=fee_type_choice, default='Tuition Fee')
+    description = models.CharField(max_length=200, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    due_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-due_date']
+
+    def __str__(self):
+        return '%s : %s' % (self.student.name, self.fee_type)
+
+    @property
+    def balance(self):
+        return self.amount - self.paid_amount
+
+    @property
+    def status(self):
+        if self.paid_amount <= 0:
+            return 'Unpaid'
+        if self.paid_amount >= self.amount:
+            return 'Paid'
+        return 'Partial'
+
+
+notice_audience_choice = (
+    ('All', 'All'),
+    ('Students', 'Students'),
+    ('Teachers', 'Teachers'),
+)
+
+
+class Notice(models.Model):
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    audience = models.CharField(max_length=20, choices=notice_audience_choice, default='All')
+    posted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title
+
+
 # Triggers
 
 

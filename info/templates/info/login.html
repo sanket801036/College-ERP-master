@@ -9,7 +9,7 @@
     <meta name="description" content="">
     <meta name="author" content="">
 
-    <title>Login</title>
+    <title>Login · College ERP</title>
 
       {% load static %}
 
@@ -22,21 +22,35 @@
     <!-- Custom styles for this template-->
     <link href="{% static '/info/bootstrap/css/sb-admin.css' %}" rel="stylesheet">
 
+    <!-- Modern theme overlay -->
+    <link href="{% static '/info/css/theme.css' %}" rel="stylesheet">
+
   </head>
 
-  <body class="bg-dark">
+  <body>
 
-    <div class="container">
-      <div class="card card-login mx-auto mt-5">
-        <div class="card-header">Login</div>
-        <div class="card-body">
-            <form method="post">
-              {% csrf_token %}
-              {{ form.as_p }}
-              <button  class="btn btn-success" type="submit">Login</button>
-            </form>
+    <div class="erp-login-page">
+      <div class="erp-login-card">
+        <div class="erp-login-logo"><i class="fas fa-graduation-cap"></i></div>
+        <h4 class="text-center mb-1">College ERP</h4>
+        <p class="text-center text-muted small mb-4">Sign in to continue</p>
 
-        </div>
+        {% if form.errors %}
+          <div class="alert alert-danger py-2 small">Invalid username or password. Please try again.</div>
+        {% endif %}
+
+        <form method="post">
+          {% csrf_token %}
+          <div class="form-group">
+            <label class="small text-muted">Username</label>
+            {{ form.username }}
+          </div>
+          <div class="form-group">
+            <label class="small text-muted">Password</label>
+            {{ form.password }}
+          </div>
+          <button class="btn btn-primary mt-2" type="submit"><i class="fas fa-sign-in-alt"></i> Login</button>
+        </form>
       </div>
     </div>
 

@@ -1,11 +1,13 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
-    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass
+    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
 
 
 User = get_user_model()
@@ -16,11 +18,20 @@ User = get_user_model()
 @login_required
 def index(request):
     if request.user.is_teacher:
-        return render(request, 'info/t_homepage.html')
+        latest_notices = Notice.objects.filter(audience__in=['All', 'Teachers'])[:3]
+        return render(request, 'info/t_homepage.html', {'latest_notices': latest_notices})
     if request.user.is_student:
-        return render(request, 'info/homepage.html')
+        latest_notices = Notice.objects.filter(audience__in=['All', 'Students'])[:3]
+        return render(request, 'info/homepage.html', {'latest_notices': latest_notices})
     if request.user.is_superuser:
-        return render(request, 'info/admin_page.html')
+        latest_notices = Notice.objects.all()[:3]
+        context = {
+            'latest_notices': latest_notices,
+            'student_count': Student.objects.count(),
+            'teacher_count': Teacher.objects.count(),
+            'dept_count': Dept.objects.count(),
+        }
+        return render(request, 'info/admin_page.html', context)
     return render(request, 'info/logout.html')
 
 
@@ -423,3 +434,142 @@ def add_student(request):
     all_classes = Class.objects.order_by('-id')
     context = {'all_classes': all_classes}
     return render(request, 'info/add_student.html', context)
+
+
+# ---------------------------------------------------------------------------
+# Fees
+# ---------------------------------------------------------------------------
+
+@login_required()
+def fees(request, stud_id):
+    stud = get_object_or_404(Student, USN=stud_id)
+    if not (request.user.is_superuser or (request.user.is_student and request.user.student.USN == stud.USN)):
+        return redirect('/')
+
+    fee_list = stud.fees.all()
+    total_amount = sum(f.amount for f in fee_list)
+    total_paid = sum(f.paid_amount for f in fee_list)
+    context = {
+        'stud': stud,
+        'fee_list': fee_list,
+        'total_amount': total_amount,
+        'total_paid': total_paid,
+        'total_balance': total_amount - total_paid,
+    }
+    return render(request, 'info/fees.html', context)
+
+
+@login_required()
+def fees_export(request, stud_id):
+    stud = get_object_or_404(Student, USN=stud_id)
+    if not (request.user.is_superuser or (request.user.is_student and request.user.student.USN == stud.USN)):
+        return redirect('/')
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Fees'
+    headers = ['Fee Type', 'Description', 'Amount', 'Paid', 'Balance', 'Status', 'Due Date']
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill(start_color='4F46E5', end_color='4F46E5', fill_type='solid')
+
+    for f in stud.fees.all():
+        ws.append([f.fee_type, f.description, float(f.amount), float(f.paid_amount),
+                   float(f.balance), f.status, f.due_date.strftime('%Y-%m-%d')])
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="%s_fees.xlsx"' % stud.USN
+    wb.save(response)
+    return response
+
+
+@login_required()
+def t_fees(request):
+    if not (request.user.is_superuser or request.user.is_teacher):
+        return redirect('/')
+
+    q = request.GET.get('q', '').strip()
+    students = Student.objects.all().order_by('class_id_id', 'name')
+    if q:
+        students = students.filter(name__icontains=q) | students.filter(USN__icontains=q)
+
+    fee_list = Fee.objects.select_related('student').all()
+    if q:
+        fee_list = fee_list.filter(student__in=students)
+
+    context = {'fee_list': fee_list, 'q': q}
+    return render(request, 'info/t_fees.html', context)
+
+
+@login_required()
+def add_fee(request):
+    if not (request.user.is_superuser or request.user.is_teacher):
+        return redirect('/')
+
+    if request.method == 'POST':
+        stud = get_object_or_404(Student, USN=request.POST['student'])
+        Fee(
+            student=stud,
+            fee_type=request.POST['fee_type'],
+            description=request.POST.get('description', ''),
+            amount=request.POST['amount'],
+            paid_amount=request.POST.get('paid_amount') or 0,
+            due_date=request.POST['due_date'],
+        ).save()
+        return redirect('t_fees')
+
+    context = {
+        'all_students': Student.objects.order_by('class_id_id', 'name'),
+        'fee_types': fee_type_choice,
+    }
+    return render(request, 'info/add_fee.html', context)
+
+
+@login_required()
+def edit_fee(request, fee_id):
+    if not (request.user.is_superuser or request.user.is_teacher):
+        return redirect('/')
+
+    fee = get_object_or_404(Fee, id=fee_id)
+    if request.method == 'POST':
+        fee.paid_amount = request.POST['paid_amount']
+        fee.save()
+        return redirect('t_fees')
+
+    return render(request, 'info/edit_fee.html', {'fee': fee})
+
+
+# ---------------------------------------------------------------------------
+# Notice board
+# ---------------------------------------------------------------------------
+
+@login_required()
+def notices(request):
+    if request.user.is_teacher:
+        audiences = ['All', 'Teachers']
+    elif request.user.is_student:
+        audiences = ['All', 'Students']
+    else:
+        audiences = ['All', 'Students', 'Teachers']
+
+    notice_list = Notice.objects.filter(audience__in=audiences)
+    context = {'notice_list': notice_list}
+    return render(request, 'info/notices.html', context)
+
+
+@login_required()
+def add_notice(request):
+    if not (request.user.is_superuser or request.user.is_teacher):
+        return redirect('/')
+
+    if request.method == 'POST':
+        Notice(
+            title=request.POST['title'],
+            message=request.POST['message'],
+            audience=request.POST['audience'],
+            posted_by=request.user,
+        ).save()
+        return redirect('notices')
+
+    return render(request, 'info/add_notice.html')

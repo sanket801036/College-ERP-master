@@ -1,0 +1,33 @@
+{% extends 'info/base.html' %}
+{% load static %}
+
+{% block title %}Notice Board{% endblock %}
+
+{% block content %}
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fas fa-bullhorn"></i><b>Notice Board</b></span>
+    {% if request.user.is_superuser or request.user.is_teacher %}
+      <a class="btn btn-primary btn-sm" href="{% url 'add_notice' %}"><i class="fas fa-plus"></i> Post Notice</a>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% for n in notice_list %}
+      <div class="erp-notice">
+        <div class="d-flex justify-content-between">
+          <h5 class="mb-1">{{ n.title }}</h5>
+          <span class="erp-badge erp-badge-info">{{ n.audience }}</span>
+        </div>
+        <p class="mb-1">{{ n.message }}</p>
+        <div class="erp-notice-meta">
+          {% if n.posted_by %}Posted by {{ n.posted_by.username }} &middot; {% endif %}{{ n.created_at|date:"d M Y, H:i" }}
+        </div>
+      </div>
+    {% empty %}
+      <p>No notices yet.</p>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

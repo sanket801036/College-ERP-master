@@ -6,7 +6,7 @@ from django.http import HttpResponseRedirect
 from django.urls import path
 
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AssignTime, AttendanceClass
-from .models import StudentCourse, Marks, User, AttendanceRange
+from .models import StudentCourse, Marks, User, AttendanceRange, Fee, Notice
 
 # Register your models here.
 
@@ -133,6 +133,20 @@ class AttendanceClassAdmin(admin.ModelAdmin):
         return HttpResponseRedirect("../")
 
 
+class FeeAdmin(admin.ModelAdmin):
+    list_display = ('student', 'fee_type', 'amount', 'paid_amount', 'status', 'due_date')
+    search_fields = ('student__name', 'student__USN', 'fee_type')
+    list_filter = ('fee_type', 'due_date')
+    ordering = ['-due_date']
+
+
+class NoticeAdmin(admin.ModelAdmin):
+    list_display = ('title', 'audience', 'posted_by', 'created_at')
+    search_fields = ('title', 'message')
+    list_filter = ('audience',)
+    ordering = ['-created_at']
+
+
 admin.site.register(User, UserAdmin)
 admin.site.register(Dept, DeptAdmin)
 admin.site.register(Class, ClassAdmin)
@@ -142,3 +156,5 @@ admin.site.register(Teacher, TeacherAdmin)
 admin.site.register(Assign, AssignAdmin)
 admin.site.register(StudentCourse, StudentCourseAdmin)
 admin.site.register(AttendanceClass, AttendanceClassAdmin)
+admin.site.register(Fee, FeeAdmin)
+admin.site.register(Notice, NoticeAdmin)

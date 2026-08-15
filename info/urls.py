@@ -57,6 +57,15 @@ urlpatterns = [
     path('api/auth/', include('djoser.urls')),
     path('add-teacher/', views.add_teacher, name='add_teacher'),
     path('add-student/', views.add_student, name='add_student'),
+
+    path('student/<slug:stud_id>/fees/', views.fees, name='fees'),
+    path('student/<slug:stud_id>/fees/export/', views.fees_export, name='fees_export'),
+    path('fees/', views.t_fees, name='t_fees'),
+    path('fees/add/', views.add_fee, name='add_fee'),
+    path('fees/<int:fee_id>/edit/', views.edit_fee, name='edit_fee'),
+
+    path('notices/', views.notices, name='notices'),
+    path('notices/add/', views.add_notice, name='add_notice'),
 ]
 admin.site.site_url = None
 admin.site.site_header = 'My Site'
