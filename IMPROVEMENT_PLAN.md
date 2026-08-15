@@ -1562,6 +1562,70 @@ Every view in `info/views.py` (33 total), checked against what this document act
 
 ---
 
+## 9. Cross-Cutting Concerns — not tied to any page
+
+§5–§7 cover every view in the project. This section covers what's left: model-layer, configuration, and project-infrastructure issues that don't belong to a single page and therefore never came up in the page-by-page pass.
+
+### 9.1 Model layer
+
+| # | Issue | Detail |
+|---|---|---|
+| MD1 | **A fresh deployment breaks on the first timetable entry** | The `create_attendance` signal opens with `AttendanceRange.objects.all()[:1].get()`. Verified: with no `AttendanceRange` row, saving an `AssignTime` raises **`AttendanceRange.DoesNotExist`**. A newly-deployed instance has an empty database and no such row, so the very first setup step an admin performs — adding a timetable slot — fails with an error that names a model they've never heard of. Needs either a data migration seeding a default range, a guard in the signal, or a documented setup order |
+| MD2 | **`BooleanField` defaults are strings** | `Attendance.status = BooleanField(default='True')` and `MarksClass.status = BooleanField(default='False')`. Verified round-trip: the value **is** stored and read back correctly as a real boolean, so this is not data corruption. But an unsaved instance holds the literal string — `bool('False') is True` — so `if mc.status:` on a fresh, unsaved object returns the opposite of what's intended. A latent trap rather than an active bug; fix the defaults to `True`/`False` |
+| MD3 | **Stale hardcoded defaults** | `Attendance.date` defaults to `'2018-10-23'`, `Student.DOB` to `'1998-01-01'`, `Teacher.DOB` to `'1980-01-01'`. Any record created without an explicit value silently gets 2018 data. Dates should have no default, or use `timezone.now` |
+| MD4 | **`Student.class_id` defaults to `1`** | A default foreign key to whatever `Class` has primary key `1` — and `Class.id` is a `CharField`, so `1` is unlikely to exist at all. Remove the default |
+| MD5 | **Signals create rows one at a time** | `create_marks` issues six `marks_set.create()` calls per student per course; `create_attendance` loops every date in the semester calling `.get()` then `.save()`. Adding one `Assign` to a 60-student class triggers hundreds of individual inserts. Use `bulk_create` |
+| MD6 | **`on_delete=CASCADE` everywhere** | Deleting a `User` destroys the linked `Student`, and with it their `StudentCourse`, `Marks`, `Attendance` and `Fee` rows. **This was observed directly during the audit** — a cascade from a single user deletion removed a student's entire academic record. Academic and financial history should use `PROTECT` or soft deletion (AC22) |
+| MD7 | **No `updated_at` on any model** | Only `Fee` and `Notice` carry `created_at`. Nothing records when a record last changed — which is half of what the audit trails in FE29/MK19/TA-S7 need |
+| MD8 | **`CharField` primary keys on `Dept`, `Course`, `Class`** | Same class of hazard as AC1. Django admin uses a `ModelForm` and validates uniqueness, so the admin path is safe — but any programmatic creation carries the same silent-overwrite risk |
+
+### 9.2 Configuration
+
+| # | Issue | Detail |
+|---|---|---|
+| CF1 | **Media files are not configured** | `MEDIA_ROOT` is `''` and `MEDIA_URL` is `'/'` (verified). Profile photos (AC16) and notice attachments (NB8) have nowhere to go. **And Render's filesystem is ephemeral**, so even once configured, uploads vanish on every redeploy — this needs S3, Cloudinary or similar, not just a settings change. Worth knowing before promising either feature |
+| CF2 | **No logging configuration** | `LOGGING` is empty (verified). With `DEBUG=False` in production, unhandled exceptions produce a 500 page and **no record anywhere**. Given how many 500 paths this document catalogues, this should be near the top of the list. Console handler at minimum |
+| CF3 | **Email backend points at a non-existent SMTP server** | `EMAIL_BACKEND` is the SMTP backend with no host configured, and `DEFAULT_FROM_EMAIL` is still `webmaster@localhost` (verified). Every mail-dependent feature — OTP (§5.1), fee reminders (FE22), notice notifications (NB17) — will fail at send time. Use the console backend in development and configure real SMTP via environment variables for production |
+| CF4 | **`TIME_ZONE` is UTC** | `USE_TZ=True` with `TIME_ZONE='UTC'` (verified). For a college in India this means attendance dates, session times and fee due dates all display in UTC — a 7:30 AM class straddles a date boundary. Set `Asia/Kolkata` |
+| CF5 | **`DEFAULT_AUTO_FIELD` is `AutoField`** | 32-bit integer primary keys. Django's current default is `BigAutoField`; not urgent at this scale, but it's a one-line change that avoids a painful migration later |
+| CF6 | **`LocMemCache`** | Per-process, in-memory cache. It works, but it isn't shared across gunicorn workers, so the dashboard caching in E2 would behave inconsistently. Redis when caching actually matters |
+
+### 9.3 Project infrastructure — none of this exists
+
+Verified absent from the repository: `.github/`, `Dockerfile`, `docker-compose.yml`, `README.md`, `pytest.ini`, `pyproject.toml`, `.pre-commit-config.yaml`, and any `tests/` directory.
+
+| # | Item | Detail |
+|---|---|---|
+| IN1 | **No tests at all** | Zero test files. Everything this document identifies as a bug is currently unprotected against regression. Start with the pure functions — attendance percentages, `classes_to_attend`, CIE, fee balance/status — then view-level auth tests, which would have caught TA-S3, TM17 and RP9 |
+| IN2 | **No README** | The repository has no setup instructions, no architecture notes, no screenshots. For a portfolio project this is the single highest-leverage missing file — it's what a reviewer opens first |
+| IN3 | **No CI** | No GitHub Actions. Lint + test on push is a short workflow file and it's visible on every commit |
+| IN4 | **No Docker** | `docker-compose` with web + Postgres turns setup into one command; right now a new contributor must install and configure Postgres by hand |
+| IN5 | **No linting or formatting config** | No ruff/black/isort, no pre-commit. Formatting in `views.py` is already inconsistent (trailing whitespace, mixed quoting) |
+| IN6 | **No dependency scanning** | `requirements.txt` is pinned, which is good, but nothing checks for known CVEs. `pip-audit` in CI is a two-line addition |
+| IN7 | **No seed data / fixtures** | Directly connected to MD1: a fresh deploy has no `Dept`, `Course`, `Class` or `AttendanceRange`, so the app cannot be meaningfully demonstrated until someone hand-creates all of it through the admin. A `loaddata` fixture or a management command would make the deployed demo self-setting-up |
+| IN8 | **No database backups** | Render's free Postgres tier has a 90-day lifetime and no automated backups. A periodic `pg_dump` to somewhere durable is worth scripting before the demo has data worth keeping |
+
+### 9.4 Quality attributes barely touched
+
+| # | Area | Detail |
+|---|---|---|
+| QA1 | **Accessibility** | §6.4 sets targets for the dashboards only. Nothing else has been assessed — the red/green attendance cells in particular convey status by colour alone, which fails for colour-blind users. Add text or icons alongside |
+| QA2 | **Mobile responsiveness beyond the specced pages** | Every table view (marks, fees, reports, session lists) overflows on a phone |
+| QA3 | **No type hints** | Nothing is annotated; `mypy` would find real issues in the view layer |
+| QA4 | **Internationalisation** | `LANGUAGE_CODE='en-us'`, no `gettext` usage. Probably out of scope, but worth an explicit decision rather than an accident |
+| QA5 | **No performance budget** | This document has measured pages at 28, 57 and ~900+ queries. Once fixed, a `django-debug-toolbar` check or an assertion on query counts in tests keeps them fixed |
+
+### Where these fit in the build order
+
+- **MD1 + IN7** are a deployment blocker for anyone cloning the repo — arguably the first thing to fix, since nothing else can be demonstrated on a fresh instance
+- **CF2** (logging) should land before any bug-fixing work, so failures are visible while fixing them
+- **CF3** (email) gates §5.1, FE22 and NB17 — same dependency as AC4
+- **CF1** (media) gates AC16 and NB8, and needs external storage, not just settings
+- **IN1** (tests) should grow alongside each fix rather than as a separate phase
+- **IN2** (README) is the cheapest high-visibility improvement in the entire document
+
+---
+
 ## Navigation & Sequencing
 
 **Recommended build order for pages:**
