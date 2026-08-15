@@ -1186,6 +1186,64 @@ Published (15)
 
 ---
 
+### 7.7.x Teacher Marks Entry Module — Full Feature Set (gap G2)
+
+**Current state.** Five views: `t_marks_list` (which of the six test categories are entered), `t_marks_entry` (blank entry form), `marks_confirm` (the POST handler), `edit_marks` (re-open a submitted batch), `student_marks` (class roster with CIE + attendance).
+
+This module shares the marks *data* problems already documented in §7.2.x (MK22–MK25) and the *authorization* problems already documented in §7.3.x (TA-S1, TA-S2). Listed here is what is specific to the entry flow.
+
+#### Phase A — Entry UX
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| TM1 | **Show max marks in the form** | `Marks.total_marks` already knows the ceiling (20 for internals, 100 for SEE) but the entry form never shows it. Display "/20" beside each input and set `max` on the field | ✅ |
+| TM2 | **Inline validation while typing** | Flag out-of-range values before submit, rather than silently storing 85/20 (MK25) | ✅ |
+| TM3 | **Keyboard-first entry** | Enter/↓ moves to the next student, so a teacher can type 45 marks without touching the mouse. Same rationale as TA4 in attendance | ✅ |
+| TM4 | **Live progress + statistics** | "38 of 45 entered · avg 14.2 · range 6–20" while typing, so an outlier is caught at entry time | ✅ |
+| TM5 | **Absent / not-appeared marker** | A student who missed the test is not a student who scored 0. Needs a distinct state, exactly like MK4 on the student side | ⚠️ needs a flag on `Marks` |
+| TM6 | **Save draft** | Marks entry for a large class is currently all-or-nothing in one POST. Allow partial saves | ⚠️ |
+| TM7 | **Bulk import from Excel** | Upload a marks sheet; `openpyxl` already in use for fees export | ✅ |
+| TM8 | **Unsaved-changes guard** | Warn before navigating away mid-entry | ✅ |
+| TM9 | **Sort roster by USN or name** | Fixed order today; teachers often work from a printed list in a different order | ✅ |
+| TM10 | **Show previous test's marks alongside** | Context while entering Internal 2 — helps spot a transposed row immediately | ✅ |
+
+#### Phase B — Post-entry
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| TM11 | **Class statistics after submit** | Average, median, pass count, distribution — `student_marks` shows CIE and attendance per student but no aggregate at all | ✅ |
+| TM12 | **Marks distribution histogram** | Tells the teacher whether the paper was too hard or too easy (same as C6) | ✅ |
+| TM13 | **Highlight at-risk students** | Low CIE + low attendance together — `StudentCourse` already exposes `get_cie()` and `get_attendance()` side by side | ✅ |
+| TM14 | **Export marks sheet** | Excel/PDF for department records | ✅ |
+| TM15 | **Publication control** | Enter now, release to students later (MK20) | ⚠️ `MarksClass.is_published` |
+| TM16 | **Re-evaluation queue** | Teacher-side view of student disputes (MK18) | ❌ |
+
+#### Phase C — Correctness & security (verified against the running app)
+
+| # | Issue | Detail |
+|---|---|---|
+| TM17 | **All four entry endpoints open to students** | Verified, logged in as the `teststud` student account: `t_marks_list`, `student_marks`, `t_marks_entry` and `edit_marks` all returned **HTTP 200**. So a student can read the whole class's marks and open the marks-entry form. The POST handler `marks_confirm` carries the identical `@login_required()`-only guard, which means **a student can submit marks for an entire class**. Same root cause and same fix as TA-S1/TA-S2 — a `@teacher_required` decorator plus an ownership assertion. Do all of these in one pass |
+| TM18 | **`student_marks` returns 500 instead of 404** | Verified: `Assign.objects.get(id=assign_id)` with an unknown id raises an uncaught `Assign.DoesNotExist` and the request 500s. Every neighbouring view uses `get_object_or_404`; this one doesn't. One-line fix |
+| TM19 | **Unguarded `StudentCourse.objects.get()` in both `marks_confirm` and `edit_marks`** | Neither wraps the lookup in `try/except`, so any student missing a `StudentCourse` row 500s the entire batch — the same crash path as G3 (`t_report`). Note this is *also* the branch that MK22's `type='I'` bug lives in, so the "self-healing" fallback in `marks_list` would itself crash. Two independent faults on the same path |
+| TM20 | **No transaction around `marks_confirm`** | The view loops over students saving one `Marks` row at a time, then flips `mc.status = True`. A `KeyError` from `request.POST[s.USN]` partway through leaves half the class saved. Unlike the attendance equivalent (TA-C2), the status flag *is* correctly set after the loop — so a partial failure leaves marks saved but the batch still flagged unsubmitted, which is the safer of the two failure modes but still wrong. Wrap in `@transaction.atomic` |
+| TM21 | **No validation of the submitted value** | `m.marks1 = request.POST[s.USN]` assigns a raw string with no bounds check — this is MK25, restated here because this is the view that does it. `ModelForm`/formset with `clean()` bounded by `total_marks` |
+| TM22 | **No audit trail on overwrite** | `edit_marks` → `marks_confirm` overwrites `marks1` in place; the previous value, the editor, and the timestamp are all lost (MK19). For grades this is the gap most worth closing |
+| TM23 | **N+1 across the flow — measured** | `student_marks` 9 queries for a **one-student** class; `edit_marks` 11; `t_marks_list` 5. Each does per-student `StudentCourse.objects.get()` + `marks_set.get()`, so a 45-student class runs roughly **90–100 queries** per page. Not as severe as the attendance pages (TA-C5, ~900) but the same fix applies: one query with `select_related`/`prefetch_related` |
+| TM24 | **No confirmation summary before commit** | The flow is named `marks_confirm` but nothing is actually confirmed — the POST writes immediately. Show a review screen (or at minimum a summary of what will change when editing an existing batch) |
+
+#### Recommended order
+
+1. **TM17** — authorization. A student being able to submit their own class's marks is the most serious defect in this module, and the fix is shared with §7.3
+2. **TM18, TM19** — two crash paths, both one-line fixes
+3. **TM20, TM21** — transaction and validation (`ModelForm`), shared with FE27/NB18/TA-C3
+4. **TM22** — audit trail on grade changes
+5. **TM1, TM2, TM3, TM4** — the entry UX that makes the page pleasant to use daily
+6. **TM23** — N+1, while the queries are being rewritten
+7. **TM11, TM12, TM13** — post-entry statistics
+8. **TM5, TM15, TM7** — absent marker, publication control, bulk import
+
+---
+
 ## 8. Coverage Audit — what still has no spec
 
 Every view in `info/views.py` (33 total), checked against what this document actually specs out.
@@ -1202,13 +1260,14 @@ Every view in `info/views.py` (33 total), checked against what this document act
 | Timetable | `timetable`, `t_timetable` | §7.4.x (TT1–TT16) |
 | Notice board | `notices`, `add_notice` | §7.5.x (NB1–NB22) |
 | Fees | `fees`, `fees_export`, `t_fees`, `add_fee`, `edit_fee` | §7.6.x (FE1–FE32) |
+| Marks entry — teacher | `t_marks_list`, `t_marks_entry`, `marks_confirm`, `edit_marks`, `student_marks` | §7.7.x (TM1–TM24) |
 
 ### ❌ Not yet specced — remaining gaps
 
 | # | Module | Views | Why it matters |
 |---|---|---|---|
 | ~~G1~~ | ~~Fees~~ | — | ✅ **Now specced — see §7.6.x (FE1–FE32)** |
-| **G2** | **Marks entry — teacher side** | `t_marks_list`, `t_marks_entry`, `marks_confirm`, `edit_marks`, `student_marks` | §7.2 specs the *student's* marks view. The teacher's entry flow only appears via MK25 (no validation). It needs the same treatment §7.3 gave teacher attendance — including the same authorization audit, since `marks_confirm` and `edit_marks` are exposed exactly like the teacher attendance views |
+| ~~G2~~ | ~~Marks entry — teacher side~~ | — | ✅ **Now specced — see §7.7.x (TM1–TM24)** |
 | **G3** | **Class report** | `t_report` | Unspecced, and it has a crash path: `StudentCourse.objects.get(student=stud, course=ass.course)` runs inside a loop with **no `try/except`**, unlike the equivalent code in `marks_list`. Any student missing a `StudentCourse` row 500s the whole class report. It's also N+1 — one query per student |
 | **G4** | **Free-teacher finder** | `free_teachers` | Two defects found while auditing: (a) `Teacher.objects.filter(assign__class_id__id=...)` joins through `Assign` with **no `.distinct()`**, so a teacher who takes two courses for the same class appears twice in the list; (b) it queries `AssignTime` once per teacher — N+1. Also a scope question: it only considers teachers *already assigned to this class*, so it finds "teachers of this class who are free", not "free teachers" as the page title claims |
 | **G5** | **Add student / add teacher** | `add_student`, `add_teacher` | Flagged in §3 (guessable generated passwords, no forced reset) but never specced as pages. Should cover: validation, duplicate USN/ID handling, forced password change on first login, and bulk import (Tier 1 #8) |
@@ -1223,7 +1282,7 @@ Every view in `info/views.py` (33 total), checked against what this document act
 ### Suggested order for filling the gaps
 
 1. ~~G1 (Fees)~~ — ✅ done, §7.6.x
-2. **G2 (Teacher marks entry)** — completes the marks story and shares the authorization fixes with §7.3
+2. ~~G2 (Teacher marks entry)~~ — ✅ done, §7.7.x
 3. **G3, G4** — small pages, real bugs, quick wins
 4. **G5, G10** — account lifecycle: creation, first-login password change, self-service
 5. **G7 (API)** — decide expand vs. remove, then document it
