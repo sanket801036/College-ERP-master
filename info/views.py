@@ -4,8 +4,10 @@ from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, A
     DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice
 from django.urls import reverse
 from django.utils import timezone
+from django.db import transaction
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
+from info.forms import StudentForm, TeacherForm
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
@@ -365,36 +367,26 @@ def add_teacher(request):
     if not request.user.is_superuser:
         return redirect("/")
 
+    credentials = None
     if request.method == 'POST':
-        dept = get_object_or_404(Dept, id=request.POST['dept'])
-        name = request.POST['full_name']
-        id = request.POST['id'].lower()
-        dob = request.POST['dob']
-        sex = request.POST['sex']
-        
-        # Creating a User with teacher username and password format
-        # USERNAME: firstname + underscore + unique ID
-        # PASSWORD: firstname + underscore + year of birth(YYYY)
-        user = User.objects.create_user(
-            username=name.split(" ")[0].lower() + '_' + id,
-            password=name.split(" ")[0].lower() + '_' + dob.replace("-","")[:4]
-        )
-        user.save()
+        form = TeacherForm(request.POST)
+        if form.is_valid():
+            # Both writes go together: without this, a failure on the second
+            # left a usable login account attached to no teacher record.
+            with transaction.atomic():
+                user, password = form.create_user()
+                teacher = form.save(commit=False)
+                teacher.user = user
+                teacher.save()
+            # Shown once, here only - the password is random and not recoverable.
+            credentials = {'username': user.username, 'password': password,
+                           'name': teacher.name}
+            form = TeacherForm()
+    else:
+        form = TeacherForm()
 
-        Teacher(
-            user=user,
-            id=id,
-            dept=dept,
-            name=name,
-            sex=sex,
-            DOB=dob
-        ).save()
-        return redirect('/')
-    
-    all_dept = Dept.objects.order_by('-id')
-    context = {'all_dept': all_dept}
-
-    return render(request, 'info/add_teacher.html', context)
+    return render(request, 'info/add_teacher.html',
+                  {'form': form, 'credentials': credentials})
 
 
 @login_required()
@@ -403,37 +395,24 @@ def add_student(request):
     if not request.user.is_superuser:
         return redirect("/")
 
+    credentials = None
     if request.method == 'POST':
-        # Retrieving all the form data that has been inputted
-        class_id = get_object_or_404(Class, id=request.POST['class'])
-        name = request.POST['full_name']
-        usn = request.POST['usn']
-        dob = request.POST['dob']
-        sex = request.POST['sex'] 
+        form = StudentForm(request.POST)
+        if form.is_valid():
+            # See add_teacher - the two writes must not be able to come apart.
+            with transaction.atomic():
+                user, password = form.create_user()
+                student = form.save(commit=False)
+                student.user = user
+                student.save()
+            credentials = {'username': user.username, 'password': password,
+                           'name': student.name}
+            form = StudentForm()
+    else:
+        form = StudentForm()
 
-        # Creating a User with student username and password format
-        # USERNAME: firstname + underscore + last 3 digits of USN
-        # PASSWORD: firstname + underscore + year of birth(YYYY)
-        user = User.objects.create_user(
-            username=name.split(" ")[0].lower() + '_' + request.POST['usn'][-3:],
-            password=name.split(" ")[0].lower() + '_' + dob.replace("-","")[:4]
-        )
-        user.save()
-
-        # Creating a new student instance with given data and saving it.
-        Student(
-            user=user,
-            USN=usn,
-            class_id=class_id,
-            name=name,
-            sex=sex,
-            DOB=dob
-        ).save()
-        return redirect('/')
-    
-    all_classes = Class.objects.order_by('-id')
-    context = {'all_classes': all_classes}
-    return render(request, 'info/add_student.html', context)
+    return render(request, 'info/add_student.html',
+                  {'form': form, 'credentials': credentials})
 
 
 # ---------------------------------------------------------------------------

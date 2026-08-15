@@ -5,38 +5,49 @@
 
 {% block content %}
 
+{% if credentials %}
+<div class="card mb-3 mx-auto" style="max-width: 640px;">
+  <div class="card-header"><i class="fas fa-key"></i><b>Account created for {{ credentials.name }}</b></div>
+  <div class="card-body">
+    <p class="text-muted mb-3">
+      Write these down now &mdash; the password is generated randomly and is not
+      shown again anywhere.
+    </p>
+    <table class="table table-bordered mb-0">
+      <tr>
+        <th style="width: 40%;">Username</th>
+        <td><code>{{ credentials.username }}</code></td>
+      </tr>
+      <tr>
+        <th>Temporary password</th>
+        <td><code>{{ credentials.password }}</code></td>
+      </tr>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <div class="card mb-3 mx-auto" style="max-width: 640px;">
   <div class="card-header"><i class="fas fa-user-graduate"></i><b>Student Information</b></div>
   <div class="card-body">
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+
     <form method="POST" action="{% url 'add_student' %}">
       {% csrf_token %}
-      <div class="form-group">
-        <label>Class</label>
-        <select class="form-control" name="class" required>
-          {% for class in all_classes %}
-            <option value="{{ class.id }}">{{ class }}</option>
+      {% for field in form %}
+        <div class="form-group">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}
+            <small class="form-text text-muted">{{ field.help_text }}</small>
+          {% endif %}
+          {% for error in field.errors %}
+            <div class="text-danger small mt-1">{{ error }}</div>
           {% endfor %}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>USN</label>
-        <input class="form-control" name="usn" type="text" placeholder="AB0A00" required>
-      </div>
-      <div class="form-group">
-        <label>Full Name</label>
-        <input class="form-control" type="text" name="full_name" placeholder="Anil Kumar" required>
-      </div>
-      <div class="form-group">
-        <label>Sex</label>
-        <select class="form-control" name="sex" required>
-          <option value="Male">Male</option>
-          <option value="Female">Female</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Date of Birth</label>
-        <input class="form-control" name="dob" type="date" required>
-      </div>
+        </div>
+      {% endfor %}
 
       <button class="btn btn-primary" type="submit">Add Student</button>
       <input class="btn btn-secondary" type="reset" value="Reset">
@@ -45,4 +56,23 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block css %}
+<style>
+  /* Django renders plain inputs; give them the Bootstrap look the rest of the
+     forms in this app have. */
+  form input[type="text"], form input[type="email"], form input[type="date"],
+  form select {
+    display: block;
+    width: 100%;
+    padding: .375rem .75rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 10px;
+  }
+</style>
 {% endblock %}
