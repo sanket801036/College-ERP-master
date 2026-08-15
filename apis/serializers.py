@@ -1,27 +1,69 @@
 from rest_framework import serializers
 
-from info.models import *
+from info.models import AssignTime, AttendanceTotal, Student, StudentCourse
 
 
-class DetailSerializer(serializers.ModelSerializer):
+class StudentSerializer(serializers.ModelSerializer):
+    """The student's own profile.
+
+    This used to be `fields = '__all__'`, which returned DOB among everything
+    else - the one field worth withholding, given accounts were originally
+    issued with a password derived from the birth year.
+    """
+    dept = serializers.CharField(source='class_id.dept.name', read_only=True)
+    semester = serializers.IntegerField(source='class_id.sem', read_only=True)
+    section = serializers.CharField(source='class_id.section', read_only=True)
+
     class Meta:
         model = Student
-        fields = '__all__'
+        fields = ['USN', 'name', 'dept', 'semester', 'section']
 
 
 class AttendanceSerializer(serializers.ModelSerializer):
+    """Attendance for one course.
+
+    The old version serialised AttendanceTotal with `fields = '__all__'`, but
+    every useful value on that model is a Python property rather than a column,
+    so DRF dropped all of them - the endpoint returned identifiers and nothing
+    else. They are declared explicitly here.
+    """
+    course_id = serializers.CharField(source='course.id', read_only=True)
+    course = serializers.CharField(source='course.name', read_only=True)
+    attended = serializers.ReadOnlyField(source='att_class')
+    held = serializers.ReadOnlyField(source='total_class')
+    percentage = serializers.ReadOnlyField(source='attendance')
+    classes_to_attend = serializers.ReadOnlyField()
+    classes_can_skip = serializers.ReadOnlyField()
+    has_classes = serializers.ReadOnlyField()
+
     class Meta:
         model = AttendanceTotal
-        fields = '__all__'
+        fields = ['course_id', 'course', 'attended', 'held', 'percentage',
+                  'classes_to_attend', 'classes_can_skip', 'has_classes']
 
 
 class MarksSerializer(serializers.ModelSerializer):
+    course_id = serializers.CharField(source='course.id', read_only=True)
+    course = serializers.CharField(source='course.name', read_only=True)
+    cie = serializers.SerializerMethodField()
+    marks = serializers.SerializerMethodField()
+
     class Meta:
-        model = Marks
-        fields = '__all__'
+        model = StudentCourse
+        fields = ['course_id', 'course', 'cie', 'marks']
+
+    def get_cie(self, obj):
+        return obj.get_cie()
+
+    def get_marks(self, obj):
+        return {m.name: m.marks1 for m in obj.marks_set.all()}
 
 
-class TimeTableSerializer(serializers.ModelSerializer):
+class TimetableSerializer(serializers.ModelSerializer):
+    course_id = serializers.CharField(source='assign.course.id', read_only=True)
+    course = serializers.CharField(source='assign.course.name', read_only=True)
+    teacher = serializers.CharField(source='assign.teacher.name', read_only=True)
+
     class Meta:
         model = AssignTime
-        fields = '__all__'
+        fields = ['day', 'period', 'course_id', 'course', 'teacher']

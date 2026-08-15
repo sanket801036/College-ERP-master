@@ -1,138 +1,105 @@
-from django.shortcuts import render
-from info.models import *
+"""Read-only endpoints returning the signed-in student's own records.
+
+These were unusable as written. Each view re-derived the user from a Token row
+on top of the authentication DRF had already done, so a perfectly valid session
+was rejected with 400 "User not authenticated" - and since nothing in the app
+ever issued a token, that was every caller. permission_classes already covers
+this; request.user is populated by the time the view runs.
+"""
+from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.authtoken.models import Token
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.pagination import PageNumberPagination
-from itertools import chain
-from rest_framework import serializers, status
-from rest_framework.generics import ListAPIView
-from django.db.models.signals import post_save
-from rest_framework.generics import get_object_or_404
-from rest_framework import generics
-from rest_framework import mixins
-from rest_framework import status
-from django.db.models import Sum, Count
-from django.conf import settings
+
+from info.models import (AssignTime, Attendance, AttendanceTotal, Course,
+                         Student, StudentCourse)
+
 import apis.serializers as api_ser
 
 
-class DetailView(APIView):
-    """
-    Returns user's info.
-    """
-    permission_classes = [IsAuthenticated, ]
+class StudentAPIView(APIView):
+    """Base for the endpoints scoped to the caller's own student record."""
+    permission_classes = [IsAuthenticated]
+
+    def get_student(self, request):
+        # 404 rather than the old catch-all 400: a teacher or admin calling
+        # these has no student record, which is a missing resource, not a
+        # failed login.
+        return get_object_or_404(Student, user=request.user)
+
+
+class DetailView(StudentAPIView):
+    """The caller's own profile."""
 
     def get(self, request):
-        try:
-            # fetching token sent in request header by the user.
-            us = Token.objects.filter(user=request.user)
-            if(us):          # checking for authentication using token authentication.
-
-                # getting user from in-built user model class.
-                user = User.objects.filter(auth_token=us[0]).first()
-                # getting student from student model by filtering based on user that we got.
-                details = Student.objects.get(user=user)
-                serializer = api_ser.DetailSerializer(
-                    details, context={'request': request})       # Serializing the data into Json format.
-                return Response({'data': serializer.data, }, status=status.HTTP_200_OK)
-            else:
-                return Response({'message': 'User not authenticated'}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
+        student = self.get_student(request)
+        serializer = api_ser.StudentSerializer(student,
+                                               context={'request': request})
+        return Response({'data': serializer.data})
 
 
-class AttendanceView(APIView):
-    """
-    This view is used to return user's attendance 
-    that is to check user's attendance.
-    """
-    permission_classes = [IsAuthenticated, ]
+class AttendanceView(StudentAPIView):
+    """Attendance totals per course."""
 
     def get(self, request):
-        try:
-            token = Token.objects.filter(user=request.user).first()
-            if(token):  # checking for authentication using token authentication.
-                # getting user from in-built user model class.
-                user = User.objects.get(auth_token=token)
-                # getting student from student model by filtering based on user that we got.
-                stud = Student.objects.get(user=user)
-                # using ass_list and att_list we get the classes assigned to that user
-                ass_list = Assign.objects.filter(class_id_id=stud.class_id)
-                # and respectively their attendance
-                att_list = []
-                for ass in ass_list:
-                    try:
-                        a = AttendanceTotal.objects.get(
-                            student=stud, course=ass.course)
-                    except AttendanceTotal.DoesNotExist:
-                        a = AttendanceTotal(student=stud, course=ass.course)
-                        a.save()
-                    att_list.append(a)
-                serializer = api_ser.AttendanceSerializer(
-                    att_list, many=True, context={'request': request})     # Serializing the data into Json format.
-                return Response({'user_attendance': serializer.data, }, status=status.HTTP_200_OK)
-            else:
-                # returning not authenticated message when user isn't authenticated with status code 400.
-                return Response({'message': 'User not authenticated'}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
+        student = self.get_student(request)
+        courses = Course.objects.filter(
+            assign__class_id=student.class_id_id).distinct()
+
+        # The old version created missing AttendanceTotal rows inside the GET
+        # handler. A read should not write - and AttendanceTotal stores nothing
+        # of its own anyway, the counts all come from Attendance - so the
+        # totals are assembled in memory from a single grouped query instead.
+        counts = (Attendance.objects
+                  .filter(student=student, course__in=courses)
+                  .values('course')
+                  .annotate(held=Count('pk'),
+                            attended=Count('pk', filter=Q(status=True))))
+        by_course = {row['course']: row for row in counts}
+
+        totals = []
+        for course in courses:
+            total = AttendanceTotal(student=student, course=course)
+            row = by_course.get(course.id, {})
+            total._held = row.get('held', 0)
+            total._attended = row.get('attended', 0)
+            totals.append(total)
+
+        serializer = api_ser.AttendanceSerializer(
+            totals, many=True, context={'request': request})
+        return Response({'data': serializer.data})
 
 
-class MarksView(APIView):
-    """
-    This view is used to return user's marks 
-    that is to check user's marks in different subjects as given by the teacher.
-    """
-    permission_classes = [IsAuthenticated, ]
+class MarksView(StudentAPIView):
+    """Marks and CIE per course."""
 
     def get(self, request):
-        try:
-            token = Token.objects.filter(user=request.user).first()
-            if(token):  # checking for authentication using token authentication.
-                user = User.objects.get(auth_token=token)
-                stud = Student.objects.get(user=user)
+        student = self.get_student(request)
+        courses = Course.objects.filter(
+            assign__class_id=student.class_id_id).distinct()
 
-                # using ass_list and sc_list we retrieve all the subjects assigned
-                ass_list = Assign.objects.filter(class_id_id=stud.class_id)
-                # and then their respective marks. Store them in a dictionary and return it to the user.
-                sc_list = []
-                for ass in ass_list:
-                    sc = StudentCourse.objects.get(
-                        student=stud, course=ass.course)
-                    sc_list.append(sc)
-                sc_total = {}
-                for sc in sc_list:
-                    for m in sc.marks_set.all():
-                        sc_total[m.studentcourse.course.name] = m.marks1
-                return Response({'user_marks': sc_total, }, status=status.HTTP_200_OK)
-            else:
-                return Response({'message': 'User not authenticated'}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
+        # A bare .get() here meant a student missing one StudentCourse row got
+        # an opaque 400 for the whole endpoint.
+        records = (StudentCourse.objects
+                   .filter(student=student, course__in=courses)
+                   .select_related('course')
+                   .prefetch_related('marks_set'))
+        serializer = api_ser.MarksSerializer(records, many=True,
+                                             context={'request': request})
+        return Response({'data': serializer.data})
 
 
-class TimetableView(APIView):
-    """
-    This view is used to check user's class timetable
-    It returns the respective class' timetable to which the user is assigned.
-    """
-
-    permission_classes = [IsAuthenticated, ]
+class TimetableView(StudentAPIView):
+    """The caller's class timetable."""
 
     def get(self, request):
-        try:
-            token = Token.objects.filter(user=request.user).first()
-            if(token):  # checking for authentication using token authentication.
-                user = User.objects.get(auth_token=token)
-                stud = Student.objects.get(user=user)
-                asst = AssignTime.objects.filter(
-                    assign__class_id=stud.class_id)
-                serializer = api_ser.TimeTableSerializer(
-                    asst, many=True, context={'request': request})     # Serializing the data into Json format.
-                return Response({'user_marks': serializer.data, }, status=status.HTTP_200_OK)
-            else:
-                return Response({'message': 'User not authenticated'}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
+        student = self.get_student(request)
+        slots = (AssignTime.objects
+                 .filter(assign__class_id=student.class_id_id)
+                 .select_related('assign__course', 'assign__teacher'))
+        serializer = api_ser.TimetableSerializer(
+            slots, many=True, context={'request': request})
+        # This returned its payload under the key "user_marks", copied from the
+        # marks view. Every endpoint uses "data" now.
+        return Response({'data': serializer.data})
