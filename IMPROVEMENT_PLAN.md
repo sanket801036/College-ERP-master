@@ -4,6 +4,60 @@ This is a working document, not final. Section 1-2 describe what exists today (s
 
 ---
 
+## ✅ Build log — what has been fixed so far
+
+Nine passes of work. The rest of this document still describes the app as it was
+found, so anything below marked here as done has already changed in the code.
+
+| # | Work | Items closed | Tests |
+|---|---|---|---|
+| 1 | Fresh-install crash: the attendance signal read `AttendanceRange` with `.get()`, so the first timetable slot an admin added failed | MD1, part of MD5 | 3 |
+| 2 | Add-student/add-teacher rewritten onto ModelForms | AC1, AC2, AC3, AC4, AC5, AC7, AC9, AC11 | 9 |
+| 3 | Role and ownership guards across 17 teacher views | TA-S1, TA-S2, TA-S3, TA-S4, TA-S5, TA-S6, TM17, RP9, CS2, TT16 | 11 |
+| 4 | Transactions and validation on every submit path | TA-C1, TA-C2, TA-C3, TM19, TM20, TM21, MK25, TA18 | 15 |
+| 5 | `AttendanceTotal` rewritten: primary-key lookups, one aggregate, annotations | AT26, AT27, AT6, AT1, MK23, RP10, RP11 | 13 |
+| 6 | Timetable clash prevention and grid rebuilt from one query | TT11, TT12, TT13, TT15 | 8 |
+| 7 | Logging configuration and custom 400/403/404/500 pages | CF2, ER1, ER2, ER3 | 3 |
+| 8 | README, `seed_demo` management command, two more N+1s | IN2, IN7, MK22, MK24, MK4 (partial) | 5 |
+| 9 | GitHub Actions CI | IN3 | — |
+
+**67 tests**, from zero.
+
+### Query counts, measured before and after
+
+| Page | Before | After |
+|---|---|---|
+| Student attendance | 28 | 9 |
+| Student timetable | 57 | 4 |
+| Teacher timetable | 57 | 5 |
+| Teacher class attendance | 28 | 13 |
+| Student marks (3 courses) | 18 | 10 |
+| Class report (12 students) | 62 | 15 |
+
+The counts also no longer grow with class size; there are tests that add ten
+students and assert the query count is unchanged.
+
+### Still open, highest value first
+
+1. **FE1** — fees keep a running `paid_amount` instead of a transaction log, so
+   there are no receipts and no record of when money arrived. Everything else in
+   §7.6 Phase A depends on this
+2. **FE24–FE27** — fee validation: overpayment, negative amounts, and a
+   zero-amount fee that can never read as paid
+3. **API1, API2, API3** — the REST API rejects session-authenticated users, its
+   attendance endpoint returns no attendance data, and the timetable endpoint
+   labels its payload `user_marks`
+4. **CF3 + AC17** — email has no host configured, which blocks the OTP reset
+   flow (§5.1), fee reminders (FE22) and notice notifications (NB17)
+5. **AC14** — nobody can change their own password
+6. **TA-S7, MK19, FE29** — no audit trail on attendance, marks or fee changes
+7. **CF4** — timezone is UTC, so dates are wrong for an Indian college
+8. **IN4, IN5** — Docker and linting config
+
+---
+
+---
+
 ## 1. Current State — Page by Page
 
 ### Public / Auth

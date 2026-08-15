@@ -1,5 +1,7 @@
 # College ERP
 
+[![CI](https://github.com/sanket801036/College-ERP-master/actions/workflows/ci.yml/badge.svg)](https://github.com/sanket801036/College-ERP-master/actions/workflows/ci.yml)
+
 A Django college management system covering attendance, marks, timetables, fees
 and notices for three roles — students, teachers and administrators.
 
