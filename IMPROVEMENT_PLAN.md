@@ -155,11 +155,71 @@ Working through the login page first, before anything else, since it's the first
 | 5 | Remember Me + Forgot Password | Same line below password: checkbox left, link right | ❌ Neither exists | **Remember Me** needs real session-expiry logic (`SESSION_EXPIRE_AT_BROWSER_CLOSE` / custom `SESSION_COOKIE_AGE` toggled on login) — not just a checkbox. **Forgot Password** needs an actual password-reset flow (Django has `PasswordResetView` built in, but it requires an email backend — none is configured yet). Ties into the "self-service" item already in Tier 2 (#13) |
 | 6 | Login button | Keep as-is, align width to match the other fields | ✅ Exists, ⚠️ alignment tweak needed | Pure CSS |
 | 7 | Error message area | Hidden by default; shows "Invalid Username or Password" in red on failed login | ⚠️ Partially done — a basic error banner exists already from the earlier redesign, needs to match this exact style/placement | Mostly CSS/copy polish |
-| 8 | Footer link | "Facing issues? Contact Administrator" — small, light text at the very bottom | ❌ Not present | Static text or `mailto:` link — no backend dependency |
+| 8 | Footer link | "Facing issues? Contact Administrator" — small, light text at the very bottom | ❌ Not present | See §5.2 below for what clicking it should do |
 
 **Items that are pure UI/CSS** (safe to build immediately, no design decisions pending): password eye-icon toggle, button alignment, error message styling, footer link.
 
-**Items that need a decision before building**: role-selector behavior (cosmetic vs. enforced), Remember Me session semantics, Forgot Password email delivery (would need an SMTP provider configured in settings — e.g. Gmail SMTP, SendGrid, or Render's env-based secrets).
+**Items that need a decision before building**: role-selector behavior (cosmetic vs. enforced), Remember Me session semantics, Forgot Password / OTP email delivery (§5.1), Contact Administrator behavior (§5.2).
+
+---
+
+### 5.1 Email OTP — Forgot Password flow
+
+Replaces the "email a reset link" approach with a 6-digit code, which is the pattern most Indian college/banking portals use and reads as more modern in a demo.
+
+**Proposed flow**
+1. User clicks **Forgot Password?** on the login page
+2. **Screen 1 — Identify**: enter registered username or email → submit
+3. System generates a 6-digit OTP, stores it hashed with an expiry, emails it to the account's registered address
+   - Always show the same "If that account exists, a code has been sent" message whether or not the account exists — otherwise the page becomes a way to discover valid usernames
+4. **Screen 2 — Verify**: enter the 6-digit code (with a visible countdown + "Resend code" button that unlocks after ~60s)
+5. **Screen 3 — Reset**: on valid OTP, allow setting a new password (Django's password validators already enforce strength), then auto-redirect to login with a success message
+
+**New model** — `PasswordResetOTP`:
+| Field | Purpose |
+|---|---|
+| `user` | FK to `User` |
+| `code_hash` | **Hashed**, never the plain 6 digits — same reason passwords aren't stored raw |
+| `created_at` | For expiry math |
+| `expires_at` | Recommend **10 minutes** |
+| `attempts` | Lock after 5 wrong tries, forces a fresh code |
+| `used_at` | Null until consumed; a code works exactly once |
+
+**Security rules to build in (these are what an interviewer will actually probe):**
+- OTP is single-use and expires (10 min)
+- Max 5 verification attempts per code, then invalidate
+- Rate-limit OTP *requests* (e.g. max 3 per account per 15 min) so the endpoint can't be used to spam someone's inbox
+- Invalidate any outstanding OTPs when a new one is issued, and when the password is successfully changed
+- Never reveal whether a username/email exists (uniform response + uniform timing)
+- Log OTP issue/verify events for the audit trail (ties into Tier 3 #16)
+
+**Infra dependency**: needs a real SMTP setup. Recommend Gmail SMTP with an App Password for the demo (free, ~5 min setup), credentials read from env vars — never committed. For local development use Django's console email backend so codes print to the terminal and no real mail is sent.
+
+**Also worth reusing this OTP infrastructure for**: optional two-factor login for the Admin role — a strong talking point, and a small addition once the OTP model exists.
+
+---
+
+### 5.2 "Contact Administrator" — what happens on click
+
+Four options, cheapest to most impressive:
+
+| Option | Behavior | Effort | Verdict |
+|---|---|---|---|
+| A. `mailto:` link | Opens the user's mail client | Trivial | ❌ Weakest — breaks on machines with no mail client configured, and an interviewer sees zero engineering |
+| B. Static info panel | Modal showing admin email + phone + office hours | Low | ⚠️ Fine, but still just static text |
+| C. **Support-request form** | Modal/page: name, email, category (Login issue / Password reset / Account locked / Other), message → saved to DB **and** emailed to admin | Medium | ✅ **Recommended** — real feature, real model, works without a mail client |
+| D. Full ticketing system | C + ticket IDs, status tracking, admin reply thread | High | Nice, but overkill for a login-page link. Consider later as its own module |
+
+**Recommended: Option C**, with these details:
+- Opens as a **modal on the login page** — user never loses their place
+- Reachable **without being logged in** (the whole point is that they can't log in) — so it needs CSRF protection and rate limiting to avoid becoming a spam relay
+- Include a simple honeypot field or captcha to block bots
+- **New model** `SupportRequest`: `name`, `email`, `category`, `message`, `created_at`, `status` (New / In Progress / Resolved), `resolved_at`, `admin_notes`
+- Surfaces in Django admin with a filter on status, so the admin has a real queue to work
+- Show a count badge of unresolved requests on the admin dashboard
+- Send a confirmation email to the requester ("we've received your request") plus a notification to the admin
+
+**Open question for you**: should the support form also be reachable from *inside* the app once logged in (e.g. a "Help" item in the sidebar)? That would make it a general-purpose helpdesk rather than a login-page-only escape hatch. Recommend yes — same model, one extra link, and it makes the feature look deliberate rather than bolted onto the login screen.
 
 ---
 
