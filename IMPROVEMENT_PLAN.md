@@ -461,11 +461,342 @@ D5 (support queue, from §5.2) → D6 (activity feed) → A4 (notification badge
 
 ---
 
+---
+
+## 7. Key Feature Pages — Next to Redesign
+
+After **Login** and **Dashboards**, the core pages that students/teachers use daily. These exist but are minimal tables with no interactivity or visual polish.
+
+### Page Redesign Priority
+
+| # | Page | URL | Current state | Why it matters | Redesign notes |
+|---|---|---|---|---|---|
+| 1️⃣ | **Attendance (Student)** | `/student/<usn>/attendance/` | Plain table: course name, attended/total classes, %, classes-to-attend | Checked every single day; this % determines eligibility to sit exams. Visual progress is crucial. | §7.1 |
+| 2️⃣ | **Marks (Student)** | `/student/<usn>/marks_list/` | Table of 8 columns (internal 1-3, events 1-2, SEE, CIE); no progress indicators | Academically important; desktop-only layout breaks on mobile | §7.2 |
+| 3️⃣ | **Attendance (Teacher)** | `/teacher/<assign_id>/Students/attendance/` | Attendance % for each student in a class; link to submit new session | Teacher's daily workhorse; needs one-click path to "take attendance now" | §7.3 |
+| 4️⃣ | **Timetable (Student)** | `/student/<class>/timetable/` | Hard-coded 6×12 grid (magic-number breaks); unreadable on phones | Every student checks timetable multiple times per day — must be phone-friendly | §7.4 |
+| 5️⃣ | **Notices** | `/notices/` | Bulleted list; no search, filter, or bookmark | Information noise for students; admin has no draft/publish workflow | §7.5 |
+
+### 7.1 Attendance Page Redesign (Student)
+
+**Current state:**
+- Single table: Course | Attended | Total | % | Classes to Attend
+- Red/green row coloring for under/over 75%, but no context or guidance
+- No way to drill into individual sessions
+
+**Proposed redesign:**
+
+**Top card: Attendance Summary & Health**
+```
+┌─────────────────────────────────────────────┐
+│  Attendance Overview                        │
+│  Your attendance averaged across all        │
+│  courses. Stay above 75% to sit exams.     │
+│                                             │
+│  [████████░░] 83% (Average across courses) │
+│                                             │
+│  🟢 Healthy  |  🟠 At Risk (3)  |  🔴 Alert  │
+└─────────────────────────────────────────────┘
+```
+- Donut or progress bar showing weighted average
+- Badge counts for courses in each risk zone
+- Click badge → scroll to that section
+
+**Middle: Course-wise Cards (instead of table)**
+```
+┌──────────────────────────────┐
+│ Database Management Systems  │
+│ DBMS102                      │
+│                              │
+│ Attended: 87 / 100           │
+│ [████████░░] 87%             │
+│                              │
+│ 🟢 Safe (attend ≥1 more)    │
+│                              │
+│ [View Session History]       │
+│ [Link to marks for this course]
+└──────────────────────────────┘
+```
+
+Per course:
+- Course name + code
+- Attended / total (absolute numbers are more concrete than % alone)
+- Visual progress bar (colored by risk)
+- Status badge + guidance: "Safe" / "Attend 4 more" / "At Risk — only X classes left"
+- CTA links: "See each session →" (drill detail) + link to that course's marks
+
+**Visual hierarchy:**
+- Green (≥75%): optimistic tone, "You're safe"
+- Amber (65-74%): warning, "Attend X more" (use `AttendanceTotal.classes_to_attend` property)
+- Red (<65%): urgent, "High risk"
+
+**Mobile:** Stack cards vertically; remove absolute numbers if screen is tiny (<320px), just show % + badge
+
+**Bottom: Notice strip**
+- "Attendance is locked after exam date" or similar college rule
+
+**Data needed:**
+- All `AttendanceTotal` records for this student (already have)
+- Overall average (use Django `aggregate(Avg('attendance'))` on annotated query)
+- `classes_to_attend` for each course (already a model property)
+
+---
+
+### 7.2 Marks Page Redesign (Student)
+
+**Current state:**
+- Table: 8 columns wide (internal 1-3, events 1-2, SEE, but missing CIE/total)
+- Impossible to scan on a phone
+- No GPA, no "passing" indicator, no subject ranking
+
+**Proposed redesign:**
+
+**Top card: Overall Performance**
+```
+┌────────────────────────────────────┐
+│ GPA                                │
+│ 3.8 / 4.0                          │
+│ [████████░] 95% (Excellent)        │
+│                                    │
+│ Top performer in CS5A              │
+└────────────────────────────────────┘
+```
+- Compute GPA from all CIE scores (use `StudentCourse.get_cie()`)
+- Quick descriptor: Excellent/Good/Average/Below Average
+- "Top X%" or "Class rank" if available
+
+**Middle: Course-wise accordion or tabs**
+```
+Tab: Database Management Systems (DBMS102)
+
+┌──────────────────────────────────────────┐
+│ Continuous Internal Evaluation (CIE): 45 │
+│ Internal Test 1:  17 / 20                │
+│ Internal Test 2:  18 / 20                │
+│ Internal Test 3:  10 / 20  ⚠️ Low       │
+│ Event 1:         0 / 20   (Pending)     │
+│ Event 2:         0 / 20   (Pending)     │
+│                                          │
+│ Semester End Exam (SEE):  Pending       │
+│ Passing cut-off: 40 / 100               │
+│                                          │
+│ Expected Grade: B+ (if SEE = 60+)       │
+└──────────────────────────────────────────┘
+```
+
+Per course:
+- Show CIE total (sum of internal marks entered so far)
+- Sub-bullets for each component (Internals, Events, SEE) with status
+- Highlight low internals in amber (e.g., "<50% of internal possible")
+- If SEE is locked: show expected grade range based on CIE
+- If SEE is entered: show final grade + GPA impact
+
+**Visual polish:**
+- Icons: ✅ Submitted, ⏳ Pending, ⚠️ Low
+- Responsive: on mobile, stack to one course per scroll
+
+**Data needed:**
+- `StudentCourse.get_cie()` for each subject (already exists)
+- `Marks` records grouped by test name
+- Grade logic (if not exists in models, compute: ≥40 pass, 40-50 D, 50-60 C, 60-75 B, 75-90 A, 90-100 A+)
+
+---
+
+### 7.3 Attendance Marking Page (Teacher)
+
+**Current state:**
+- `/teacher/<assign_id>/ClassDates/` lists past sessions
+- Click to enter attendance (bulk form per session)
+- Two POST steps: mark → confirm → submit
+
+**Proposed redesign:**
+
+**Top card: Class & Session Selection**
+```
+┌────────────────────────────────────┐
+│ CS5A · Database Management Systems │
+│ 45 students                        │
+│                                    │
+│ Sessions this week:                │
+│ [Mon Aug 15, 11:00] ✅ Submitted  │
+│ [Wed Aug 17, 11:00] ⏳ Pending   │ ← Today
+│ [Fri Aug 19, 11:00] 🔒 Future    │
+│                                    │
+│ [Take attendance for today] CTA   │
+└────────────────────────────────────┘
+```
+
+**Middle: Attendance Marking Form**
+- One-click to mark all present, then uncheck absences (faster than checking 45 boxes)
+- Vertical list (not a grid) to save space
+```
+[ Aarav Patel      ] ✓ Present
+[ Bhavna Singh     ] ✓ Present
+[ Chirag Gupta     ] ☐ Absent
+[...]
+```
+- Keyboard shortcuts: S = select all, U = unselect all, P = mark present this row, A = mark absent this row
+- Show count: "23 / 45 present"
+
+**Bottom: Confirm & Submit**
+- Show summary ("Marked 23 present, 22 absent")
+- Option to review before submit
+- Submit button; on success → "Session recorded. Next session: Fri Aug 19"
+
+**Data needed:**
+- `Assign` for this class
+- `AttendanceClass` records for this class (past, current, future)
+- `Attendance` records for the chosen session
+- Real-time count as form updates
+
+---
+
+### 7.4 Timetable Page Redesign (Student)
+
+**Current state:**
+- Hard-coded 6×12 grid with magic-number breaks (indices 4, 8)
+- Not responsive; unreadable on phones
+
+**Proposed redesign:**
+
+**Desktop (≥768px): Weekly Grid (keep current)**
+```
+       Monday    Tuesday   Wednesday  ...
+7:30 | DBMS    | OS      | CN       | ...
+8:30 | DBMS    | —       | CN       | ...
+9:30 | —       | OS      | —        | ...
+BREAK
+11:00| CN      | DBMS    | OS       | ...
+11:50| CN      | DBMS    | —        | ...
+12:40| —       | —       | DBMS     | ...
+LUNCH
+2:30 | —       | CN      | —        | ...
+...
+```
+
+**Mobile (<768px): Today's Schedule (different view)**
+```
+Today: Wednesday, Aug 17
+
+┌──────────────────────────────┐
+│ Right now: 11:00 – 11:50    │
+│ Computer Networks (CN101)    │
+│ Room 302 · Lab              │
+│ [30 min remaining]           │
+└──────────────────────────────┘
+
+Next:
+┌──────────────────────────────┐
+│ 12:40 – 1:30 (Lunch)        │
+└──────────────────────────────┘
+
+┌──────────────────────────────┐
+│ 2:30 – 3:30                  │
+│ Database Management (DBMS)  │
+│ Room 201                     │
+└──────────────────────────────┘
+
+[← Prev day] [Week view] [Next day →]
+```
+
+**Tablet (768-1024px): Day view (split design)**
+- Left: day selector (Mon | Tue | Wed...)
+- Right: today's full timetable
+
+**Data needed:**
+- `AssignTime` records for this student's class
+- Current day/time (for "right now" indicator)
+- Course room info (if available; else say "TBD")
+
+---
+
+### 7.5 Notice Board Redesign
+
+**Current state:**
+- Chronological list of notices; no filter, search, or draft/publish workflow
+
+**Proposed redesign:**
+
+**Student view:**
+```
+[Search notices...] [🔔 3 unread]
+
+┌──────────────────────────────────────┐
+│ Exam schedule released              │
+│ 🟢 Aug 16, 2:30 PM                  │
+│ Read 40 sec ago · Mark as read ✓    │
+│                                      │
+│ The Semester End Exam schedule has  │
+│ been released. [Read full notice →] │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│ Library closure on Aug 19            │
+│ 🟡 Aug 15, 10:00 AM                 │
+│ Read 2 days ago                      │
+│                                      │
+│ The library will be closed on Aug   │
+│ 19 for maintenance. [More...] └─────┘
+```
+
+**Features:**
+- Unread badge on topbar
+- Search by title/content
+- Filter by date (This week / This month / All)
+- Mark as read (toggle per notice)
+- Category tags: "Exam", "Administrative", "Event"
+- Bookmark/save for later
+
+**Admin view:**
+```
+[+ New Notice]
+
+Drafts (3)
+┌──────────────────────────────┐
+│ Fee payment deadline          │
+│ [Edit] [Preview] [Publish]   │
+│ Due date for Spring semester │
+└──────────────────────────────┘
+
+Published (15)
+┌──────────────────────────────┐
+│ Exam schedule released       │
+│ [Edit] [Unpublish] [Delete]  │
+│ Published 2 hrs ago          │
+│ Readers: 342                 │
+└──────────────────────────────┘
+```
+
+**New fields on Notice model:**
+- `is_draft` (Boolean, default True) — only admins see drafts
+- `is_published` (Boolean) — flip to publish
+- `published_at` (DateTimeField, nullable)
+- `pinned` (Boolean) — stick to top
+- `readers` (FK to User, ManyToMany, auto-populate on "viewed")
+
+---
+
+## Navigation & Sequencing
+
+**Recommended build order for pages:**
+1. **Login redesign** (§5) — highest visibility, table-stakes
+2. **Dashboard redesign** (§6) — done just after login, students/teachers see it instantly
+3. **Attendance page** (§7.1) — most-used feature, high impact
+4. **Marks page** (§7.2) — academically critical, makes the app "smart"
+5. **Timetable** (§7.4) — mobile experience matters, simpler than attendance
+6. **Notice board** (§7.5) — lower priority but completes the core UX
+7. **Teacher attendance flow** (§7.3) — backend-heavy, does later
+
+---
+
 ## Next steps (PAUSED — awaiting your review)
 
-**Login page (§5)**, **dashboards (§6)** and **feature ideas (§6.5)** are now specced. Before we code anything:
-1. Review §6.5 — cross out anything you don't want, star anything that must be in
-2. Confirm the build order — or reorder it
-3. Two decisions still open from §5: role-selector behavior (cosmetic vs. enforced), and whether Forgot Password / OTP goes in now (needs SMTP setup) or later
+**Login (§5)**, **Dashboards (§6)**, **Feature Ideas (§6.5)** and **Page Specs (§7)** are now complete. Before we code:
 
-Mark up this file with your feedback, then send it back and we start on code.
+1. **Review §7** — which page designs do you like? Any changes?
+2. **Confirm build order** — ready to start with Login page, then Dashboards, then Pages?
+3. **Two open decisions from §5:**
+   - Role selector: cosmetic (just show "Student | Faculty | Admin" tabs, don't enforce) or real (validate role matches after login)?
+   - Forgot Password / OTP: include now (needs SMTP setup, can use Gmail App Password) or defer to later?
+
+Mark up the file with feedback, send it back, and we start coding. **No more planning—only code from here on.**
