@@ -1,11 +1,14 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
-    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest
+    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest, NoticeRead, notice_category_choice
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Count, Q
+from django.core.paginator import Paginator
+from django.core.exceptions import PermissionDenied
+from datetime import timedelta
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.contrib import messages
@@ -14,7 +17,7 @@ from django.views.decorators.http import require_POST
 from django.contrib.auth import get_user_model
 from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
                         ExtraClassForm, FeeForm, FeeTransactionForm,
-                        ErpLoginForm, SupportRequestForm)
+                        ErpLoginForm, SupportRequestForm, NoticeForm)
 from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
                              owns_marks_class, owns_teacher_id, assert_teaches)
 from openpyxl import Workbook
@@ -836,16 +839,61 @@ def edit_fee(request, fee_id):
 
 @login_required()
 def notices(request):
-    if request.user.is_teacher:
-        audiences = ['All', 'Teachers']
-    elif request.user.is_student:
-        audiences = ['All', 'Students']
-    else:
-        audiences = ['All', 'Students', 'Teachers']
+    """The board, with search, filters and pagination.
 
-    notice_list = Notice.objects.filter(audience__in=audiences)
-    context = {'notice_list': notice_list}
-    return render(request, 'info/notices.html', context)
+    Previously every notice for the audience came back in one unpaginated list
+    with no way to find anything in it.
+    """
+    notice_list = Notice.objects.visible_to(request.user).select_related('posted_by')
+
+    query = request.GET.get('q', '').strip()
+    if query:
+        notice_list = notice_list.filter(
+            Q(title__icontains=query) | Q(message__icontains=query))
+
+    category = request.GET.get('category', '')
+    if category:
+        notice_list = notice_list.filter(category=category)
+
+    period = request.GET.get('period', '')
+    if period == 'week':
+        notice_list = notice_list.filter(
+            created_at__gte=timezone.now() - timedelta(days=7))
+    elif period == 'month':
+        notice_list = notice_list.filter(
+            created_at__gte=timezone.now() - timedelta(days=30))
+
+    page = Paginator(notice_list, 10).get_page(request.GET.get('page'))
+    read_ids = set(NoticeRead.objects
+                   .filter(user=request.user, notice__in=page.object_list)
+                   .values_list('notice_id', flat=True))
+
+    return render(request, 'info/notices.html', {
+        'page': page,
+        'q': query,
+        'category': category,
+        'period': period,
+        'categories': notice_category_choice,
+        'read_ids': read_ids,
+        'unread_count': unread_notice_count(request.user),
+        'can_post': request.user.is_superuser or request.user.is_teacher,
+    })
+
+
+@login_required()
+def notice_detail(request, notice_id):
+    notice = get_object_or_404(
+        Notice.objects.visible_to(request.user).select_related('posted_by'),
+        id=notice_id)
+
+    # Opening it is what counts as reading it.
+    NoticeRead.objects.get_or_create(notice=notice, user=request.user)
+
+    return render(request, 'info/notice_detail.html', {
+        'notice': notice,
+        'can_edit': request.user.is_superuser or notice.posted_by_id == request.user.id,
+        'read_count': notice.reads.count(),
+    })
 
 
 @login_required()
@@ -854,15 +902,57 @@ def add_notice(request):
         return redirect('/')
 
     if request.method == 'POST':
-        Notice(
-            title=request.POST['title'],
-            message=request.POST['message'],
-            audience=request.POST['audience'],
-            posted_by=request.user,
-        ).save()
-        return redirect('notices')
+        form = NoticeForm(request.POST, user=request.user)
+        if form.is_valid():
+            notice = form.save(commit=False)
+            notice.posted_by = request.user
+            notice.save()
+            return redirect('notice_detail', notice_id=notice.id)
+    else:
+        form = NoticeForm(user=request.user)
 
-    return render(request, 'info/add_notice.html')
+    return render(request, 'info/add_notice.html', {'form': form})
+
+
+@login_required()
+def edit_notice(request, notice_id):
+    """Neither editing nor deleting existed - a notice, once posted, was
+    permanent from the UI."""
+    notice = get_object_or_404(Notice, id=notice_id)
+    if not (request.user.is_superuser or notice.posted_by_id == request.user.id):
+        raise PermissionDenied
+
+    if request.method == 'POST':
+        form = NoticeForm(request.POST, instance=notice, user=request.user)
+        if form.is_valid():
+            form.save()
+            return redirect('notice_detail', notice_id=notice.id)
+    else:
+        form = NoticeForm(instance=notice, user=request.user)
+
+    return render(request, 'info/add_notice.html',
+                  {'form': form, 'notice': notice})
+
+
+@login_required()
+@require_POST
+def delete_notice(request, notice_id):
+    notice = get_object_or_404(Notice, id=notice_id)
+    if not (request.user.is_superuser or notice.posted_by_id == request.user.id):
+        raise PermissionDenied
+
+    notice.delete()
+    messages.success(request, 'Notice deleted.')
+    return redirect('notices')
+
+
+def unread_notice_count(user):
+    """Notices the user has not opened, for the topbar badge."""
+    if not user.is_authenticated:
+        return 0
+    return (Notice.objects.visible_to(user)
+            .exclude(reads__user=user)
+            .count())
 
 class ErpPasswordChangeView(PasswordChangeView):
     """Django's password change, plus clearing the must-change flag.

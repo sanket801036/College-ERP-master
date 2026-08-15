@@ -42,7 +42,12 @@
         <div class="collapse navbar-collapse" id="navbarResponsive">
           <ul class="navbar-nav ml-auto align-items-center">
             <li class="nav-item">
-              <a class="nav-link" href="{% url 'notices' %}" title="Notices"><i class="fas fa-bell"></i></a>
+              <a class="nav-link position-relative" href="{% url 'notices' %}" title="Notices">
+                <i class="fas fa-bell"></i>
+                {% if unread_notices %}
+                  <span class="erp-bell-badge">{{ unread_notices }}</span>
+                {% endif %}
+              </a>
             </li>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle d-flex align-items-center pr-0" href="#" id="userMenu" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">

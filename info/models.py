@@ -517,18 +517,92 @@ notice_audience_choice = (
 )
 
 
+notice_category_choice = (
+    ('General', 'General'),
+    ('Exam', 'Exam'),
+    ('Fee', 'Fee'),
+    ('Event', 'Event'),
+    ('Holiday', 'Holiday'),
+    ('Administrative', 'Administrative'),
+)
+
+
+class NoticeQuerySet(models.QuerySet):
+    def visible_to(self, user):
+        """Published, unexpired notices addressed to this user's role.
+
+        Staff see drafts and expired notices as well, since they are the ones
+        who have to manage them.
+        """
+        if user.is_teacher:
+            audiences = ['All', 'Teachers']
+        elif user.is_student:
+            audiences = ['All', 'Students']
+        else:
+            audiences = [a for a, _ in notice_audience_choice]
+
+        qs = self.filter(audience__in=audiences)
+        if user.is_student:
+            qs = qs.filter(is_published=True).exclude(
+                expires_at__lt=timezone.localdate())
+        return qs
+
+
 class Notice(models.Model):
     title = models.CharField(max_length=200)
-    message = models.TextField()
+    message = models.TextField(max_length=5000)
     audience = models.CharField(max_length=20, choices=notice_audience_choice, default='All')
+    category = models.CharField(max_length=20, choices=notice_category_choice,
+                                default='General')
+    # Written now, released when ready - marks and notices alike were visible
+    # the instant they were typed.
+    is_published = models.BooleanField(default=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    pinned = models.BooleanField(default=False)
+    expires_at = models.DateField(null=True, blank=True,
+                                  help_text='Hidden from students after this date.')
     posted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = NoticeQuerySet.as_manager()
 
     class Meta:
-        ordering = ['-created_at']
+        # Pinned first, then newest. A board that only accumulates is unusable.
+        ordering = ['-pinned', '-created_at']
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        if self.is_published and self.published_at is None:
+            self.published_at = timezone.now()
+        elif not self.is_published:
+            self.published_at = None
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self):
+        return self.expires_at is not None and self.expires_at < timezone.localdate()
+
+    def is_read_by(self, user):
+        return self.reads.filter(user=user).exists()
+
+
+class NoticeRead(models.Model):
+    """Per-user read state.
+
+    A through model rather than a plain ManyToMany, so "read 2 days ago" and
+    the author's read count both come for free.
+    """
+    notice = models.ForeignKey(Notice, on_delete=models.CASCADE,
+                               related_name='reads')
+    user = models.ForeignKey(User, on_delete=models.CASCADE,
+                             related_name='notice_reads')
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (('notice', 'user'),)
 
 
 # Triggers

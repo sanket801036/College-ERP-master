@@ -95,7 +95,7 @@ class TimetableRenderTests(TestCase):
         self.client.force_login(self.student.user)
         url = reverse('timetable', args=(self.klass.pk,))
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(6):
             self.assertEqual(self.client.get(url).status_code, 200)
 
     def test_teacher_timetable_renders(self):

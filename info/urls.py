@@ -66,6 +66,9 @@ urlpatterns = [
 
     path('notices/', views.notices, name='notices'),
     path('notices/add/', views.add_notice, name='add_notice'),
+    path('notices/<int:notice_id>/', views.notice_detail, name='notice_detail'),
+    path('notices/<int:notice_id>/edit/', views.edit_notice, name='edit_notice'),
+    path('notices/<int:notice_id>/delete/', views.delete_notice, name='delete_notice'),
 ]
 admin.site.site_url = None
 admin.site.site_header = 'My Site'

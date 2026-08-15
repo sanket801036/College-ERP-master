@@ -403,3 +403,20 @@ body {
 .erp-login-card .modal-body input,
 .erp-login-card .modal-body select,
 .erp-login-card .modal-body textarea { width: 100%; }
+
+/* Unread count on the topbar bell */
+.erp-bell-badge {
+  position: absolute;
+  top: .25rem;
+  right: .1rem;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--erp-danger);
+  color: #fff;
+  font-size: .65rem;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}

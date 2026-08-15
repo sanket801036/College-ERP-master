@@ -191,7 +191,9 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 
 class NoticeAdmin(admin.ModelAdmin):
-    list_display = ('title', 'audience', 'posted_by', 'created_at')
+    list_display = ('title', 'category', 'audience', 'is_published', 'pinned',
+                    'posted_by', 'created_at')
+    list_filter = ('category', 'audience', 'is_published', 'pinned')
     search_fields = ('title', 'message')
     list_filter = ('audience',)
     ordering = ['-created_at']

@@ -118,7 +118,9 @@ class AttendanceQueryCountTests(TestCase):
         self.client.force_login(self.students[0].user)
         url = reverse('attendance', args=(self.students[0].USN,))
 
-        with self.assertNumQueries(7):
+        # Two of these belong to the topbar's unread-notice badge, which every
+        # page carries; the point is that none of them scale with course count.
+        with self.assertNumQueries(9):
             self.assertEqual(self.client.get(url).status_code, 200)
 
     def test_teacher_class_page_query_count_is_flat(self):
@@ -127,7 +129,7 @@ class AttendanceQueryCountTests(TestCase):
         self.client.force_login(self.teacher.user)
         url = reverse('t_student', args=(self.assigns[0].id,))
 
-        with self.assertNumQueries(11):
+        with self.assertNumQueries(12):
             self.assertEqual(self.client.get(url).status_code, 200)
 
     def test_adding_students_does_not_add_queries(self):

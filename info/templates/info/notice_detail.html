@@ -1,0 +1,45 @@
+{% extends 'info/base.html' %}
+
+{% block title %}{{ notice.title }}{% endblock %}
+
+{% block content %}
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>
+      {% if notice.pinned %}<i class="fas fa-thumbtack text-primary mr-1"></i>{% endif %}
+      <b>{{ notice.title }}</b>
+    </span>
+    <span class="erp-badge erp-badge-info">{{ notice.category }}</span>
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">
+      Posted {{ notice.created_at|date:"d M Y, H:i" }}
+      {% if notice.posted_by %}by {{ notice.posted_by.username }}{% endif %}
+      &middot; for {{ notice.audience }}
+      {% if not notice.is_published %}<span class="erp-badge erp-badge-warning ml-1">Draft</span>{% endif %}
+      {% if notice.is_expired %}<span class="erp-badge erp-badge-danger ml-1">Expired</span>{% endif %}
+      {% if notice.expires_at and not notice.is_expired %}&middot; hidden after {{ notice.expires_at }}{% endif %}
+    </p>
+
+    {# Notices are plain text and Django escapes them on the way out. If a rich
+       text editor is ever added here, it must be sanitised first - otherwise
+       any teacher account can inject script into every student's page. #}
+    <div style="white-space: pre-wrap;">{{ notice.message }}</div>
+
+    {% if can_edit %}
+      <hr>
+      <p class="text-muted small">Opened by {{ read_count }} so far.</p>
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_notice' notice.id %}">Edit</a>
+      <form method="POST" action="{% url 'delete_notice' notice.id %}" class="d-inline"
+            onsubmit="return confirm('Delete this notice permanently?');">
+        {% csrf_token %}
+        <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<a class="btn btn-outline-secondary" href="{% url 'notices' %}">Back to notice board</a>
+
+{% endblock %}

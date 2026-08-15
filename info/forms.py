@@ -5,8 +5,9 @@ from django.utils.crypto import get_random_string
 
 from django.utils import timezone
 
-from info.models import (AttendanceRange, Fee, FeeTransaction, Student,
-                         SupportRequest, Teacher)
+from info.models import (AttendanceRange, Fee, FeeTransaction, Notice,
+                         SupportRequest, Student, Teacher,
+                         notice_audience_choice)
 
 User = get_user_model()
 
@@ -296,3 +297,49 @@ class SupportRequestForm(forms.ModelForm):
         if len(message) < 10:
             raise forms.ValidationError('Tell us a bit more about the problem.')
         return message
+
+
+class NoticeForm(forms.ModelForm):
+    """Posting or editing a notice.
+
+    title, message and audience previously came straight off request.POST, so a
+    missing field was a 500 and audience was never checked against the choices -
+    an arbitrary string could be stored, after which the notice matched no
+    audience filter and was invisible to everyone.
+    """
+
+    class Meta:
+        model = Notice
+        fields = ['title', 'message', 'audience', 'category', 'pinned',
+                  'is_published', 'expires_at']
+        widgets = {
+            'message': forms.Textarea(attrs={'rows': 6}),
+            'expires_at': forms.DateInput(attrs={'type': 'date'}),
+        }
+        labels = {
+            'is_published': 'Publish now (uncheck to save as a draft)',
+            'pinned': 'Pin to the top of the board',
+            'expires_at': 'Hide after (optional)',
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        # Addressing the whole institution, staff included, is an
+        # administrator's call rather than any teacher's.
+        if user is not None and not user.is_superuser:
+            self.fields['audience'].choices = [
+                c for c in notice_audience_choice if c[0] != 'Teachers']
+            self.fields['pinned'].disabled = True
+
+    def clean_title(self):
+        title = self.cleaned_data['title'].strip()
+        if len(title) < 5:
+            raise forms.ValidationError('Give the notice a clearer title.')
+        return title
+
+    def clean_expires_at(self):
+        expires_at = self.cleaned_data.get('expires_at')
+        if expires_at and expires_at < timezone.localdate():
+            raise forms.ValidationError('That date has already passed.')
+        return expires_at
