@@ -340,16 +340,26 @@ days = {
 
 
 def create_attendance(sender, instance, **kwargs):
-    if kwargs['created']:
-        start_date = AttendanceRange.objects.all()[:1].get().start_date
-        end_date = AttendanceRange.objects.all()[:1].get().end_date
-        for single_date in daterange(start_date, end_date):
-            if single_date.isoweekday() == days[instance.day]:
-                try:
-                    AttendanceClass.objects.get(date=single_date.strftime("%Y-%m-%d"), assign=instance.assign)
-                except AttendanceClass.DoesNotExist:
-                    a = AttendanceClass(date=single_date.strftime("%Y-%m-%d"), assign=instance.assign)
-                    a.save()
+    if not kwargs['created']:
+        return
+
+    # The semester date range is set up once by an admin. On a fresh install it
+    # doesn't exist yet, and this signal used to raise DoesNotExist and take the
+    # whole save with it - so adding the very first timetable slot failed. Skip
+    # generation instead; the sessions can be built once a range is configured.
+    date_range = AttendanceRange.objects.first()
+    if date_range is None:
+        return
+
+    weekday = days[instance.day]
+    existing = set(
+        AttendanceClass.objects.filter(assign=instance.assign).values_list('date', flat=True)
+    )
+    AttendanceClass.objects.bulk_create([
+        AttendanceClass(date=single_date, assign=instance.assign)
+        for single_date in daterange(date_range.start_date, date_range.end_date)
+        if single_date.isoweekday() == weekday and single_date not in existing
+    ])
 
 
 def create_marks(sender, instance, **kwargs):
