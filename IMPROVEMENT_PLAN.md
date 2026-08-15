@@ -675,6 +675,78 @@ Per course:
 
 ---
 
+### 7.2.x Marks Module — Full Feature Set
+
+Same treatment as the attendance module. **Data ready?** ✅ = buildable today, ⚠️ = small schema addition, ❌ = new model.
+
+**Marking scheme as it exists in code** (worth stating explicitly, since every feature below depends on it):
+- 5 CIE components — Internal Test 1/2/3 and Event 1/2 — each out of **20** (`Marks.total_marks`)
+- `StudentCourse.get_cie()` = `ceil(sum of those 5 / 2)` → **CIE is out of 50**
+- Semester End Exam (SEE) out of **100**
+- Nothing in the codebase computes a final mark, a letter grade, or a GPA today — that logic has to be written from scratch
+
+#### Phase A — Core page (student-facing)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| MK1 | **GPA / performance card** | Overall score card at the top. See MK14 first — a *true* GPA needs course credits, which the schema doesn't have. Until then this should be an honestly-labelled "Average Score", not a fake "3.8/4.0 GPA" | ⚠️ |
+| MK2 | **Per-course accordion** | Replace the 8-column table (unreadable on a phone) with one expandable card per course: CIE total, component breakdown, SEE status | ✅ |
+| MK3 | **CIE progress bar** | "CIE: 38 / 50" with a bar — instantly more readable than six loose numbers | ✅ `get_cie()` |
+| MK4 | **Pending vs. zero distinction** | **Correctness issue.** `marks1` defaults to `0`, so a test that hasn't happened yet displays as **0** — identical to actually scoring zero. `MarksClass.status` already records whether the teacher submitted that batch, but the student page never consults it. Must render "Not yet conducted" instead of `0` | ✅ (`MarksClass.status` exists, just unused here) |
+| MK5 | **Expected / required-marks calculator** | The counterpart to the attendance bunk calculator: *"You have CIE 38/50. You need **44/100** in the SEE to reach an A grade."* Solve the grade formula backwards for the SEE mark. This is the feature students actually want from a marks page | ✅ |
+| MK6 | **Letter grade + grade points** | Compute final = CIE + SEE/2 (out of 100), then map to a grade band. Show provisional grade while the SEE is pending | ✅ |
+| MK7 | **SEE eligibility flag** | Most colleges require a minimum CIE to sit the final exam. Flag any course where CIE is below the cut-off | ✅ (threshold configurable) |
+| MK8 | **Class rank / percentile** | "Rank 12 of 45" for the student's *own* position — standard in Indian colleges and privacy-safe, since each student sees only their own rank. Do **not** build a public leaderboard | ✅ |
+| MK9 | **Weakest/strongest subject callout** | "Strongest: DBMS (46/50) · Needs work: OS (21/50)" | ✅ |
+| MK10 | **Print / PDF report card** | `reportlab` is installed and still completely unused. A proper marks card with the college header is a very demo-able artifact | ✅ |
+
+#### Phase B — Analysis & insight
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| MK11 | **Performance trend across internals** | Line chart of Internal 1 → 2 → 3 per course — shows improvement or decline over the semester | ✅ |
+| MK12 | **Radar/bar chart across subjects** | All courses on one chart, so relative strengths are visible at a glance | ✅ |
+| MK13 | **Comparison against class average** | "You: 38 · Class average: 31" per component. Aggregate only — never a per-classmate breakdown | ✅ |
+| MK14 | **Credits & true CGPA** | `Course` has **no `credits` field**, so a genuine credit-weighted GPA is not computable today. Either add `credits` to `Course` (small migration, unlocks real CGPA + SGPA) or keep it an unweighted average and label it as such. Recommend adding the field — CGPA is what a college ERP is expected to produce | ⚠️ `Course.credits` |
+| MK15 | **Semester-over-semester history** | SGPA per semester and cumulative CGPA over time | ⚠️ needs semester tagging on `StudentCourse` |
+| MK16 | **Attendance ↔ marks correlation** | `StudentCourse.get_attendance()` already exists alongside `get_cie()` — plotting the two together across courses is a genuinely interesting insight and costs one scatter chart | ✅ |
+| MK17 | **Grade distribution for a course** | Where the student sits in the class histogram | ✅ |
+
+#### Phase C — Workflow (new models)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| MK18 | **Re-evaluation request** | Student disputes a mark → teacher/admin reviews → mark updated with full audit trail. Same shape as the attendance-correction workflow (AT20) and can share its state machine and permission logic | ❌ `MarkRevaluationRequest` |
+| MK19 | **Marks audit log** | Today `marks_confirm` and `edit_marks` overwrite `marks1` in place with no record of the previous value, who changed it, or when. For grades specifically, that is the kind of gap an interviewer will press on | ❌ audit model |
+| MK20 | **Result publication control** | Teacher enters marks, but students only see them once results are formally published — colleges never expose marks the instant they're typed | ⚠️ `MarksClass.is_published` |
+| MK21 | **Marks release notification** | Email/in-app alert when a batch is published (reuses the SMTP work from §5.1) | ⚠️ |
+
+#### Phase D — Technical fixes this module needs (all verified against the running app)
+
+| # | Issue | Detail |
+|---|---|---|
+| MK22 | **Crash bug: `marks_list` passes a field that doesn't exist** | `info/views.py` calls `sc.marks_set.create(type='I', name='Internal test 1')` (six times), but the `Marks` model has only `studentcourse`, `name`, `marks1` — there is **no `type` field**. Verified in a shell: this raises `TypeError: Marks() got unexpected keyword arguments: 'type'`. It sits in the `except StudentCourse.DoesNotExist` fallback branch, which normally doesn't fire because the `create_marks` signal pre-creates the rows — so the page works today purely by luck. Any student whose `StudentCourse` row is missing (bulk import, a deleted row, data restored without signals) gets a hard 500. The identical block in `apis/views.py` has the same problem |
+| MK23 | **`get_cie()` depends on unordered query results** | `get_cie()` does `marks_list = self.marks_set.all()` then `sum(m[:5])` — "the first five" — but `Marks.Meta` has **no `ordering`** (verified: `Marks._meta.ordering == []`). Unordered SQL results have no guaranteed order; Postgres is free to return rows in any sequence, and updated rows commonly move. If the SEE row (out of 100) lands in the first five, CIE silently absorbs it and drops an internal — a wrong grade with no error anywhere. It happens to be correct today only because insertion order matches. Fix: select the five components **by name**, never by position |
+| MK24 | **The marks table has the same positional assumption** | `marks_list.html` renders `{% for m in sc.marks_set.all %}` straight into columns headed Internals 1/2/3, Event 1/2, SEE — so the same unordered queryset can place values under the wrong headings. The template should look each component up by name |
+| MK25 | **No validation on marks entry** | `marks_confirm` does `mark = request.POST[s.USN]` and assigns it directly to `m.marks1`. Verified: a value of **85 saves cleanly onto an internal test worth 20**. Django field validators only run via `full_clean()`, which a bare `.save()` skips, so `MaxValueValidator(100)` never executes either. Non-numeric input raises an unhandled `ValueError`, and a missing form field raises `KeyError` → 500. This is the clearest case in the whole project for switching to a `ModelForm`/formset with `clean_marks1()` bounded by `total_marks` |
+| MK26 | **N+1 on the marks page** | Measured: **10 queries for a single course** (~4 fixed + ~6 per course), so a 6-course student issues roughly 40. Much lighter than the attendance page's ~120, but the same root cause — `sc.marks_set.all()` per course plus `get_cie()` per course. Fix with `prefetch_related('marks_set')` and a single aggregate |
+| MK27 | **No tests for grade logic** | CIE, grade banding, and the required-SEE calculator are pure functions — ideal first unit tests, including boundaries (all components pending, exactly at a grade cut-off, SEE absent) |
+
+#### Recommended order for this module
+
+1. **MK22, MK23, MK24, MK25** — four real bugs (one crash, two silent-wrong-grade, one data-integrity). Grades are the highest-stakes data in the system; fix these before layering UI on top
+2. **MK4** — pending vs. zero, the same class of correctness bug as AT6 in attendance
+3. **MK26** — N+1, while the queries are being rewritten anyway
+4. **MK2, MK3, MK5, MK6, MK7** — the redesigned page: accordion, CIE bars, required-marks calculator, grades
+5. **MK14** — add `Course.credits`, which unlocks a real CGPA instead of a placeholder
+6. **MK27** — unit tests alongside steps 1–4, not after
+7. **MK11, MK12, MK16** — charts (shares the chart library with the attendance module)
+8. **MK18, MK19, MK20** — re-evaluation workflow, audit log, publication control
+
+**Note on ordering across modules:** MK18/MK19 (re-evaluation + audit) and AT20/AT21 (attendance correction + leave) are the same underlying pattern — a request/approve state machine with an audit trail. Build one generic workflow once and apply it to both, rather than writing it twice.
+
+---
+
 ### 7.3 Attendance Marking Page (Teacher)
 
 **Current state:**
