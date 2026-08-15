@@ -1,24 +1,34 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
-    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog
+    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Count, Q
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.views import PasswordChangeView
+from django.contrib.auth.views import LoginView, PasswordChangeView
+from django.contrib import messages
+from django.core.cache import cache
 from django.views.decorators.http import require_POST
 from django.contrib.auth import get_user_model
 from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
-                        ExtraClassForm, FeeForm, FeeTransactionForm)
+                        ExtraClassForm, FeeForm, FeeTransactionForm,
+                        ErpLoginForm, SupportRequestForm)
 from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
                              owns_marks_class, owns_teacher_id, assert_teaches)
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 
+import logging
+
 User = get_user_model()
+logger = logging.getLogger(__name__)
+
+# Two weeks - long enough to be useful on a personal device, short enough that
+# a shared machine does not stay signed in indefinitely.
+REMEMBER_ME_SECONDS = 60 * 60 * 24 * 14
 
 # Create your views here.
 
@@ -161,6 +171,7 @@ def _admin_dashboard():
                               if t.attendance < 75}),
         'fees_outstanding': outstanding,
         'overdue_count': sum(1 for f in fees if f.is_overdue),
+        'open_support': SupportRequest.objects.exclude(status='Resolved').count(),
         'recent_activity': AuditLog.objects.all()[:10],
     }
 
@@ -868,3 +879,68 @@ class ErpPasswordChangeView(PasswordChangeView):
             self.request.user.must_change_password = False
             self.request.user.save(update_fields=['must_change_password'])
         return response
+
+
+class ErpLoginView(LoginView):
+    """Login with a role selector, Remember Me and the support form alongside."""
+    template_name = 'info/login.html'
+    authentication_form = ErpLoginForm
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.setdefault('support_form', SupportRequestForm())
+        return context
+
+    def form_valid(self, form):
+        # Without this every session lasts SESSION_COOKIE_AGE regardless, so the
+        # checkbox would be decoration.
+        if form.cleaned_data.get('remember_me'):
+            self.request.session.set_expiry(REMEMBER_ME_SECONDS)
+        else:
+            self.request.session.set_expiry(0)  # ends when the browser closes
+        return super().form_valid(form)
+
+
+def support_request(request):
+    """Handle the "Contact Administrator" form on the login page.
+
+    Deliberately open to anonymous callers - someone who cannot sign in is
+    exactly who needs it - so it is rate-limited per IP and the form carries a
+    honeypot.
+    """
+    if request.method != 'POST':
+        return redirect('login')
+
+    form = SupportRequestForm(request.POST)
+    if _support_rate_limited(request):
+        form.add_error(None, 'Too many messages from here just now. '
+                             'Try again in a few minutes.')
+    elif form.is_valid():
+        support = form.save()
+        logger.info('Support request %s from %s (%s)',
+                    support.pk, support.name, support.category)
+        messages.success(
+            request,
+            'Thanks - your message is with the administrator. '
+            'They will get back to you by email.')
+        return redirect('login')
+
+    # Re-render the login page with the modal's errors, so nothing is retyped.
+    return ErpLoginView.as_view(extra_context={
+        'support_form': form, 'open_support': True})(request)
+
+
+def _support_rate_limited(request, limit=3, window=900):
+    """Allow `limit` submissions per IP per `window` seconds.
+
+    Uses the cache rather than a table - this only needs to make spamming
+    inconvenient, and losing the counter on a restart is not a problem.
+    """
+    ip = (request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+          or request.META.get('REMOTE_ADDR', 'unknown'))
+    key = 'support-requests:%s' % ip
+    seen = cache.get(key, 0)
+    if seen >= limit:
+        return True
+    cache.set(key, seen + 1, window)
+    return False

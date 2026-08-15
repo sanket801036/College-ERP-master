@@ -5,7 +5,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.http import HttpResponseRedirect
 from django.urls import path
 
-from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AssignTime, AttendanceClass, FeeTransaction, AuditLog
+from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AssignTime, AttendanceClass, FeeTransaction, AuditLog, SupportRequest
 from .models import StudentCourse, Marks, User, AttendanceRange, Fee, Notice
 
 # Register your models here.
@@ -161,6 +161,16 @@ class FeeTransactionAdmin(admin.ModelAdmin):
     ordering = ['-paid_on']
 
 
+class SupportRequestAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'name', 'category', 'status', 'email')
+    list_filter = ('status', 'category', 'created_at')
+    search_fields = ('name', 'email', 'message')
+    list_editable = ('status',)
+    readonly_fields = ('name', 'email', 'category', 'message', 'created_at',
+                       'resolved_at')
+    ordering = ['-created_at']
+
+
 class AuditLogAdmin(admin.ModelAdmin):
     list_display = ('created_at', 'action', 'actor_name', 'student_name', 'summary')
     list_filter = ('action', 'created_at')
@@ -199,4 +209,5 @@ admin.site.register(AttendanceClass, AttendanceClassAdmin)
 admin.site.register(Fee, FeeAdmin)
 admin.site.register(FeeTransaction, FeeTransactionAdmin)
 admin.site.register(AuditLog, AuditLogAdmin)
+admin.site.register(SupportRequest, SupportRequestAdmin)
 admin.site.register(Notice, NoticeAdmin)

@@ -331,3 +331,75 @@ body {
   text-transform: uppercase;
   letter-spacing: .04em;
 }
+
+/* ---------- Login: role tabs, password toggle ---------- */
+.erp-role-tabs {
+  display: flex;
+  gap: .25rem;
+  background: var(--erp-bg);
+  border: 1px solid var(--erp-border);
+  border-radius: 12px;
+  padding: .25rem;
+}
+
+.erp-role-tab {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  padding: .45rem .25rem;
+  border-radius: 9px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--erp-muted);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+
+.erp-role-tab input {
+  /* The label is the control; the radio itself stays available to
+     screen readers and keyboard users rather than being display:none. */
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.erp-role-tab:hover { color: var(--erp-primary-dark); }
+
+.erp-role-tab.active {
+  background: var(--erp-surface);
+  color: var(--erp-primary-dark);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
+}
+
+.erp-role-tab input:focus-visible + * ,
+.erp-role-tab:focus-within {
+  outline: 2px solid var(--erp-primary);
+  outline-offset: 2px;
+}
+
+.erp-password-field { position: relative; }
+
+.erp-password-field input {
+  /* Room for the toggle so long passwords don't run underneath it. */
+  padding-right: 2.75rem !important;
+}
+
+.erp-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: .5rem;
+  transform: translateY(-50%);
+  border: 0;
+  background: none;
+  color: var(--erp-muted);
+  padding: .35rem .5rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.erp-password-toggle:hover { color: var(--erp-primary); }
+
+.erp-login-card .modal-body input,
+.erp-login-card .modal-body select,
+.erp-login-card .modal-body textarea { width: 100%; }

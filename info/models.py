@@ -689,3 +689,49 @@ class AuditLog(models.Model):
     def record_many(cls, entries):
         """Bulk variant for batch submissions."""
         return cls.objects.bulk_create(entries)
+
+
+support_category_choice = (
+    ('Login issue', 'Cannot sign in'),
+    ('Password reset', 'Forgotten password'),
+    ('Account locked', 'Account locked'),
+    ('Wrong details', 'My details are wrong'),
+    ('Other', 'Something else'),
+)
+
+support_status_choice = (
+    ('New', 'New'),
+    ('In progress', 'In progress'),
+    ('Resolved', 'Resolved'),
+)
+
+
+class SupportRequest(models.Model):
+    """A message from the login page's "Contact Administrator" link.
+
+    Submitted by people who cannot sign in, so it has to work while logged out -
+    which is also why the form carries a honeypot and the view rate-limits.
+    """
+    name = models.CharField(max_length=150)
+    email = models.EmailField()
+    category = models.CharField(max_length=40, choices=support_category_choice,
+                                default='Login issue')
+    message = models.TextField(max_length=2000)
+    status = models.CharField(max_length=20, choices=support_status_choice,
+                              default='New')
+    admin_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return '%s - %s' % (self.name, self.category)
+
+    def save(self, *args, **kwargs):
+        if self.status == 'Resolved' and self.resolved_at is None:
+            self.resolved_at = timezone.now()
+        elif self.status != 'Resolved':
+            self.resolved_at = None
+        super().save(*args, **kwargs)

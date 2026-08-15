@@ -1,11 +1,12 @@
 from django import forms
 from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import AuthenticationForm
 from django.utils.crypto import get_random_string
 
 from django.utils import timezone
 
 from info.models import (AttendanceRange, Fee, FeeTransaction, Student,
-                         Teacher)
+                         SupportRequest, Teacher)
 
 User = get_user_model()
 
@@ -227,3 +228,71 @@ class FeeTransactionForm(forms.ModelForm):
         if paid_on > timezone.localdate():
             raise forms.ValidationError('Payment date cannot be in the future.')
         return paid_on
+
+
+ROLE_CHOICES = (
+    ('student', 'Student'),
+    ('teacher', 'Faculty'),
+    ('admin', 'Admin'),
+)
+
+
+class ErpLoginForm(AuthenticationForm):
+    """Login with a role selector and a Remember Me box.
+
+    The role is checked rather than decorative: signing in as a student from the
+    Admin tab says so, instead of silently landing on the student dashboard and
+    leaving the person wondering what happened.
+    """
+
+    role = forms.ChoiceField(choices=ROLE_CHOICES, initial='student',
+                             widget=forms.RadioSelect)
+    remember_me = forms.BooleanField(required=False, initial=False,
+                                     label='Remember me')
+
+    error_messages = dict(AuthenticationForm.error_messages, **{
+        'wrong_role': 'That account is not registered as %(role)s. '
+                      'Pick the right tab and try again.',
+    })
+
+    def confirm_login_allowed(self, user):
+        super().confirm_login_allowed(user)
+
+        role = self.cleaned_data.get('role') or self.data.get('role')
+        actual = ('admin' if user.is_superuser
+                  else 'teacher' if user.is_teacher
+                  else 'student' if user.is_student
+                  else None)
+        if role and actual != role:
+            raise forms.ValidationError(
+                self.error_messages['wrong_role'],
+                code='wrong_role',
+                params={'role': dict(ROLE_CHOICES)[role]},
+            )
+
+
+class SupportRequestForm(forms.ModelForm):
+    """The form behind "Facing issues? Contact Administrator".
+
+    Reachable without signing in - that is the whole point of it - so it needs a
+    honeypot and rate limiting rather than trusting the caller.
+    """
+
+    # Bots fill every field they find; people never see this one.
+    website = forms.CharField(required=False, widget=forms.HiddenInput)
+
+    class Meta:
+        model = SupportRequest
+        fields = ['name', 'email', 'category', 'message']
+        widgets = {'message': forms.Textarea(attrs={'rows': 4})}
+
+    def clean_website(self):
+        if self.cleaned_data.get('website'):
+            raise forms.ValidationError('Sorry, that looked automated.')
+        return ''
+
+    def clean_message(self):
+        message = self.cleaned_data['message'].strip()
+        if len(message) < 10:
+            raise forms.ValidationError('Tell us a bit more about the problem.')
+        return message

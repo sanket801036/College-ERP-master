@@ -6,23 +6,14 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <meta name="description" content="">
-    <meta name="author" content="">
 
-    <title>Login · College ERP</title>
+    <title>Login &middot; College ERP</title>
 
       {% load static %}
 
-    <!-- Bootstrap core CSS-->
     <link href="{% static '/info/bootstrap/vendor/bootstrap/css/bootstrap.min.css' %}" rel="stylesheet">
-
-    <!-- Custom fonts for this template-->
     <link href="{% static '/info/bootstrap/vendor/fontawesome-free/css/all.min.css' %}" rel="stylesheet" type="text/css">
-
-    <!-- Custom styles for this template-->
     <link href="{% static '/info/bootstrap/css/sb-admin.css' %}" rel="stylesheet">
-
-    <!-- Modern theme overlay -->
     <link href="{% static '/info/css/theme.css' %}" rel="stylesheet">
 
   </head>
@@ -35,31 +26,175 @@
         <h4 class="text-center mb-1">College ERP</h4>
         <p class="text-center text-muted small mb-4">Sign in to continue</p>
 
+        {% for message in messages %}
+          <div class="alert alert-success py-2 small">{{ message }}</div>
+        {% endfor %}
+
         {% if form.errors %}
-          <div class="alert alert-danger py-2 small">Invalid username or password. Please try again.</div>
+          <div class="alert alert-danger py-2 small mb-3">
+            {% for error in form.non_field_errors %}
+              {{ error }}
+            {% empty %}
+              Invalid username or password. Please try again.
+            {% endfor %}
+          </div>
         {% endif %}
 
-        <form method="post">
+        <form method="post" action="{% url 'login' %}">
           {% csrf_token %}
-          <div class="form-group">
-            <label class="small text-muted">Username</label>
-            {{ form.username }}
+
+          <div class="erp-role-tabs mb-3">
+            {% for value, label in form.fields.role.choices %}
+              <label class="erp-role-tab {% if form.role.value|default:'student' == value %}active{% endif %}">
+                <input type="radio" name="role" value="{{ value }}"
+                       {% if form.role.value|default:'student' == value %}checked{% endif %}>
+                {{ label }}
+              </label>
+            {% endfor %}
           </div>
+
           <div class="form-group">
-            <label class="small text-muted">Password</label>
-            {{ form.password }}
+            <label class="small text-muted" for="id_username">Username</label>
+            <input type="text" name="username" id="id_username" class="form-control"
+                   value="{{ form.username.value|default:'' }}" autofocus required>
           </div>
-          <button class="btn btn-primary mt-2" type="submit"><i class="fas fa-sign-in-alt"></i> Login</button>
+
+          <div class="form-group">
+            <label class="small text-muted" for="id_password">Password</label>
+            <div class="erp-password-field">
+              <input type="password" name="password" id="id_password" class="form-control" required>
+              <button type="button" class="erp-password-toggle" id="togglePassword"
+                      aria-label="Show password">
+                <i class="fas fa-eye" id="togglePasswordIcon"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <label class="small text-muted mb-0 d-flex align-items-center">
+              <input type="checkbox" name="remember_me" class="mr-2"
+                     {% if form.remember_me.value %}checked{% endif %}>
+              Remember me
+            </label>
+            <a class="small" href="#" data-toggle="modal" data-target="#forgotModal">Forgot password?</a>
+          </div>
+
+          <button class="btn btn-primary" type="submit">
+            <i class="fas fa-sign-in-alt"></i> Login
+          </button>
         </form>
+
+        <p class="text-center text-muted small mt-4 mb-0">
+          Facing issues?
+          <a href="#" data-toggle="modal" data-target="#supportModal">Contact Administrator</a>
+        </p>
       </div>
     </div>
 
-    <!-- Bootstrap core JavaScript-->
+    <!-- Contact Administrator -->
+    <div class="modal fade" id="supportModal" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <form method="post" action="{% url 'support_request' %}">
+            {% csrf_token %}
+            <div class="modal-header">
+              <h5 class="modal-title">Contact the administrator</h5>
+              <button class="close" type="button" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">
+              <p class="text-muted small">
+                Tell us what is going wrong and the administrator will reply by
+                email. You do not need to be signed in.
+              </p>
+
+              {% for error in support_form.non_field_errors %}
+                <div class="alert alert-danger py-2 small">{{ error }}</div>
+              {% endfor %}
+
+              {% for field in support_form %}
+                {% if field.name == 'website' %}
+                  {{ field }}
+                {% else %}
+                  <div class="form-group">
+                    <label class="small text-muted" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}
+                      <div class="text-danger small mt-1">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" type="button" data-dismiss="modal">Cancel</button>
+              <button class="btn btn-primary" type="submit">Send message</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Forgot password: the reset flow needs an email backend, which is not
+         configured yet, so this explains rather than pretending to work. -->
+    <div class="modal fade" id="forgotModal" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Forgotten your password?</h5>
+            <button class="close" type="button" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">
+              Self-service reset by email is not switched on yet. Use
+              <b>Contact Administrator</b> below and one will be issued for you.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" data-dismiss="modal">Close</button>
+            <button class="btn btn-primary" type="button" data-dismiss="modal"
+                    data-toggle="modal" data-target="#supportModal">Contact Administrator</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="{% static '/info/bootstrap/vendor/jquery/jquery.min.js' %}"></script>
     <script src="{% static '/info/bootstrap/vendor/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
-
-    <!-- Core plugin JavaScript-->
     <script src="{% static '/info/bootstrap/vendor/jquery-easing/jquery.easing.min.js' %}"></script>
+
+    <script>
+      (function () {
+        var toggle = document.getElementById('togglePassword');
+        var field = document.getElementById('id_password');
+        var icon = document.getElementById('togglePasswordIcon');
+
+        toggle.addEventListener('click', function () {
+          var showing = field.type === 'text';
+          field.type = showing ? 'password' : 'text';
+          icon.className = showing ? 'fas fa-eye' : 'fas fa-eye-slash';
+          toggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+          field.focus();
+        });
+
+        // Highlight the selected role tab.
+        document.querySelectorAll('.erp-role-tab input').forEach(function (input) {
+          input.addEventListener('change', function () {
+            document.querySelectorAll('.erp-role-tab').forEach(function (tab) {
+              tab.classList.remove('active');
+            });
+            input.parentElement.classList.add('active');
+          });
+        });
+
+        {% if open_support %}
+        $('#supportModal').modal('show');
+        {% endif %}
+      })();
+    </script>
 
   </body>
 

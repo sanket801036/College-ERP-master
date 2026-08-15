@@ -157,6 +157,15 @@
   </div>
 </div>
 
+{% if open_support %}
+<div class="alert alert-warning">
+  <i class="fas fa-life-ring mr-1"></i>
+  <b>{{ open_support }}</b> unresolved support request{{ open_support|pluralize }} from
+  people who cannot sign in.
+  <a href="/admin/info/supportrequest/" class="alert-link">Review them</a>
+</div>
+{% endif %}
+
 <div class="card mb-3">
   <div class="card-header"><i class="fas fa-history"></i><b>Recent activity</b></div>
   <div class="card-body">
