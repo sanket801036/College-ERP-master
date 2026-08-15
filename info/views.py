@@ -262,55 +262,58 @@ def t_report(request, assign_id):
     return render(request, 'info/t_report.html', {'sc_list': sc_list})
 
 
+BREAK_COLUMNS = (4, 8)
+
+
+def _timetable_matrix(slots, cell, blank=''):
+    """Lay `slots` out as the 6x12 grid the timetable templates render.
+
+    Column 0 is the day label and columns 4 and 8 are the break and lunch gaps;
+    the remaining nine map to time_slots in order.
+
+    This used to call .get() once per cell - 54 queries per page, every miss
+    raising DoesNotExist as normal control flow - and caught only DoesNotExist,
+    so two courses scheduled against one class in the same slot raised
+    MultipleObjectsReturned and 500'd the page for everyone in that class.
+    Indexing what a single query returned removes both problems.
+    """
+    by_slot = {(s.day, s.period): s for s in slots}
+
+    matrix = []
+    for day, _ in DAYS_OF_WEEK:
+        row = [day]
+        period_index = 0
+        for column in range(1, 12):
+            if column in BREAK_COLUMNS:
+                row.append(blank)
+                continue
+            slot = by_slot.get((day, time_slots[period_index][0]))
+            row.append(cell(slot) if slot else blank)
+            period_index += 1
+        matrix.append(row)
+    return matrix
+
+
 @login_required()
 def timetable(request, class_id):
-    asst = AssignTime.objects.filter(assign__class_id=class_id)
-    matrix = [['' for i in range(12)] for j in range(6)]
-
-    for i, d in enumerate(DAYS_OF_WEEK):
-        t = 0
-        for j in range(12):
-            if j == 0:
-                matrix[i][0] = d[0]
-                continue
-            if j == 4 or j == 8:
-                continue
-            try:
-                a = asst.get(period=time_slots[t][0], day=d[0])
-                matrix[i][j] = a.assign.course_id
-            except AssignTime.DoesNotExist:
-                pass
-            t += 1
-
-    context = {'matrix': matrix}
-    return render(request, 'info/timetable.html', context)
+    slots = (AssignTime.objects
+             .filter(assign__class_id=class_id)
+             .select_related('assign'))
+    matrix = _timetable_matrix(slots, cell=lambda s: s.assign.course_id)
+    return render(request, 'info/timetable.html', {'matrix': matrix})
 
 
 @login_required()
 @teacher_required
 @owns_teacher_id('teacher_id')
 def t_timetable(request, teacher_id):
-    asst = AssignTime.objects.filter(assign__teacher_id=teacher_id)
-    class_matrix = [[True for i in range(12)] for j in range(6)]
-    for i, d in enumerate(DAYS_OF_WEEK):
-        t = 0
-        for j in range(12):
-            if j == 0:
-                class_matrix[i][0] = d[0]
-                continue
-            if j == 4 or j == 8:
-                continue
-            try:
-                a = asst.get(period=time_slots[t][0], day=d[0])
-                class_matrix[i][j] = a
-            except AssignTime.DoesNotExist:
-                pass
-            t += 1
-
-    context = {
-        'class_matrix': class_matrix,
-    }
-    return render(request, 'info/t_timetable.html', context)
+    slots = (AssignTime.objects
+             .filter(assign__teacher_id=teacher_id)
+             .select_related('assign', 'assign__course', 'assign__class_id'))
+    # The template checks `j == True` for an empty cell, which is why the blank
+    # here is True rather than '' as in the student view.
+    class_matrix = _timetable_matrix(slots, cell=lambda s: s, blank=True)
+    return render(request, 'info/t_timetable.html', {'class_matrix': class_matrix})
 
 
 @login_required()

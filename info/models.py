@@ -2,6 +2,7 @@ from django.db import models
 import math
 from django.db.models.functions import Coalesce
 from django.utils.functional import cached_property
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.auth.models import AbstractUser
 from django.db.models.signals import post_save, post_delete
@@ -141,6 +142,43 @@ class AssignTime(models.Model):
     assign = models.ForeignKey(Assign, on_delete=models.CASCADE)
     period = models.CharField(max_length=50, choices=time_slots, default='11:00 - 11:50')
     day = models.CharField(max_length=15, choices=DAYS_OF_WEEK)
+
+    class Meta:
+        # Stops the exact same assignment being scheduled twice in one slot. The
+        # two clashes that actually matter - a class with two courses at once,
+        # or a teacher in two places at once - span a foreign key and so cannot
+        # be expressed as a constraint; clean() checks those.
+        unique_together = (('assign', 'day', 'period'),)
+
+    def __str__(self):
+        return '%s : %s %s' % (self.assign, self.day, self.period)
+
+    def clean(self):
+        """Reject timetable clashes before they reach the database.
+
+        Nothing prevented these, and a class with two courses in one slot made
+        the timetable page raise MultipleObjectsReturned for every student in
+        that class.
+        """
+        super().clean()
+        if self.assign_id is None:
+            return
+
+        others = AssignTime.objects.filter(day=self.day, period=self.period)
+        if self.pk:
+            others = others.exclude(pk=self.pk)
+
+        clash = others.filter(assign__class_id=self.assign.class_id_id).first()
+        if clash:
+            raise ValidationError(
+                '%s already has %s in this slot.'
+                % (self.assign.class_id, clash.assign.course))
+
+        clash = others.filter(assign__teacher=self.assign.teacher_id).first()
+        if clash:
+            raise ValidationError(
+                '%s is already teaching %s in this slot.'
+                % (self.assign.teacher, clash.assign.class_id))
 
 
 class AttendanceClass(models.Model):
