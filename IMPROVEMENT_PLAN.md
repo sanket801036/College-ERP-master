@@ -376,11 +376,96 @@ All three dashboards should:
 
 ---
 
+### 6.5 Additional Dashboard Feature Ideas
+
+Brainstormed against the actual models in `info/models.py`. The **Data ready?** column matters — ✅ means it can be built today with zero schema changes, ⚠️ means a small addition, ❌ means it needs a new model. Build the ✅ ones first: maximum visible impact, minimum risk.
+
+#### A. Universal (all three roles)
+
+| # | Feature | What it does | Data ready? | Effort |
+|---|---|---|---|---|
+| A1 | **Today's schedule strip** | "Right now: DBMS, 11:00–11:50, Room 302 · Next: OS at 12:40" — the single most-used thing on any college portal | ✅ `AssignTime.day` + `.period` | S |
+| A2 | **Global search (Ctrl+K)** | One search box → students, courses, notices, classes. Command-palette style | ✅ | M |
+| A3 | **Dark mode toggle** | `theme.css` is already CSS-variable driven — just needs a dark palette + a toggle that persists to localStorage | ✅ | S |
+| A4 | **Notification bell with unread count** | Badge on the topbar bell for notices published since the user's last visit | ⚠️ needs a `last_seen_notices_at` timestamp per user | S |
+| A5 | **Breadcrumbs** | The base template already has a commented-out breadcrumb block — revive it, driven per page | ✅ | S |
+| A6 | **Skeleton loaders / empty states** | Every list currently renders blank when empty. Real empty states ("No notices yet") read far more finished | ✅ | S |
+| A7 | **Academic calendar widget** | Mini month view marking holidays, exam dates, fee deadlines | ⚠️ needs an `AcademicEvent` model | M |
+
+#### B. Student dashboard
+
+| # | Feature | What it does | Data ready? | Effort |
+|---|---|---|---|---|
+| B1 | **"Classes you must attend" alert** | `AttendanceTotal.classes_to_attend` **already computes this** — "Attend 4 more DBMS classes to reach 75%". Surfacing it as a dashboard alert is nearly free and is the single most useful number to a real student | ✅ already a model property | **S — do this first** |
+| B2 | **Attendance trend chart** | Line/bar chart of attendance % per course, or week over week | ✅ `Attendance.date` | M |
+| B3 | **Subject-wise attendance donut** | Small ring per course, red under 75% — scannable in one glance | ✅ | S |
+| B4 | **CIE / marks progress card** | `StudentCourse.get_cie()` already exists — show CIE per subject with a progress bar out of 50 | ✅ | S |
+| B5 | **Fee due countdown** | "Tuition Fee ₹12,000 due in 6 days" with an urgency color ramp; goes red once overdue | ✅ `Fee.due_date` + `.balance` | S |
+| B6 | **Exam countdown** | "Semester End Exam in 12 days" | ⚠️ needs an exam-date field or `AcademicEvent` | S |
+| B7 | **Class rank / percentile** | "You're in the top 20% of CS5A" — computed from CIE across the class | ✅ computable | M |
+| B8 | **Personal timetable "today only" view** | Full weekly grid is noisy on a phone; a today-only column is what students actually open | ✅ | S |
+| B9 | **Downloadable report card (PDF)** | `reportlab` is already an installed dependency and completely unused today | ✅ | M |
+| B10 | **Low-attendance warning banner** | Persistent red banner across all pages while any course sits under 75% | ✅ | S |
+
+#### C. Teacher dashboard
+
+| # | Feature | What it does | Data ready? | Effort |
+|---|---|---|---|---|
+| C1 | **"Attendance not taken" to-do list** | `AttendanceClass.status` is `0` until a session is submitted — so "3 sessions pending" is directly queryable. Turns the dashboard into an action list instead of a menu | ✅ | **S — do this first** |
+| C2 | **Pending marks entry list** | Same idea via `MarksClass.status` — "Internal Test 2 not entered for CS5B" | ✅ | S |
+| C3 | **At-risk student list** | Students under 75% across this teacher's classes, so they can intervene early | ✅ | M |
+| C4 | **Class performance comparison** | Average CIE per class as a bar chart — CS5A vs CS5B at a glance | ✅ | M |
+| C5 | **One-click "Take attendance for today"** | Detect today's session from `AssignTime` and deep-link straight into the marking form — saves 4 clicks every single day | ✅ | S |
+| C6 | **Marks distribution histogram** | Grade spread per test — shows whether a paper was too hard/easy | ✅ | M |
+| C7 | **Free-slot finder** | The `free_teachers` view already exists but is buried — surface "you're free 3rd period today" | ✅ | S |
+| C8 | **Bulk-message a class** | Post a notice scoped to one class rather than all students | ⚠️ `Notice.audience` needs a class-level option | M |
+| C9 | **Export class report to Excel** | `openpyxl` is already wired up for fees — reuse the same pattern for attendance/marks | ✅ | S |
+
+#### D. Admin dashboard
+
+| # | Feature | What it does | Data ready? | Effort |
+|---|---|---|---|---|
+| D1 | **Department-wise attendance heatmap** | Which departments/semesters are struggling | ✅ | M |
+| D2 | **Fee collection chart** | Collected vs. outstanding, split by department or fee type | ✅ | M |
+| D3 | **Defaulters list** | Students with an overdue balance, sortable by amount, exportable | ✅ `Fee.due_date` + `.balance` | S |
+| D4 | **Teacher workload distribution** | Classes/hours per teacher — instantly exposes uneven load | ✅ `Assign` + `AssignTime` counts | M |
+| D5 | **Support request queue** | Unresolved count + inline resolve action (pairs with §5.2) | ❌ needs `SupportRequest` | M |
+| D6 | **Recent activity feed** | Who logged in, who submitted marks, who added a student | ❌ needs an audit model | M |
+| D7 | **Enrollment trend** | Students per department per semester over time | ✅ | M |
+| D8 | **System health strip** | DB status, last backup, total records, storage used — small touch, reads very "production" | ✅ | S |
+| D9 | **Quick-add shortcuts** | Add student / teacher / notice inline from the dashboard, no page change | ✅ | S |
+| D10 | **Timetable clash detector** | Flag teachers double-booked in the same period (`AssignTime` uniqueness isn't enforced today — this is a real latent bug worth demoing) | ✅ | M |
+
+#### E. Cross-cutting technical polish
+
+| # | Feature | Why it matters in an interview | Data ready? | Effort |
+|---|---|---|---|---|
+| E1 | **Fix N+1 queries on dashboards** | `AttendanceTotal.attendance` fires 2 queries **per course per student**. A dashboard aggregating this is dozens of queries. Fix with `annotate()`/`aggregate()`. Being able to say "I profiled it, found N+1, cut 60 queries to 3" is a genuinely strong interview answer | ✅ | M |
+| E2 | **Cache expensive dashboard stats** | Django's cache framework, 5-minute TTL on admin aggregates | ✅ | S |
+| E3 | **Chart library** | Chart.js via CDN, or inline SVG to stay dependency-free. Needed by B2, C4, C6, D1, D2, D7 | ✅ | S |
+| E4 | **`django-debug-toolbar` in dev** | Makes the N+1 work above visible and demonstrable | ✅ | S |
+| E5 | **Auto-refresh dashboard stats** | Poll (or WebSocket) so numbers update without a reload | ✅ | M |
+
+#### Suggested build order
+
+**Phase 1 — high impact, zero schema change** (these alone transform the dashboards):
+B1 (classes-to-attend alert) → C1 (attendance not taken) → C2 (pending marks) → B5 (fee countdown) → A1 (today's schedule) → D3 (defaulters)
+
+**Phase 2 — charts** (one library unlocks all of them):
+E3 → B2/B3 (attendance charts) → C4/C6 (class performance) → D1/D2 (admin analytics)
+
+**Phase 3 — needs new models:**
+D5 (support queue, from §5.2) → D6 (activity feed) → A4 (notification badge) → A7 (academic calendar)
+
+**Throughout:** E1 (N+1 fixes) — every new aggregate makes this worse, so it's better done alongside Phase 1 than bolted on later.
+
+---
+
 ## Next steps (PAUSED — awaiting your review)
 
-**Login page (§5)** + **dashboards (§6)** specs are now complete. Before we code anything:
-1. Review both — does the flow/layout make sense?
-2. Any metrics missing, extra, or should be different?
-3. Approve the approach, then we start building code.
+**Login page (§5)**, **dashboards (§6)** and **feature ideas (§6.5)** are now specced. Before we code anything:
+1. Review §6.5 — cross out anything you don't want, star anything that must be in
+2. Confirm the build order — or reorder it
+3. Two decisions still open from §5: role-selector behavior (cosmetic vs. enforced), and whether Forgot Password / OTP goes in now (needs SMTP setup) or later
 
-Mark up this file with your feedback, then send it back.
+Mark up this file with your feedback, then send it back and we start on code.
