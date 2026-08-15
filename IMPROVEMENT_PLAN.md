@@ -42,6 +42,32 @@ was found, so anything listed here as closed has already changed in the code.
 The counts also no longer grow with class size; there are tests that add ten
 students and assert the query count is unchanged.
 
+### Page-by-page status
+
+Fourteen passes went almost entirely into correctness - crashes, data loss,
+authorization, query counts - plus the dashboards. Several pages have had their
+**bugs** fixed but not their **features**, and two have not been touched at all.
+
+| Page | State | What is left |
+|---|---|---|
+| **Login** (§5) | 🔴 **untouched** | Every item: role selector, password eye toggle, Remember Me, Forgot Password, button alignment, error styling, "Contact Administrator". §5.1 (OTP reset) and §5.2 (`SupportRequest`) are both still unbuilt |
+| **Notice board** (§7.5) | 🔴 **untouched** | Everything except NB21: no search, date filters, pagination, detail page, unread/read tracking, category tags, pinning, draft/publish, edit/delete, expiry, attachments. NB18 (unvalidated POST) is still live |
+| **Free-teacher finder** (§7.8.2) | 🟠 authorization only | FT7 still scopes the search to teachers *already teaching that class*, so it cannot find a substitute; FT8 (duplicate rows, no `.distinct()`) and FT9 (a query per teacher) both stand |
+| **Marks - student** (§7.2) | 🟠 bugs fixed, page unchanged | Still the same eight-column table. No GPA/score card, accordion, CIE progress bar, letter grades, required-marks calculator, SEE eligibility, rank, PDF report card, or charts. `Course.credits` (MK14) is still missing, so a real CGPA is not computable |
+| **Attendance - student** (§7.1) | 🟢 summary page done | The detail page is untouched: no calendar heatmap, month grouping, filters, trend chart, day-of-week insight, streaks, or export. Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
+| **Attendance - teacher** (§7.3) | 🟢 secured, queue on dashboard | Entry UX untouched: no mark-all-present default, live counter, keyboard entry, roster search, unsaved-changes guard, or bulk import. TA-C4 (magic status numbers) and TA-C6 (past sessions only) stand |
+| **Marks entry - teacher** (§7.7) | 🟢 secured and validated | No keyboard entry, live statistics, absent-vs-zero marker, draft save, bulk import, post-entry statistics, or publication control |
+| **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
+| **Class report** (§7.8.1) | 🟢 crash and N+1 fixed | No summary header, at-risk highlighting, sorting, export, or print stylesheet |
+| **Fees** (§7.6) | 🟢 ledger rebuilt | No PDF receipts, bulk assignment to a class, defaulters report, collection charts, pagination, waivers, instalments, late fees or reminders. FE31 (a teacher can list fees but not open one) stands |
+| **Dashboards** (§6) | 🟢 rebuilt | No charts anywhere, no today's-schedule strip, dark mode, global search, notification badge or breadcrumbs |
+| **Accounts** (§7.9) | 🟢 creation and passwords fixed | No profile editing, photo upload, student directory, bulk import, edit/deactivate, or soft delete |
+| **API** (§7.10) | 🟢 working | No OpenAPI docs, pagination, teacher/admin endpoints, write endpoints, throttling or versioning |
+
+**The two that stand out:** the login page is where this review started and is
+still exactly as it was found, and the notice board is the only feature module
+with none of its bugs fixed.
+
 ### Still open, highest value first
 
 1. **CF3 + AC17** — email has no SMTP host configured, which blocks the OTP reset
