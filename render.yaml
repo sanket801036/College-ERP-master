@@ -1,0 +1,28 @@
+databases:
+  - name: college-erp-db
+    plan: free
+    databaseName: college_erp
+    user: college_erp
+
+services:
+  - type: web
+    name: college-erp
+    runtime: python
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn CollegeERP.wsgi:application"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: college-erp-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: false
+      - key: ALLOWED_HOSTS
+        value: .onrender.com
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://*.onrender.com
+      - key: PYTHON_VERSION
+        value: 3.10.11
