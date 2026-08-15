@@ -168,3 +168,43 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ),
 }
+
+# Logging
+# There was no configuration at all, so with DEBUG=False an unhandled exception
+# produced a 500 page and left no record anywhere - nothing to look at after a
+# report. Everything goes to stdout, which is what Render (and `docker logs`)
+# collects.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': config('LOG_LEVEL', default='INFO'),
+    },
+    'loggers': {
+        # Unhandled exceptions in views. Without this they are swallowed once
+        # DEBUG is off.
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'info': {
+            'handlers': ['console'],
+            'level': config('LOG_LEVEL', default='INFO'),
+            'propagate': False,
+        },
+    },
+}
