@@ -18,18 +18,27 @@ seconds.
 
 ## What it does
 
-**Students** see attendance per course with the number of classes they still
-need to reach 75% (and how many they can afford to miss), internal marks and
-CIE totals, their weekly timetable, fee balances with an Excel export, and the
-notice board.
+**Students** open on their standing: overall attendance, which courses are
+below the 75% exam threshold and how many consecutive classes would fix each,
+which have headroom and how many can still be missed, and outstanding fees with
+the next due date. Behind that: attendance per course and per session, internal
+marks with CIE totals, the weekly timetable, fee history with an Excel export,
+and the notice board.
 
-**Teachers** mark attendance a session at a time, enter marks for a whole class
-in one form, schedule extra classes, cancel sessions, view a combined
-attendance-and-CIE report per class, and post notices.
+**Teachers** get a work queue rather than a menu — sessions whose attendance was
+never submitted, marks batches not yet entered, and the students under 75% in
+their own classes, each linking to the page that clears it. They mark attendance
+a session at a time, enter marks for a whole class in one validated form,
+schedule extra classes, cancel sessions, and view a combined
+attendance-and-CIE report per class.
 
-**Administrators** create student and teacher accounts, manage fees, and reach
-the full Django admin for departments, courses, classes and teaching
-assignments.
+**Administrators** create student and teacher accounts (which issue a one-time
+password shown once), record fee payments, and see average attendance, students
+at risk, outstanding fees and a feed of who changed what. The full Django admin
+covers departments, courses, classes and teaching assignments.
+
+Every change to attendance, marks and fees is recorded — who made it, when, and
+what the value was before.
 
 ## Stack
 
@@ -73,9 +82,9 @@ Configuration comes from environment variables (see `.env.example`):
 python manage.py test info.tests
 ```
 
-67 tests covering the attendance and CIE calculations, role and ownership
-checks on every teacher view, form validation, timetable clash detection, and
-query counts on the list pages.
+130 tests covering the attendance, CIE and fee calculations, role and ownership
+checks on every teacher view, form validation, timetable clash detection, the
+audit trail, the API, and query counts on the list pages.
 
 ## Deployment
 
@@ -91,10 +100,14 @@ starts gunicorn. Push to `master` and Render redeploys.
 CollegeERP/       settings, root URLs, WSGI
 info/             the application
   models.py       Dept, Course, Class, Student, Teacher, Assign, AssignTime,
-                  Attendance, AttendanceTotal, StudentCourse, Marks, Fee, Notice
+                  Attendance, AttendanceTotal, StudentCourse, Marks, Fee,
+                  FeeTransaction, Notice, AuditLog
   views.py        all page views
-  forms.py        validation for account creation, marks entry, extra classes
+  forms.py        validation for account creation, marks entry, extra classes,
+                  fees and payments
   decorators.py   role and ownership guards
+  middleware.py   forces a password change on accounts issued by an admin
+  management/     seed_demo, which builds a usable demo database
   tests/          test suite
 apis/             read-only REST endpoints for the student's own records
 templates/        error pages (400/403/404/500)
@@ -106,7 +119,13 @@ covers administrators.
 
 `AttendanceTotal` holds no counts of its own — attendance is computed from the
 `Attendance` rows, either per instance or annotated across a whole list by
-`with_counts()`.
+`with_counts()`. The dashboards and the API skip it entirely and aggregate
+`Attendance` directly, so they do not depend on rows that are only backfilled
+when someone opens the attendance page.
+
+`Fee.paid_amount` works the same way: it stays a column so totals can be summed
+in the database, but it is derived from `FeeTransaction` rows rather than
+written to.
 
 ---
 
@@ -155,6 +174,10 @@ saving.
   dropped. The components are selected by name now.
 - Marks were assigned straight from `request.POST` — 85 saved cleanly onto a
   test worth 20, because field validators don't run on a plain `.save()`.
+- A fee of 10,000 accepted a payment of 99,999, leaving a balance of −89,999
+  that still reported as "Paid". Negative amounts saved cleanly too.
+- `Fee.status` checked `paid <= 0` before `paid >= amount`, so a fully waived
+  fee of 0 reported "Unpaid" for ever and could never settle.
 - A course that hadn't met yet rendered as a red **0%** rather than "no classes
   held yet".
 
@@ -173,6 +196,32 @@ saving.
   exist on the model and raised `TypeError` if it ever ran.
 - On a fresh install, the attendance signal read `AttendanceRange` with `.get()`
   — so the first timetable slot an admin added failed outright.
+
+### No history
+
+Fees kept a single `paid_amount` that staff overwrote by hand, so nothing
+recorded when money arrived, how much came in each time, who took it or how it
+was paid — and two people recording payments at once silently lost one of them,
+since it was a read-modify-write with no locking. `FeeTransaction` holds one row
+per payment; `paid_amount` is derived from it.
+
+Marks and attendance had the same gap: a value could be changed with no record
+of the previous one, the person or the time. One append-only `AuditLog` covers
+all three, storing names alongside the foreign keys so entries still read
+correctly after an account is deleted. It is add/change/delete-disabled in the
+admin — a log that can be tidied up afterwards is not one.
+
+### An API that had never been called
+
+All four endpoints returned 400 "User not authenticated" to every caller: each
+view re-derived the user from a `Token` row on top of DRF's own authentication,
+and nothing in the app ever issued a token. Once that was removed, the rest
+followed — `/api/attendance/` returned no attendance at all (the serializer used
+`fields = '__all__'` on a model whose values are properties, so DRF dropped
+every one), `/api/timetable/` returned its payload under the key `user_marks`,
+the attendance handler wrote rows during a `GET`, and every view ended in
+`except Exception: return Response(str(e), status=400)`, handing internal error
+text to the caller.
 
 ### Query counts
 
@@ -198,11 +247,12 @@ are tests that add ten students and assert the query count is unchanged.
 Tracked in [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md), a page-by-page review of
 the whole app with a prioritised backlog. The larger items:
 
-- Fees record a running `paid_amount` rather than a transaction history, so
-  there are no receipts and no record of when a payment arrived
-- No audit trail on marks or attendance changes
-- The REST API rejects session-authenticated users and returns no attendance
-  data; it needs fixing or removing
-- Email is configured but has no host, which blocks password reset, fee
+- Email has no SMTP host configured, which blocks password reset by OTP, fee
   reminders and notice notifications
-- No CI, no Docker, no media storage for profile photos
+- No OpenAPI/Swagger documentation for the API, and no write endpoints
+- The notice board has no search, filtering, draft/publish workflow or read
+  tracking
+- No charts — attendance trend, marks distribution, fee collection
+- No Docker, no linting config, and no media storage for profile photos
+  (Render's filesystem is ephemeral, so that needs S3 or similar rather than
+  just a settings change)

@@ -6,8 +6,8 @@ This is a working document, not final. Section 1-2 describe what exists today (s
 
 ## ✅ Build log — what has been fixed so far
 
-Nine passes of work. The rest of this document still describes the app as it was
-found, so anything below marked here as done has already changed in the code.
+Fourteen passes of work. The rest of this document still describes the app as it
+was found, so anything listed here as closed has already changed in the code.
 
 | # | Work | Items closed | Tests |
 |---|---|---|---|
@@ -20,8 +20,13 @@ found, so anything below marked here as done has already changed in the code.
 | 7 | Logging configuration and custom 400/403/404/500 pages | CF2, ER1, ER2, ER3 | 3 |
 | 8 | README, `seed_demo` management command, two more N+1s | IN2, IN7, MK22, MK24, MK4 (partial) | 5 |
 | 9 | GitHub Actions CI | IN3 | — |
+| 10 | Fee payments recorded as transactions, with validation | FE1–FE6, FE18, FE24–FE27, FE29 (part) | 17 |
+| 11 | REST API rewritten | API1–API3, API5–API10 | 10 |
+| 12 | Password change, forced reset on issued accounts, timezone | AC10, AC14, CF4 | 10 |
+| 13 | Audit trail across attendance, marks and fees | TA-S7, MK19, FE29, D6 | 10 |
+| 14 | Dashboards rebuilt around standing and pending work | AT1, B1, B5, B10, C1, C2, C3, D3, MK4 | 16 |
 
-**67 tests**, from zero.
+**130 tests**, from zero.
 
 ### Query counts, measured before and after
 
@@ -39,20 +44,21 @@ students and assert the query count is unchanged.
 
 ### Still open, highest value first
 
-1. **FE1** — fees keep a running `paid_amount` instead of a transaction log, so
-   there are no receipts and no record of when money arrived. Everything else in
-   §7.6 Phase A depends on this
-2. **FE24–FE27** — fee validation: overpayment, negative amounts, and a
-   zero-amount fee that can never read as paid
-3. **API1, API2, API3** — the REST API rejects session-authenticated users, its
-   attendance endpoint returns no attendance data, and the timetable endpoint
-   labels its payload `user_marks`
-4. **CF3 + AC17** — email has no host configured, which blocks the OTP reset
-   flow (§5.1), fee reminders (FE22) and notice notifications (NB17)
-5. **AC14** — nobody can change their own password
-6. **TA-S7, MK19, FE29** — no audit trail on attendance, marks or fee changes
-7. **CF4** — timezone is UTC, so dates are wrong for an Indian college
-8. **IN4, IN5** — Docker and linting config
+1. **CF3 + AC17** — email has no SMTP host configured, which blocks the OTP reset
+   flow (§5.1), fee reminders (FE22) and notice notifications (NB17). Needs real
+   credentials before any of it can be built
+2. **API13, API14–API20** — no OpenAPI/Swagger docs, and the API is still
+   student-only and read-only
+3. **§7.5 notice board** — no search, date filters, pagination, draft/publish
+   workflow or read tracking (NB1–NB6, NB10)
+4. **§6.5 Phase 2** — charts: attendance trend, marks distribution, fee
+   collection (B2, B3, C4, C6, D1, D2, E3)
+5. **FE3, FE10, FE14** — receipts as PDF, and bulk fee assignment to a whole
+   class instead of one student at a time
+6. **AC15, AC16, AC20** — profile editing, photo upload, student directory
+7. **IN4, IN5** — Docker and linting config
+8. **MD2, MD3, MD4, MD7** — model-layer tidying: string boolean defaults, stale
+   hardcoded dates, a default FK to a class that may not exist, no `updated_at`
 
 ---
 
