@@ -43,16 +43,18 @@ def index(request):
 
 @login_required()
 def attendance(request, stud_id):
-    stud = Student.objects.get(USN=stud_id)
-    ass_list = Assign.objects.filter(class_id_id=stud.class_id)
-    att_list = []
-    for ass in ass_list:
-        try:
-            a = AttendanceTotal.objects.get(student=stud, course=ass.course)
-        except AttendanceTotal.DoesNotExist:
-            a = AttendanceTotal(student=stud, course=ass.course)
-            a.save()
-        att_list.append(a)
+    stud = get_object_or_404(Student, USN=stud_id)
+    courses = Course.objects.filter(assign__class_id=stud.class_id_id).distinct()
+
+    # Backfill in one go rather than one get-or-create per course inside a loop.
+    AttendanceTotal.objects.bulk_create(
+        [AttendanceTotal(student=stud, course=c) for c in courses],
+        ignore_conflicts=True,
+    )
+    att_list = (AttendanceTotal.objects
+                .filter(student=stud, course__in=courses)
+                .select_related('course', 'student')
+                .with_counts())
     return render(request, 'info/attendance.html', {'att_list': att_list})
 
 
@@ -78,15 +80,17 @@ def t_clas(request, teacher_id, choice):
 @teacher_required
 @owns_assign('assign_id')
 def t_student(request, assign_id):
-    ass = Assign.objects.get(id=assign_id)
-    att_list = []
-    for stud in ass.class_id.student_set.all():
-        try:
-            a = AttendanceTotal.objects.get(student=stud, course=ass.course)
-        except AttendanceTotal.DoesNotExist:
-            a = AttendanceTotal(student=stud, course=ass.course)
-            a.save()
-        att_list.append(a)
+    ass = get_object_or_404(Assign, id=assign_id)
+    students = list(ass.class_id.student_set.all())
+
+    AttendanceTotal.objects.bulk_create(
+        [AttendanceTotal(student=s, course=ass.course) for s in students],
+        ignore_conflicts=True,
+    )
+    att_list = (AttendanceTotal.objects
+                .filter(student__in=students, course=ass.course)
+                .select_related('course', 'student')
+                .with_counts())
     return render(request, 'info/t_students.html', {'att_list': att_list})
 
 
@@ -243,10 +247,18 @@ def e_confirm(request, assign_id):
 @owns_assign('assign_id')
 def t_report(request, assign_id):
     ass = get_object_or_404(Assign, id=assign_id)
-    sc_list = []
-    for stud in ass.class_id.student_set.all():
-        a = StudentCourse.objects.get(student=stud, course=ass.course)
-        sc_list.append(a)
+    students = list(ass.class_id.student_set.all())
+
+    # A bare .get() here meant one student without a StudentCourse row took the
+    # whole class report down with an uncaught DoesNotExist.
+    StudentCourse.objects.bulk_create(
+        [StudentCourse(student=s, course=ass.course) for s in students],
+        ignore_conflicts=True,
+    )
+    sc_list = (StudentCourse.objects
+               .filter(student__in=students, course=ass.course)
+               .select_related('student', 'course')
+               .prefetch_related('marks_set'))
     return render(request, 'info/t_report.html', {'sc_list': sc_list})
 
 

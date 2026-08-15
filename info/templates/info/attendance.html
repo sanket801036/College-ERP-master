@@ -1,48 +1,62 @@
 {% extends 'info/base.html' %}
-    {% load static %}
+{% load static %}
 
-    {% block content %}
-                  <div class="card mb-3">
-            <div class="card-header">
-              <i class="fas fa-table"></i>
-            <b>Attendance</b></div>
-            <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-bordered text-center" id="dataTable" width="100%" cellspacing="0">
-                  <thead class="thead-light ">
-                    <tr>
-                        <th>Course ID</th>
-                        <th>Course name</th>
-                        <th>Attended classes</th>
-                        <th>Total classes</th>
-                        <th>Attendance %</th>
-                        <th>Classes to attend</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for a in att_list %}
-                    <tr>
-                        <td>{{ a.course_id }}</td>
-                        <td><a href="{% url 'attendance_detail' a.student.USN a.course.id %}">{{a.course.name}}</a></td>
-                        <td>{{ a.att_class }}</td>
-                        <td>{{ a.total_class }}</td>
-                        {% if a.attendance < 75 %}
-                            <td class="p-3 mb-2 bg-danger text-white">{{ a.attendance }}</td>
-                        {% else %}
-                            <td class="p-3 mb-2 bg-success text-white">{{ a.attendance }}</td>
-                        {% endif %}
-                        <td>{{ a.classes_to_attend }}</td>
-                    </tr>
-                    {% empty %}
-                            <p>student has no courses</p>
-                    {% endfor %}
+{% block title %}Attendance{% endblock %}
 
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-
-    {% endblock %}
-
+{% block content %}
+<div class="card mb-3">
+  <div class="card-header">
+    <i class="fas fa-calendar-check"></i><b>Attendance</b>
+  </div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-bordered text-center" id="dataTable" width="100%" cellspacing="0">
+        <thead class="thead-light">
+          <tr>
+            <th>Course ID</th>
+            <th>Course name</th>
+            <th>Attended</th>
+            <th>Total classes</th>
+            <th>Attendance %</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in att_list %}
+          <tr>
+            <td>{{ a.course_id }}</td>
+            <td><a href="{% url 'attendance_detail' a.student.USN a.course.id %}">{{ a.course.name }}</a></td>
+            {% if a.has_classes %}
+              <td>{{ a.att_class }}</td>
+              <td>{{ a.total_class }}</td>
+              <td>
+                {% if a.attendance < 75 %}
+                  <span class="erp-badge erp-badge-danger">{{ a.attendance }}%</span>
+                {% else %}
+                  <span class="erp-badge erp-badge-success">{{ a.attendance }}%</span>
+                {% endif %}
+              </td>
+              <td class="text-left">
+                {% if a.attendance < 75 %}
+                  Attend <b>{{ a.classes_to_attend }}</b> more in a row to reach 75%
+                {% elif a.classes_can_skip %}
+                  You can miss <b>{{ a.classes_can_skip }}</b> more and stay above 75%
+                {% else %}
+                  At 75% &mdash; don't miss the next one
+                {% endif %}
+              </td>
+            {% else %}
+              {# Without this the row reads as a red 0%, which looks like a
+                 failing student rather than a course that hasn't met yet. #}
+              <td colspan="4" class="text-muted">No classes held yet</td>
+            {% endif %}
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="text-muted">No courses assigned yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

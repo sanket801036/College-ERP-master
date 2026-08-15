@@ -1,5 +1,7 @@
 from django.db import models
 import math
+from django.db.models.functions import Coalesce
+from django.utils.functional import cached_property
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.auth.models import AbstractUser
 from django.db.models.signals import post_save, post_delete
@@ -30,6 +32,14 @@ DAYS_OF_WEEK = (
     ('Thursday', 'Thursday'),
     ('Friday', 'Friday'),
     ('Saturday', 'Saturday'),
+)
+
+CIE_COMPONENTS = (
+    'Internal test 1',
+    'Internal test 2',
+    'Internal test 3',
+    'Event 1',
+    'Event 2',
 )
 
 test_name = (
@@ -85,8 +95,7 @@ class Class(models.Model):
         verbose_name_plural = 'classes'
 
     def __str__(self):
-        d = Dept.objects.get(name=self.dept)
-        return '%s : %d %s' % (d.name, self.sem, self.section)
+        return '%s : %d %s' % (self.dept.name, self.sem, self.section)
 
 
 class Student(models.Model):
@@ -152,54 +161,112 @@ class Attendance(models.Model):
     status = models.BooleanField(default='True')
 
     def __str__(self):
-        sname = Student.objects.get(name=self.student)
-        cname = Course.objects.get(name=self.course)
-        return '%s : %s' % (sname.name, cname.shortname)
+        return '%s : %s' % (self.student.name, self.course.shortname)
+
+
+ATTENDANCE_THRESHOLD = 0.75
+
+
+class AttendanceTotalQuerySet(models.QuerySet):
+    def with_counts(self):
+        """Annotate held/attended counts so a list costs one query, not N.
+
+        Attendance has no foreign key to AttendanceTotal - the two are joined on
+        (student, course) - so this correlates on both columns rather than
+        following a relation.
+        """
+        def count_of(**extra):
+            return (Attendance.objects
+                    .filter(student=models.OuterRef('student'),
+                            course=models.OuterRef('course'), **extra)
+                    .order_by()
+                    .values('student')
+                    .annotate(n=models.Count('*'))
+                    .values('n')[:1])
+
+        as_int = models.IntegerField()
+        return self.annotate(
+            _held=Coalesce(models.Subquery(count_of(), output_field=as_int), 0),
+            _attended=Coalesce(
+                models.Subquery(count_of(status=True), output_field=as_int), 0),
+        )
 
 
 class AttendanceTotal(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
 
+    objects = AttendanceTotalQuerySet.as_manager()
+
     class Meta:
         unique_together = (('student', 'course'),)
 
+    @cached_property
+    def _counts(self):
+        """(held, attended) for this student and course.
+
+        Every property below used to run its own pair of lookups plus a COUNT,
+        and looked the records up by *name* - `Student.objects.get(name=...)` -
+        even though the related objects were already loaded. Two students
+        sharing a name raised MultipleObjectsReturned and 500'd the page.
+
+        Values annotated by with_counts() are used when present, so rendering a
+        whole class does not go back to the database per row.
+        """
+        held = getattr(self, '_held', None)
+        if held is not None:
+            return held, self._attended
+
+        counts = (Attendance.objects
+                  .filter(student_id=self.student_id, course_id=self.course_id)
+                  .aggregate(held=models.Count('pk'),
+                             attended=models.Count('pk',
+                                                   filter=models.Q(status=True))))
+        return counts['held'], counts['attended']
+
     @property
     def att_class(self):
-        stud = Student.objects.get(name=self.student)
-        cr = Course.objects.get(name=self.course)
-        att_class = Attendance.objects.filter(course=cr, student=stud, status='True').count()
-        return att_class
+        return self._counts[1]
 
     @property
     def total_class(self):
-        stud = Student.objects.get(name=self.student)
-        cr = Course.objects.get(name=self.course)
-        total_class = Attendance.objects.filter(course=cr, student=stud).count()
-        return total_class
+        return self._counts[0]
+
+    @property
+    def has_classes(self):
+        """False before the course has met at all.
+
+        Templates need this to tell "no classes yet" apart from 0%, which
+        otherwise renders as an alarming red zero for a course that simply
+        hasn't started.
+        """
+        return self._counts[0] > 0
 
     @property
     def attendance(self):
-        stud = Student.objects.get(name=self.student)
-        cr = Course.objects.get(name=self.course)
-        total_class = Attendance.objects.filter(course=cr, student=stud).count()
-        att_class = Attendance.objects.filter(course=cr, student=stud, status='True').count()
-        if total_class == 0:
-            attendance = 0
-        else:
-            attendance = round(att_class / total_class * 100, 2)
-        return attendance
+        held, attended = self._counts
+        if held == 0:
+            return 0
+        return round(attended / held * 100, 2)
 
     @property
     def classes_to_attend(self):
-        stud = Student.objects.get(name=self.student)
-        cr = Course.objects.get(name=self.course)
-        total_class = Attendance.objects.filter(course=cr, student=stud).count()
-        att_class = Attendance.objects.filter(course=cr, student=stud, status='True').count()
-        cta = math.ceil((0.75 * total_class - att_class) / 0.25)
-        if cta < 0:
+        """How many more consecutive classes are needed to reach the threshold.
+
+        Assumes every remaining class is attended.
+        """
+        held, attended = self._counts
+        cta = math.ceil((ATTENDANCE_THRESHOLD * held - attended)
+                        / (1 - ATTENDANCE_THRESHOLD))
+        return max(cta, 0)
+
+    @property
+    def classes_can_skip(self):
+        """How many classes can still be missed while staying at the threshold."""
+        held, attended = self._counts
+        if held == 0:
             return 0
-        return cta
+        return max(math.floor(attended / ATTENDANCE_THRESHOLD) - held, 0)
 
 
 class StudentCourse(models.Model):
@@ -211,21 +278,16 @@ class StudentCourse(models.Model):
         verbose_name_plural = 'Marks'
 
     def __str__(self):
-        sname = Student.objects.get(name=self.student)
-        cname = Course.objects.get(name=self.course)
-        return '%s : %s' % (sname.name, cname.shortname)
+        return '%s : %s' % (self.student.name, self.course.shortname)
 
     def get_cie(self):
-        marks_list = self.marks_set.all()
-        m = []
-        for mk in marks_list:
-            m.append(mk.marks1)
-        cie = math.ceil(sum(m[:5]) / 2)
-        return cie
+        scored = {m.name: m.marks1 for m in self.marks_set.all()}
+        return math.ceil(sum(scored.get(name, 0) for name in CIE_COMPONENTS) / 2)
 
     def get_attendance(self):
-        a = AttendanceTotal.objects.get(student=self.student, course=self.course)
-        return a.attendance
+        total = AttendanceTotal.objects.filter(student=self.student,
+                                               course=self.course).first()
+        return total.attendance if total else 0
 
 
 class Marks(models.Model):
