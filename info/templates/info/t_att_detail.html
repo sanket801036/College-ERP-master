@@ -35,7 +35,12 @@
                             {% else %}
                             <td class="p-3 mb-2 bg-danger text-white">Absent <span class="glyphicon glyphicon-thumbs-down"></span</td>
                             {% endif %}
-                            <td><a class="btn btn-warning" href="{% url 'change_att' a.id %}">Change</a> </td>
+                            <td>
+                              <form method="POST" action="{% url 'change_att' a.id %}" class="d-inline">
+                                {% csrf_token %}
+                                <button class="btn btn-warning" type="submit">Change</button>
+                              </form>
+                            </td>
                         </tr>
                     {% empty %}
                             <p>student has no attendance</p>

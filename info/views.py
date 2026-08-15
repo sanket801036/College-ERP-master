@@ -6,8 +6,11 @@ from django.urls import reverse
 from django.utils import timezone
 from django.db import transaction
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from django.contrib.auth import get_user_model
 from info.forms import StudentForm, TeacherForm
+from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
+                             owns_marks_class, owns_teacher_id, assert_teaches)
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
@@ -63,12 +66,16 @@ def attendance_detail(request, stud_id, course_id):
 # Teacher Views
 
 @login_required
+@teacher_required
+@owns_teacher_id('teacher_id')
 def t_clas(request, teacher_id, choice):
     teacher1 = get_object_or_404(Teacher, id=teacher_id)
     return render(request, 'info/t_clas.html', {'teacher1': teacher1, 'choice': choice})
 
 
 @login_required()
+@teacher_required
+@owns_assign('assign_id')
 def t_student(request, assign_id):
     ass = Assign.objects.get(id=assign_id)
     att_list = []
@@ -83,6 +90,8 @@ def t_student(request, assign_id):
 
 
 @login_required()
+@teacher_required
+@owns_assign('assign_id')
 def t_class_date(request, assign_id):
     now = timezone.now()
     ass = get_object_or_404(Assign, id=assign_id)
@@ -91,6 +100,8 @@ def t_class_date(request, assign_id):
 
 
 @login_required()
+@teacher_required
+@owns_attendance_class('ass_c_id')
 def cancel_class(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
     assc.status = 2
@@ -99,6 +110,8 @@ def cancel_class(request, ass_c_id):
 
 
 @login_required()
+@teacher_required
+@owns_attendance_class('ass_c_id')
 def t_attendance(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
     ass = assc.assign
@@ -112,6 +125,8 @@ def t_attendance(request, ass_c_id):
 
 
 @login_required()
+@teacher_required
+@owns_attendance_class('ass_c_id')
 def edit_att(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
     cr = assc.assign.course
@@ -124,6 +139,8 @@ def edit_att(request, ass_c_id):
 
 
 @login_required()
+@teacher_required
+@owns_attendance_class('ass_c_id')
 def confirm(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
     ass = assc.assign
@@ -153,22 +170,32 @@ def confirm(request, ass_c_id):
 
 
 @login_required()
+@teacher_required
 def t_attendance_detail(request, stud_id, course_id):
     stud = get_object_or_404(Student, USN=stud_id)
     cr = get_object_or_404(Course, id=course_id)
+    assert_teaches(request, cr.id, stud)
     att_list = Attendance.objects.filter(course=cr, student=stud).order_by('date')
     return render(request, 'info/t_att_detail.html', {'att_list': att_list, 'cr': cr})
 
 
 @login_required()
+@teacher_required
+@require_POST
 def change_att(request, att_id):
+    # Was a GET that flipped the record, so it bypassed CSRF entirely and could
+    # be fired by anything that could make the browser issue a request. It is a
+    # POST now, and restricted to the teacher who takes that course.
     a = get_object_or_404(Attendance, id=att_id)
+    assert_teaches(request, a.course_id, a.student)
     a.status = not a.status
     a.save()
     return HttpResponseRedirect(reverse('t_attendance_detail', args=(a.student.USN, a.course_id)))
 
 
 @login_required()
+@teacher_required
+@owns_assign('assign_id')
 def t_extra_class(request, assign_id):
     ass = get_object_or_404(Assign, id=assign_id)
     c = ass.class_id
@@ -180,6 +207,8 @@ def t_extra_class(request, assign_id):
 
 
 @login_required()
+@teacher_required
+@owns_assign('assign_id')
 def e_confirm(request, assign_id):
     ass = get_object_or_404(Assign, id=assign_id)
     cr = ass.course
@@ -201,6 +230,8 @@ def e_confirm(request, assign_id):
 
 
 @login_required()
+@teacher_required
+@owns_assign('assign_id')
 def t_report(request, assign_id):
     ass = get_object_or_404(Assign, id=assign_id)
     sc_list = []
@@ -235,6 +266,8 @@ def timetable(request, class_id):
 
 
 @login_required()
+@teacher_required
+@owns_teacher_id('teacher_id')
 def t_timetable(request, teacher_id):
     asst = AssignTime.objects.filter(assign__teacher_id=teacher_id)
     class_matrix = [[True for i in range(12)] for j in range(6)]
@@ -260,6 +293,7 @@ def t_timetable(request, teacher_id):
 
 
 @login_required()
+@teacher_required
 def free_teachers(request, asst_id):
     asst = get_object_or_404(AssignTime, id=asst_id)
     ft_list = []
@@ -301,6 +335,8 @@ def marks_list(request, stud_id):
 
 
 @login_required()
+@teacher_required
+@owns_assign('assign_id')
 def t_marks_list(request, assign_id):
     ass = get_object_or_404(Assign, id=assign_id)
     m_list = MarksClass.objects.filter(assign=ass)
@@ -308,6 +344,8 @@ def t_marks_list(request, assign_id):
 
 
 @login_required()
+@teacher_required
+@owns_marks_class('marks_c_id')
 def t_marks_entry(request, marks_c_id):
     mc = get_object_or_404(MarksClass, id=marks_c_id)
     ass = mc.assign
@@ -321,6 +359,8 @@ def t_marks_entry(request, marks_c_id):
 
 
 @login_required()
+@teacher_required
+@owns_marks_class('marks_c_id')
 def marks_confirm(request, marks_c_id):
     mc = get_object_or_404(MarksClass, id=marks_c_id)
     ass = mc.assign
@@ -339,6 +379,8 @@ def marks_confirm(request, marks_c_id):
 
 
 @login_required()
+@teacher_required
+@owns_marks_class('marks_c_id')
 def edit_marks(request, marks_c_id):
     mc = get_object_or_404(MarksClass, id=marks_c_id)
     cr = mc.assign.course
@@ -356,6 +398,8 @@ def edit_marks(request, marks_c_id):
 
 
 @login_required()
+@teacher_required
+@owns_assign('assign_id')
 def student_marks(request, assign_id):
     ass = Assign.objects.get(id=assign_id)
     sc_list = StudentCourse.objects.filter(student__in=ass.class_id.student_set.all(), course=ass.course)
