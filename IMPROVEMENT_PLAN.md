@@ -542,6 +542,79 @@ Per course:
 
 ---
 
+### 7.1.x Attendance Module — Full Feature Set
+
+This is the deep dive for the attendance module specifically. Grouped by build phase. **Data ready?** ✅ = buildable today with no schema change, ⚠️ = small addition, ❌ = needs a new model.
+
+#### Phase A — Core page (student-facing, no schema change)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| AT1 | **Bunk calculator / "Safe skips"** | The inverse of `classes_to_attend`: *"You can skip 3 more DBMS classes and still stay above 75%."* Formula: `floor(attended/0.75) - total`. This is the single most-wanted feature in every Indian college attendance app, and it's a two-line calculation on data we already have. Show it prominently, right next to the "attend X more" number | ✅ |
+| AT2 | **Overall attendance donut** | Weighted average across courses (total attended ÷ total held — **not** the mean of percentages, which over-weights courses with few sessions) | ✅ |
+| AT3 | **Risk-zone badges** | Counts per zone: 🟢 Safe (≥75%) · 🟠 At Risk (65–74%) · 🔴 Critical (<65%). Clicking a badge filters the cards below | ✅ |
+| AT4 | **Per-course progress cards** | Replace the table: course name + code, `attended / total`, progress bar colored by zone, and the AT1/`classes_to_attend` guidance line | ✅ |
+| AT5 | **Projected end-of-semester %** | `AttendanceRange` holds the semester start/end dates, and `AttendanceClass` holds every scheduled session — so remaining sessions are directly countable. *"If you attend everything from here: 81% · If you skip everything: 62%"* — turns a static number into a forecast | ✅ |
+| AT6 | **"No classes yet" empty state** | Today `AttendanceTotal.attendance` returns `0` when `total_class == 0`, so a course that hasn't met yet renders as an alarming red **0%**. It must read "No classes held yet" instead — this is a correctness bug, not just cosmetics | ✅ |
+| AT7 | **Sort & filter** | Sort by lowest % / course name / most missed; filter to "at risk only" | ✅ |
+| AT8 | **Print-friendly view** | `@media print` stylesheet — parents/offices genuinely ask for a printout | ✅ |
+
+#### Phase B — Detail page (`/student/<usn>/<course>/attendance/`)
+
+Currently a flat, unpaginated list of every session with a green/red cell. Everything below is buildable on existing data.
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| AT9 | **Calendar heatmap** | GitHub-contributions-style month grid — green = present, red = absent, grey = no class. Absence *patterns* become visible instantly in a way a list never shows | ✅ `Attendance.date` + `.status` |
+| AT10 | **Month grouping + collapse** | Group sessions under month headers with a per-month mini-summary ("August: 14/16 — 88%") | ✅ |
+| AT11 | **Filters** | Absent-only, date range, month picker | ✅ |
+| AT12 | **Attendance trend chart** | Running cumulative % across the semester — shows whether the student is recovering or sliding | ✅ |
+| AT13 | **Day-of-week insight** | *"You've missed 60% of your Monday classes"* — a genuine behavioural insight, one `annotate` over `date__week_day` | ✅ |
+| AT14 | **Streaks** | "Current streak: 7 present · Longest: 15" — light gamification that costs almost nothing | ✅ |
+| AT15 | **Period/time context** | Show which period each session was (`AssignTime.period`), so "I always miss the 7:30 slot" becomes visible | ✅ |
+| AT16 | **Export to Excel / PDF** | `openpyxl` is already wired for fees and `reportlab` is installed but entirely unused — reuse both here | ✅ |
+
+#### Phase C — Comparative & social (still no schema change)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| AT17 | **Class average comparison** | "You: 83% · Class average: 76%" — needs care: show only the aggregate, never a per-student leaderboard. Ranking classmates by attendance is a privacy problem, not a feature | ✅ |
+| AT18 | **Course difficulty signal** | If a course's class-wide attendance is far below the rest, flag it for the admin dashboard — schedule or teaching problem, not a student problem | ✅ |
+| AT19 | **Personal best / semester comparison** | This semester vs. last, once historical data exists | ⚠️ needs semester tagging on attendance |
+
+#### Phase D — Workflow features (need new models — the "senior engineer" tier)
+
+| # | Feature | Detail | Data ready? |
+|---|---|---|---|
+| AT20 | **Attendance correction request** | Student disputes a wrongly-marked absence → teacher approves/rejects → record updates with a full audit trail. Right now `change_attendance` lets a teacher silently flip any record with no record of who changed what or why. This single feature demonstrates workflow design, state machines, permissions, and auditability all at once — the strongest interview item in this whole module | ❌ `AttendanceCorrectionRequest` |
+| AT21 | **Leave application** | Apply in advance (medical/event), attach a document, teacher approves → sessions marked as excused rather than absent. Requires a third state beyond present/absent | ❌ `LeaveApplication` + a status field on `Attendance` |
+| AT22 | **Medical/OD exemption** | Excused sessions excluded from the 75% denominator — how real colleges actually work | ❌ |
+| AT23 | **Low-attendance alerts** | Email/in-app warning when a course drops below 75%, and a weekly digest. Reuses the SMTP setup from the OTP work in §5.1 | ⚠️ needs an alert-log model to avoid re-sending |
+| AT24 | **Parent notification** | Email the guardian on sustained low attendance | ❌ needs guardian contact fields (ties to the parent portal, Tier 3 #17) |
+| AT25 | **Attendance freeze date** | After a cut-off, records lock and only an admin can amend — with the amendment logged | ⚠️ |
+
+#### Phase E — Technical fixes this module needs (measured, not guessed)
+
+| # | Issue | Detail |
+|---|---|---|
+| AT26 | **N+1 queries — measured at 28 queries for a single course** | I instrumented the real page: `/student/<usn>/attendance/` fires **28 SQL queries for a student with one course**. The breakdown: ~9 fixed (session/auth/student/assign lookups) + **~19 per course**. Each of `att_class`, `total_class`, `attendance`, `classes_to_attend` re-runs its own `Student.objects.get()` + `Course.objects.get()` + `COUNT(*)`, and `attendance` is evaluated **twice** by the template (once in the `{% if %}`, once for display). A realistic 6-course student therefore loads **~120 queries for one page**. Fix: a single `annotate(Count(...), Sum(...))` aggregate, plus caching the computed values on the instance. Cutting 120 queries to 3 is a concrete, measurable result — exactly the kind of thing worth being able to talk through in an interview |
+| AT27 | **Latent bug: model properties look records up by `name`, not primary key** | `AttendanceTotal.att_class`/`total_class`/`attendance`/`classes_to_attend` all do `Student.objects.get(name=self.student)` and `Course.objects.get(name=self.course)` — they already hold the related object but re-fetch it **by name**. Two students sharing a name (certain in any real college) raises `MultipleObjectsReturned` → a hard 500 on the attendance page. There are currently no duplicate names in the local DB, which is exactly why this hasn't surfaced yet. Fix: use `self.student` / `self.course` directly — it's also strictly faster |
+| AT28 | **`classes_to_attend` formula needs explaining in the UI** | `ceil((0.75×total − attended) / 0.25)` assumes every future class is attended. Correct, but opaque — the UI should state the assumption ("assuming you attend all remaining classes") rather than presenting a bare number |
+| AT29 | **No pagination on the detail page** | A full semester renders every session in one table. Fine at demo scale, breaks at real scale — paginate or group by month (AT10) |
+| AT30 | **No tests on any of this logic** | The percentage, `classes_to_attend`, and bunk-calculator maths are pure functions over model data — the easiest, highest-value place to add the first real unit tests, including the boundary cases (0 classes held, exactly 75%, all absent) |
+
+#### Recommended order for this module
+
+1. **AT27** (name-lookup bug) and **AT6** (0% vs "no classes") — genuine correctness bugs, fix before building UI on top of them
+2. **AT26** (N+1) — do it while rewriting the query anyway, and capture before/after query counts as evidence
+3. **AT1–AT5, AT7** — the redesigned page: bunk calculator, donut, zone badges, course cards, projection
+4. **AT9–AT16** — the detail page: heatmap, trend, insights, export
+5. **AT30** — unit tests for the attendance maths (do this alongside 1–3, not after)
+6. **AT20/AT21** — correction-request and leave workflows, the standout feature of this module
+7. **AT23** — alerts, once SMTP exists from §5.1
+
+---
+
 ### 7.2 Marks Page Redesign (Student)
 
 **Current state:**
