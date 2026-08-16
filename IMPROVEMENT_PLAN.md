@@ -30,8 +30,9 @@ was found, so anything listed here as closed has already changed in the code.
 | 17 | Free-teacher finder made to actually find free teachers; `Course.credits` | FT7, FT8, FT9, FT10, MK14 (field only) | 13 |
 | 18 | Charts: an inline-SVG/CSS toolkit, attendance meters and the trend line | E3, B3, B2, AT12, part of AT4, part of QA1 | 27 |
 | 19 | Marks page rebuilt on VTU's 10-point scale | MK1, MK2, MK3, MK4, MK5, MK6, MK7, MK9, MK14 | 30 |
+| 20 | Class report: summary header, at-risk flagging, sort, export, print | RP1, RP2, RP3, RP4, RP8 | 14 |
 
-**244 tests**, from zero.
+**258 tests**, from zero.
 
 ### The grading rules, decided
 
@@ -81,7 +82,7 @@ their **features**.
 | **Attendance - teacher** (§7.3) | 🟢 secured, queue on dashboard | Entry UX untouched: no mark-all-present default, live counter, keyboard entry, roster search, unsaved-changes guard, or bulk import. TA-C4 (magic status numbers) and TA-C6 (past sessions only) stand |
 | **Marks entry - teacher** (§7.7) | 🟢 secured and validated | No keyboard entry, live statistics, absent-vs-zero marker, draft save, bulk import, post-entry statistics, or publication control |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
-| **Class report** (§7.8.1) | 🟢 crash and N+1 fixed | No summary header, at-risk highlighting, sorting, export, or print stylesheet |
+| **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
 | **Fees** (§7.6) | 🟢 ledger rebuilt | No PDF receipts, bulk assignment to a class, defaulters report, collection charts, pagination, waivers, instalments, late fees or reminders. FE31 (a teacher can list fees but not open one) stands |
 | **Dashboards** (§6) | 🟢 rebuilt | No charts anywhere, no today's-schedule strip, dark mode, global search, notification badge or breadcrumbs |
 | **Accounts** (§7.9) | 🟢 creation and passwords fixed | No profile editing, photo upload, student directory, bulk import, edit/deactivate, or soft delete |
@@ -1377,14 +1378,14 @@ Two small pages, grouped because each is a single view with a handful of real de
 
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
-| RP1 | **Class summary header** | Class average CIE, average attendance, pass/fail counts, headcount — the page shows per-student rows but no aggregate at all | ✅ |
-| RP2 | **At-risk highlighting** | Flag rows where CIE is low **and** attendance is under 75% — the combination is the real signal, and both values are already on the row | ✅ |
-| RP3 | **Sort & filter** | By CIE, by attendance, by name; filter to at-risk only | ✅ |
-| RP4 | **Export to Excel / PDF** | Department records genuinely need this; reuse the fees export pattern | ✅ |
+| ~~RP1~~ | **Class summary header** ✅ (pass 20) | Class average CIE, average attendance, pass/fail counts, headcount — the page shows per-student rows but no aggregate at all | ✅ |
+| ~~RP2~~ | **At-risk highlighting** ✅ (pass 20). Fires on the combination, and deliberately *does* fire on an incomplete CIE - it is an early warning, unlike the per-student standing, which withholds a verdict until every component is in | Flag rows where CIE is low **and** attendance is under 75% — the combination is the real signal, and both values are already on the row | ✅ |
+| ~~RP3~~ | **Sort & filter** ✅ (pass 20). Numeric sorts run lowest-first: the point of sorting a class report is to bring the students in trouble to the top | By CIE, by attendance, by name; filter to at-risk only | ✅ |
+| ~~RP4~~ | **Export to Excel** ✅ (pass 20), reusing the fees export pattern. PDF still open | Department records genuinely need this; reuse the fees export pattern | ✅ |
 | RP5 | **Per-component breakdown** | Show the internals behind the CIE, not just the total | ✅ |
 | RP6 | **SEE eligibility column** | Whether each student meets the CIE cut-off to sit the final (pairs with MK7) | ✅ |
 | RP7 | **Comparison across sections** | Same course in CS5A vs CS5B | ✅ |
-| RP8 | **Print stylesheet** | This is a page people actually print | ✅ |
+| ~~RP8~~ | **Print stylesheet** ✅ (pass 20). Row tints and badges carry print-color-adjust, or the at-risk marking vanishes on paper | This is a page people actually print | ✅ |
 
 **Defects (verified)**
 
@@ -1393,7 +1394,7 @@ Two small pages, grouped because each is a single view with a handful of real de
 | RP9 | **Open to students** | Verified: the `teststud` student account gets **HTTP 200** on `/teacher/<id>/Report/` — so any student can read the whole class's marks and attendance. Same fix as TA-S1/TM17 |
 | RP10 | **Uncaught `DoesNotExist` → 500** | Verified by deleting one `StudentCourse` row: the page raised an **uncaught `StudentCourse.DoesNotExist`** and 500'd (row restored afterwards). The loop does a bare `StudentCourse.objects.get(...)` per student with no `try/except`, unlike `marks_list` which guards it. Any student missing that row takes down the report for the entire class |
 | RP11 | **N+1 — measured at 26 queries for one student** | The row template pulls `get_cie()` (which walks `marks_set`) and `get_attendance()` (which runs the expensive `AttendanceTotal` property chain from AT26). A 45-student class is on the order of **1,000 queries**. Fixing AT26/AT27 fixes most of this page too |
-| RP12 | **No pagination** | Every student rendered in one table |
+| RP12 | **No pagination** | ⚪ **Deliberately skipped (pass 20).** A class is bounded at roughly sixty students, unlike the institution-wide fee list that FE17 paginates - and paginating would work against the export and print stylesheet added alongside, both of which exist to hand over the whole class at once |
 
 ---
 
@@ -1794,11 +1795,12 @@ charts reuse the same geometry-in-Python, SVG-in-template shape.
    the grade logic on `StudentCourse`, so a distribution is now an aggregate
    over existing properties rather than a query rewrite
 2. **D1, D2, D7** — the admin analytics strip
-3. **RP1/RP2/RP4** — class report summary header, at-risk highlighting, export.
-   No charts needed at all, which makes it the cheapest visible win left
-4. **MK8, MK10** — class rank and a PDF report card. `reportlab` has been an
+3. **MK8, MK10** — class rank and a PDF report card. `reportlab` has been an
    installed, unused dependency since the beginning; the report card is now
    just a rendering of numbers the model already computes
+4. **TA1–TA4** — the attendance entry UX. A teacher ticks forty-five boxes a
+   day; mark-all-present, a live counter and keyboard entry are the highest
+   daily-value work left anywhere in this document
 
 **One thing to know before adding charts:** Django's `{# #}` comment is
 single-line only. A multi-line one is not a comment — the text renders into the

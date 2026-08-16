@@ -609,7 +609,44 @@ body {
 .erp-meter-pending  .erp-meter-fill  { background: var(--erp-muted); }
 .erp-meter-pending  .erp-meter-state { color: var(--erp-muted); }
 
+
+/* ---------- Class report ---------- */
+
+/* The old page filled the whole cell red or green, which carried the status by
+   colour alone and shouted louder than the numbers. A tinted row plus a badge
+   with an icon and a word says the same thing without either problem. */
+.erp-row-at-risk > td {
+  background: var(--erp-danger-tint);
+}
+
+/* ---------- Print ----------
+   This is a page people genuinely print for department records, so the
+   controls, chrome and navigation should not come with it. */
 @media print {
-  .erp-chart-hit { display: none; }
-  .erp-meter-fill, .erp-meter-track { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .erp-no-print,
+  .sidebar,
+  .navbar,
+  .scroll-to-top,
+  .erp-chart-hit { display: none !important; }
+
+  body { background: #fff; }
+
+  .card {
+    border: 1px solid #999;
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  /* Row tints and meter fills are the encoding, not decoration - without this
+     they print as plain white and the at-risk rows stop being marked. */
+  .erp-row-at-risk > td,
+  .erp-badge,
+  .erp-meter-fill,
+  .erp-meter-track {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
 }

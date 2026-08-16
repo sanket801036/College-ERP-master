@@ -1,46 +1,137 @@
 {% extends 'info/base.html' %}
-    {% load static %}
+{% load static charts %}
 
-    {% block content %}
-                  <div class="card mb-3">
-            <div class="card-header">
-              <i class="fas fa-table"></i>
-            <b>Marks</b></div>
-            <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
-                  <thead>
-                    <tr>
-                        <th style="width: 25%">Student USN</th>
-                        <th style="width: 25%">Student Name</th>
-                        <th style="width: 25%">Attendance</th>
-                        <th style="width: 25%">CIE</th>
-                  </thead>
-                  <tbody>
-                    {% for sc in sc_list %}
-                    <tr>
-                        <td>{{ sc.student_id }}</td>
-                        <td>{{ sc.student.name }}</td>
-                        {% if sc.get_attendance < 75 %}
-                            <td class="p-3 mb-2 bg-danger text-white">{{ sc.get_attendance }}</td>
-                        {% else %}
-                            <td class="p-3 mb-2 bg-success text-white">{{ sc.get_attendance }}</td>
-                        {% endif %}
-                        {% if sc.get_cie < 25 %}
-                            <td class="p-3 mb-2 bg-danger text-white">{{ sc.get_cie }}</td>
-                        {% else %}
-                            <td class="p-3 mb-2 bg-success text-white">{{ sc.get_cie }}</td>
-                        {% endif %}
-                    </tr>
-                    {% empty %}
-                            <p>student has no courses</p>
-                    {% endfor %}
+{% block title %}Class report{% endblock %}
 
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+{% block content %}
 
+{% comment %}
+Was a bare list of per-student rows with no aggregate at all, and red/green
+cells carrying the status by colour alone. The header answers "how is this
+class doing" before the table answers "how is each student doing".
+{% endcomment %}
 
-    {% endblock %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center flex-wrap">
+    <span class="mr-auto">
+      <i class="fas fa-clipboard-list"></i>
+      <b>{{ assign.class_id }} &mdash; {{ assign.course.name }}</b>
+    </span>
+    <a class="btn btn-sm btn-outline-primary erp-no-print"
+       href="{% url 't_report_export' assign.id %}?sort={{ sort }}">
+      <i class="fas fa-file-excel" aria-hidden="true"></i> Export
+    </a>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-3 mb-3">
+        <div class="erp-stat-label">Students</div>
+        <div class="erp-stat-value">{{ headcount }}</div>
+      </div>
+      <div class="col-md-3 mb-3">
+        <div class="erp-stat-label">Average attendance</div>
+        {% if avg_attendance is not None %}
+          {% meter avg_attendance 75 "Class attendance" %}
+        {% else %}
+          <div class="text-muted">No sessions held yet</div>
+        {% endif %}
+      </div>
+      <div class="col-md-3 mb-3">
+        <div class="erp-stat-label">Average CIE</div>
+        {% if avg_cie is not None %}
+          <div class="erp-stat-value">{{ avg_cie }}<span class="erp-stat-of"> / {{ cie_max }}</span></div>
+        {% else %}
+          <div class="text-muted">Nothing marked yet</div>
+        {% endif %}
+      </div>
+      <div class="col-md-3 mb-3">
+        <div class="erp-stat-label">At risk</div>
+        <div class="erp-stat-value">{{ at_risk_count }}</div>
+        <div class="text-muted small">
+          Below 75% attendance <i>and</i> under {{ eligibility_cie }} CIE.
+          {% if ineligible_count %}{{ ineligible_count }} cannot sit the exam.{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center flex-wrap erp-no-print">
+    <span class="mr-auto">Sort by</span>
+    {% for key, label in sorts %}
+      <a class="btn btn-sm mr-1 {% if sort == key %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="?sort={{ key }}{% if at_risk_only %}&amp;risk=1{% endif %}">{{ label }}</a>
+    {% endfor %}
+    <a class="btn btn-sm ml-2 {% if at_risk_only %}btn-danger{% else %}btn-outline-danger{% endif %}"
+       href="?sort={{ sort }}{% if not at_risk_only %}&amp;risk=1{% endif %}">
+      At risk only
+    </a>
+  </div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-bordered" width="100%" cellspacing="0">
+        <thead class="thead-light">
+          <tr>
+            <th>USN</th>
+            <th>Name</th>
+            <th class="text-right">Attendance</th>
+            <th class="text-right">CIE</th>
+            <th>Standing</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sc in sc_list %}
+          <tr class="{% if sc.is_at_risk %}erp-row-at-risk{% endif %}">
+            <td>{{ sc.student_id }}</td>
+            <td>{{ sc.student.name }}</td>
+            <td class="text-right">{{ sc.get_attendance }}%</td>
+            <td class="text-right">{{ sc.get_cie }} / {{ cie_max }}</td>
+            <td>
+              {% comment %}
+              A word and an icon, not a coloured cell. The old red/green fills
+              carried the status by colour alone.
+              {% endcomment %}
+              {% if sc.is_at_risk %}
+                <span class="erp-badge erp-badge-danger">
+                  <i class="fas fa-exclamation-triangle" aria-hidden="true"></i> At risk
+                </span>
+              {% elif sc.is_see_eligible is False %}
+                <span class="erp-badge erp-badge-warning">
+                  <i class="fas fa-times-circle" aria-hidden="true"></i> Not eligible for SEE
+                </span>
+              {% elif not sc.has_marks %}
+                <span class="text-muted">Nothing marked yet</span>
+              {% elif not sc.cie_is_final %}
+                {% comment %}
+                Not "On track". With components still to come the CIE is a
+                subtotal, and a green tick on a student sitting at 10/50
+                halfway through would read as reassurance nobody has earned.
+                At risk still fires above, because that one is an early
+                warning and is meant to.
+                {% endcomment %}
+                <span class="text-muted">
+                  <i class="fas fa-hourglass-half" aria-hidden="true"></i> In progress
+                </span>
+              {% else %}
+                <span class="erp-badge erp-badge-success">
+                  <i class="fas fa-check-circle" aria-hidden="true"></i> On track
+                </span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-muted">
+              {% if at_risk_only %}No student in this class is at risk.
+              {% else %}No students in this class yet.{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

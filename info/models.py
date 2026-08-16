@@ -472,6 +472,17 @@ class StudentCourse(models.Model):
         return round(self.get_cie() / CIE_MAX * 100, 1)
 
     @property
+    def is_at_risk(self):
+        """Low on both attendance and marks.
+
+        Either alone is common and often recoverable; together they are the
+        signal a teacher can act on, which is why the class report highlights
+        the combination rather than colouring two columns independently.
+        """
+        return (self.get_attendance() < ATTENDANCE_THRESHOLD * 100
+                and self.get_cie() < SEE_ELIGIBILITY_CIE)
+
+    @property
     def has_marks(self):
         """Has any CIE component been submitted for this course yet?"""
         return any(not row['pending'] for row in self.component_rows())

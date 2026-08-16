@@ -38,6 +38,8 @@ urlpatterns = [
     path('teacher/<slug:assign_id>/Extra_class/confirm/',
          views.e_confirm, name='e_confirm'),
     path('teacher/<int:assign_id>/Report/', views.t_report, name='t_report'),
+    path('teacher/<int:assign_id>/Report/export/', views.t_report_export,
+         name='t_report_export'),
 
     path('teacher/<slug:teacher_id>/t_timetable/',
          views.t_timetable, name='t_timetable'),

@@ -436,14 +436,119 @@ def t_report(request, assign_id):
         [StudentCourse(student=s, course=ass.course) for s in students],
         ignore_conflicts=True,
     )
-    sc_list = (StudentCourse.objects
-               .filter(student__in=students, course=ass.course)
-               .select_related('student', 'course')
-               .prefetch_related('marks_set'))
-    # Otherwise each row looks up its own attendance, and the template asks for
-    # it twice - roughly five queries per student.
-    sc_list = StudentCourse.attach_attendance(sc_list, ass.course)
-    return render(request, 'info/t_report.html', {'sc_list': sc_list})
+    sc_list = _report_rows(ass, students)
+
+    order = request.GET.get('sort', 'name')
+    sc_list = _sort_report(sc_list, order)
+    at_risk_only = request.GET.get('risk') == '1'
+
+    at_risk = [sc for sc in sc_list if sc.is_at_risk]
+    held = [sc for sc in sc_list if sc.has_marks]
+
+    return render(request, 'info/t_report.html', {
+        'assign': ass,
+        'sc_list': [sc for sc in sc_list if sc.is_at_risk] if at_risk_only else sc_list,
+        'sort': order,
+        'sorts': REPORT_SORT_LABELS,
+        'at_risk_only': at_risk_only,
+        'headcount': len(sc_list),
+        'at_risk_count': len(at_risk),
+        # Averages over the students who actually have something recorded, so a
+        # class that has not sat a test yet does not report an average of zero.
+        'avg_cie': (round(sum(sc.get_cie() for sc in held) / len(held), 1)
+                    if held else None),
+        'avg_attendance': (round(sum(sc.get_attendance() for sc in sc_list) / len(sc_list), 1)
+                           if sc_list else None),
+        'ineligible_count': sum(1 for sc in sc_list if sc.is_see_eligible is False),
+        'cie_max': CIE_MAX,
+        'eligibility_cie': SEE_ELIGIBILITY_CIE,
+    })
+
+
+def _report_rows(assign, students):
+    """Every student on this class's course, with marks and attendance loaded.
+
+    Both attach_* calls exist to keep this flat: without them each row looks up
+    its own attendance and its own submitted-components status, and the
+    template asks for each twice.
+    """
+    # attach_attendance reads AttendanceTotal, and those rows are only
+    # backfilled when someone opens the attendance page - so without this the
+    # report showed 0% for every student until they each did, and then flagged
+    # the whole class as at risk. Same guard the attendance page already has.
+    AttendanceTotal.objects.bulk_create(
+        [AttendanceTotal(student=s, course=assign.course) for s in students],
+        ignore_conflicts=True,
+    )
+
+    rows = list(StudentCourse.objects
+                .filter(student__in=students, course=assign.course)
+                .select_related('student', 'course')
+                .prefetch_related('marks_set'))
+    StudentCourse.attach_attendance(rows, assign.course)
+    StudentCourse.attach_submitted(rows, assign.class_id_id)
+    return rows
+
+
+REPORT_SORTS = {
+    'name': lambda sc: sc.student.name,
+    'usn': lambda sc: sc.student_id,
+    'cie': lambda sc: sc.get_cie(),
+    'attendance': lambda sc: sc.get_attendance(),
+}
+
+REPORT_SORT_LABELS = (
+    ('name', 'Name'),
+    ('usn', 'USN'),
+    ('cie', 'Lowest CIE'),
+    ('attendance', 'Lowest attendance'),
+)
+
+
+def _sort_report(rows, order):
+    """Lowest-first on the two numeric columns - the point of sorting a class
+    report is to bring the students in trouble to the top."""
+    return sorted(rows, key=REPORT_SORTS.get(order, REPORT_SORTS['name']))
+
+
+@login_required()
+@teacher_required
+@owns_assign('assign_id')
+def t_report_export(request, assign_id):
+    """The same report as a spreadsheet, for department records."""
+    ass = get_object_or_404(Assign, id=assign_id)
+    rows = _sort_report(
+        _report_rows(ass, list(ass.class_id.student_set.all())),
+        request.GET.get('sort', 'name'))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Class report'
+    ws.append(['USN', 'Name', 'Attendance %', 'CIE', 'SEE eligible', 'At risk'])
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill(start_color='4F46E5', end_color='4F46E5',
+                                fill_type='solid')
+
+    for sc in rows:
+        eligible = sc.is_see_eligible
+        ws.append([
+            sc.student_id,
+            sc.student.name,
+            sc.get_attendance(),
+            sc.get_cie(),
+            # Undecided is its own answer here, not a False.
+            'Undecided' if eligible is None else ('Yes' if eligible else 'No'),
+            'Yes' if sc.is_at_risk else '',
+        ])
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = (
+        'attachment; filename="%s_%s_report.xlsx"'
+        % (ass.class_id_id, ass.course_id))
+    wb.save(response)
+    return response
 
 
 BREAK_COLUMNS = (4, 8)
