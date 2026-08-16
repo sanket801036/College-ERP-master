@@ -37,8 +37,9 @@ was found, so anything listed here as closed has already changed in the code.
 | 24 | Class rank and the PDF marks card | MK8, MK10 | 14 |
 | 25 | Fee receipts, payment history and bulk assignment; messages finally shown | FE3, FE10, FE14, rest of FE2 | 15 |
 | 26 | Fee list: filters, pagination and a collection summary computed in the database | FE15, FE16 (part), FE17, FE30 | 17 |
+| 27 | Class marks page rebuilt: statistics, distribution chart, at-risk rows | TM11, TM12, TM13, C6, TM18, rest of MK24 | 22 |
 
-**360 tests**, from zero.
+**382 tests**, from zero.
 
 ### The grading rules, decided
 
@@ -543,7 +544,7 @@ Brainstormed against the actual models in `info/models.py`. The **Data ready?** 
 | C3 | **At-risk student list** | Students under 75% across this teacher's classes, so they can intervene early | ✅ | M |
 | C4 | **Class performance comparison** | Average CIE per class as a bar chart — CS5A vs CS5B at a glance | ✅ | M |
 | C5 | **One-click "Take attendance for today"** | Detect today's session from `AssignTime` and deep-link straight into the marking form — saves 4 clicks every single day | ✅ | S |
-| C6 | **Marks distribution histogram** | Grade spread per test — shows whether a paper was too hard/easy | ✅ | M |
+| ~~C6~~ | **Marks distribution histogram** ✅ (pass 27) | Grade spread per test — shows whether a paper was too hard/easy | ✅ | M |
 | C7 | **Free-slot finder** | The `free_teachers` view already exists but is buried — surface "you're free 3rd period today" | ✅ | S |
 | C8 | **Bulk-message a class** | Post a notice scoped to one class rather than all students | ⚠️ `Notice.audience` needs a class-level option | M |
 | C9 | **Export class report to Excel** | `openpyxl` is already wired up for fees — reuse the same pattern for attendance/marks | ✅ | S |
@@ -854,7 +855,7 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 |---|---|---|
 | MK22 | **Crash bug: `marks_list` passes a field that doesn't exist** | `info/views.py` calls `sc.marks_set.create(type='I', name='Internal test 1')` (six times), but the `Marks` model has only `studentcourse`, `name`, `marks1` — there is **no `type` field**. Verified in a shell: this raises `TypeError: Marks() got unexpected keyword arguments: 'type'`. It sits in the `except StudentCourse.DoesNotExist` fallback branch, which normally doesn't fire because the `create_marks` signal pre-creates the rows — so the page works today purely by luck. Any student whose `StudentCourse` row is missing (bulk import, a deleted row, data restored without signals) gets a hard 500. The identical block in `apis/views.py` has the same problem |
 | MK23 | **`get_cie()` depends on unordered query results** | `get_cie()` does `marks_list = self.marks_set.all()` then `sum(m[:5])` — "the first five" — but `Marks.Meta` has **no `ordering`** (verified: `Marks._meta.ordering == []`). Unordered SQL results have no guaranteed order; Postgres is free to return rows in any sequence, and updated rows commonly move. If the SEE row (out of 100) lands in the first five, CIE silently absorbs it and drops an internal — a wrong grade with no error anywhere. It happens to be correct today only because insertion order matches. Fix: select the five components **by name**, never by position |
-| MK24 | **The marks table has the same positional assumption** | `marks_list.html` renders `{% for m in sc.marks_set.all %}` straight into columns headed Internals 1/2/3, Event 1/2, SEE — so the same unordered queryset can place values under the wrong headings. The template should look each component up by name |
+| ~~MK24~~ | **The marks table has the same positional assumption** ✅ **Now fully fixed.** `marks_in_order` was added for the student's own page in pass 5; the teacher's class roster kept iterating `marks_set.all()` straight into fixed headings until pass 27, with the same risk of a value landing under the wrong test | `marks_list.html` renders `{% for m in sc.marks_set.all %}` straight into columns headed Internals 1/2/3, Event 1/2, SEE — so the same unordered queryset can place values under the wrong headings. The template should look each component up by name |
 | MK25 | **No validation on marks entry** | `marks_confirm` does `mark = request.POST[s.USN]` and assigns it directly to `m.marks1`. Verified: a value of **85 saves cleanly onto an internal test worth 20**. Django field validators only run via `full_clean()`, which a bare `.save()` skips, so `MaxValueValidator(100)` never executes either. Non-numeric input raises an unhandled `ValueError`, and a missing form field raises `KeyError` → 500. This is the clearest case in the whole project for switching to a `ModelForm`/formset with `clean_marks1()` bounded by `total_marks` |
 | MK26 | **N+1 on the marks page** | Measured: **10 queries for a single course** (~4 fixed + ~6 per course), so a 6-course student issues roughly 40. Much lighter than the attendance page's ~120, but the same root cause — `sc.marks_set.all()` per course plus `get_cie()` per course. Fix with `prefetch_related('marks_set')` and a single aggregate |
 | MK27 | **No tests for grade logic** | CIE, grade banding, and the required-SEE calculator are pure functions — ideal first unit tests, including boundaries (all components pending, exactly at a grade cut-off, SEE absent) |
@@ -1338,9 +1339,9 @@ This module shares the marks *data* problems already documented in §7.2.x (MK22
 
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
-| TM11 | **Class statistics after submit** | Average, median, pass count, distribution — `student_marks` shows CIE and attendance per student but no aggregate at all | ✅ |
-| TM12 | **Marks distribution histogram** | Tells the teacher whether the paper was too hard or too easy (same as C6) | ✅ |
-| TM13 | **Highlight at-risk students** | Low CIE + low attendance together — `StudentCourse` already exposes `get_cie()` and `get_attendance()` side by side | ✅ |
+| ~~TM11~~ | **Class statistics after submit** ✅ (pass 27). Average, median, range, headcount marked | Average, median, pass count, distribution — `student_marks` shows CIE and attendance per student but no aggregate at all | ✅ |
+| ~~TM12~~ | **Marks distribution histogram** ✅ (pass 27), in CIE bands | Tells the teacher whether the paper was too hard or too easy (same as C6) | ✅ |
+| ~~TM13~~ | **Highlight at-risk students** ✅ (pass 27), on the same low-marks-*and*-low-attendance rule the class report uses | Low CIE + low attendance together — `StudentCourse` already exposes `get_cie()` and `get_attendance()` side by side | ✅ |
 | TM14 | **Export marks sheet** | Excel/PDF for department records | ✅ |
 | ~~TM15~~ | **Publication control** ✅ (pass 23). Publish / withdraw from the batch list, both audit-logged | Enter now, release to students later (MK20) | ⚠️ `MarksClass.is_published` |
 | TM16 | **Re-evaluation queue** | Teacher-side view of student disputes (MK18) | ❌ |
@@ -1350,7 +1351,7 @@ This module shares the marks *data* problems already documented in §7.2.x (MK22
 | # | Issue | Detail |
 |---|---|---|
 | TM17 | **All four entry endpoints open to students** | Verified, logged in as the `teststud` student account: `t_marks_list`, `student_marks`, `t_marks_entry` and `edit_marks` all returned **HTTP 200**. So a student can read the whole class's marks and open the marks-entry form. The POST handler `marks_confirm` carries the identical `@login_required()`-only guard, which means **a student can submit marks for an entire class**. Same root cause and same fix as TA-S1/TA-S2 — a `@teacher_required` decorator plus an ownership assertion. Do all of these in one pass |
-| TM18 | **`student_marks` returns 500 instead of 404** | Verified: `Assign.objects.get(id=assign_id)` with an unknown id raises an uncaught `Assign.DoesNotExist` and the request 500s. Every neighbouring view uses `get_object_or_404`; this one doesn't. One-line fix |
+| ~~TM18~~ | **`student_marks` returns 500 instead of 404** ✅ **Fixed (pass 27).** Recorded as a one-line fix in the module's recommended order and then not done for twenty-three passes | Verified: `Assign.objects.get(id=assign_id)` with an unknown id raises an uncaught `Assign.DoesNotExist` and the request 500s. Every neighbouring view uses `get_object_or_404`; this one doesn't. One-line fix |
 | ~~TM19~~ | **Unguarded `StudentCourse.objects.get()` in both `marks_confirm` and `edit_marks`** ✅ **Now fully fixed.** `marks_confirm` was covered in pass 4, but `edit_marks` kept its bare `StudentCourse.objects.get()` *and* `marks_set.get()` until pass 22 - either one raising DoesNotExist took the page down for the whole class. Both are gone; the view now loads existing marks in one query and tolerates rows that are missing | Neither wraps the lookup in `try/except`, so any student missing a `StudentCourse` row 500s the entire batch — the same crash path as G3 (`t_report`). Note this is *also* the branch that MK22's `type='I'` bug lives in, so the "self-healing" fallback in `marks_list` would itself crash. Two independent faults on the same path |
 | TM20 | **No transaction around `marks_confirm`** | The view loops over students saving one `Marks` row at a time, then flips `mc.status = True`. A `KeyError` from `request.POST[s.USN]` partway through leaves half the class saved. Unlike the attendance equivalent (TA-C2), the status flag *is* correctly set after the loop — so a partial failure leaves marks saved but the batch still flagged unsubmitted, which is the safer of the two failure modes but still wrong. Wrap in `@transaction.atomic` |
 | TM21 | **No validation of the submitted value** | `m.marks1 = request.POST[s.USN]` assigns a raw string with no bounds check — this is MK25, restated here because this is the view that does it. `ModelForm`/formset with `clean()` bounded by `total_marks` |
@@ -1802,14 +1803,14 @@ eligibility rule were adopted in pass 19 (see "The grading rules, decided").
 
 ### Ready to build with no decision outstanding
 
-E3 is done, so the chart work is now just drawing: `{% meter %}` and
-`{% attendance_trend %}` are in `info/templatetags/charts.py`, and the next
-charts reuse the same geometry-in-Python, SVG-in-template shape.
+E3 is done, so the chart work is now just drawing. `{% meter %}`,
+`{% attendance_trend %}` and `{% bar_chart %}` are in
+`info/templatetags/charts.py`, and the next charts reuse the same
+geometry-in-Python, SVG-in-template shape.
 
-1. **C4, C6, TM11/TM12** — class performance and marks distribution on the
-   teacher side. `student_marks` already has CIE per student, and pass 19 put
-   the grade logic on `StudentCourse`, so a distribution is now an aggregate
-   over existing properties rather than a query rewrite
+1. **C4** — comparing sections of the same course. The distribution chart and
+   `{% bar_chart %}` from pass 27 are the pieces; what is missing is the view
+   that puts two classes side by side
 2. **D1, D2, D7** — the admin analytics strip. `FeeQuerySet.totals()` from
    pass 26 is most of what a collection chart needs
 3. **MK18 / TM16 / AT20** — the request-and-approve workflows (re-evaluation,

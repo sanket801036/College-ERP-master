@@ -1,0 +1,41 @@
+{% load l10n %}
+{% comment %}
+One series, so no legend - the caption says what is plotted. Values sit at the
+bar tips rather than on an axis, which is what a reader of a short ranked list
+actually wants; the axis keeps only its end labels.
+
+Rendered at its design size for the same reason the trend line is: a scaled
+viewBox scales the labels with it.
+{% endcomment %}
+{% if bars %}
+<figure class="erp-chart mb-0">
+  {% if caption %}
+    <figcaption class="erp-chart-caption">{{ caption }}</figcaption>
+  {% endif %}
+  <div class="erp-chart-scroll">
+  {% localize off %}
+  <svg class="erp-chart-svg" viewBox="0 0 {{ width }} {{ height }}"
+       width="{{ width }}" height="{{ height }}"
+       role="img" preserveAspectRatio="xMidYMid meet"
+       aria-label="{{ caption }} Highest value {{ top_display }}{{ unit }}.">
+
+    <line class="erp-chart-grid" x1="{{ plot_left }}" y1="0"
+          x2="{{ plot_left }}" y2="{{ axis_y }}"/>
+    <line class="erp-chart-grid" x1="{{ plot_right }}" y1="0"
+          x2="{{ plot_right }}" y2="{{ axis_y }}"/>
+    <text class="erp-chart-tick" x="{{ plot_left }}" y="{{ axis_y }}" dx="-4" dy="12">0</text>
+    <text class="erp-chart-rule-label" x="{{ plot_right }}" y="{{ axis_y }}" dx="-14" dy="12">{{ top_display }}{{ unit }}</text>
+
+    {% for bar in bars %}
+      <text class="erp-chart-barlabel" x="{{ plot_left }}" y="{{ bar.text_y }}" dx="-10">{{ bar.label }}</text>
+      <path class="erp-chart-bar{% if bar.muted %} erp-chart-bar-muted{% endif %}"
+            d="{{ bar.path }}">
+        <title>{{ bar.label }}: {{ bar.display }}{{ unit }}</title>
+      </path>
+      <text class="erp-chart-barvalue" x="{{ bar.value_x }}" y="{{ bar.text_y }}">{{ bar.display }}{{ unit }}</text>
+    {% endfor %}
+  </svg>
+  {% endlocalize %}
+  </div>
+</figure>
+{% endif %}

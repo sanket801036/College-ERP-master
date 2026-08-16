@@ -78,6 +78,86 @@ def meter(percent, threshold=SAFE_FLOOR, subject='Attendance', settled=True):
     }
 
 
+@register.inclusion_tag('info/charts/bar_chart.html')
+def bar_chart(rows, max_value=None, caption='', unit='', highlight=None):
+    """Horizontal bars for comparing magnitude.
+
+    One hue, because the bars are one series - colouring each bar differently
+    would spend the identity channel re-encoding what bar length already shows.
+    `highlight` names one row to pick out in the accent colour with the rest in
+    grey, which is the honest form when the story is about a single entry.
+
+    `rows` is (label, value) pairs. Horizontal rather than vertical so class
+    names and mark bands both fit without turning the labels sideways.
+    """
+    rows = [(str(label), float(value)) for label, value in rows]
+    if not rows:
+        return {'bars': []}
+
+    top = max_value if max_value is not None else max(v for _, v in rows)
+    # A zero scale would divide by zero and a chart of all-zeros is honestly
+    # empty anyway; keep the axis but draw nothing.
+    scale = top or 1
+
+    width = 640
+    label_w, value_w = 150, 54
+    plot_left = label_w
+    plot_w = width - label_w - value_w
+    row_h, bar_h = 26, 14
+    height = row_h * len(rows) + 24
+
+    bars = []
+    for index, (label, value) in enumerate(rows):
+        y = index * row_h + 4
+        length = max(0.0, min(1.0, value / scale)) * plot_w
+        bars.append({
+            'label': label,
+            'value': value,
+            'display': _fmt(value),
+            'y': y,
+            'text_y': y + bar_h - 2,
+            # Square at the baseline, rounded at the data end - and the radius
+            # collapses on a stub so a 2px bar is not drawn as a lozenge.
+            'path': _bar_path(plot_left, y, length, bar_h),
+            'value_x': plot_left + length + 8,
+            'muted': highlight is not None and label != highlight,
+        })
+
+    return {
+        'bars': bars,
+        'caption': caption,
+        'unit': unit,
+        'width': width,
+        'height': height,
+        'plot_left': plot_left,
+        'plot_right': plot_left + plot_w,
+        'axis_y': height - 18,
+        'top': top,
+        'top_display': _fmt(top),
+    }
+
+
+def _fmt(value):
+    """Counts are whole things. "3.0 students" is a float leaking into prose."""
+    return '%g' % value
+
+
+def _bar_path(x, y, length, thickness, radius=4):
+    """A bar with square corners at the baseline and rounded ones at the tip."""
+    r = min(radius, length)
+    if r <= 0:
+        return ''
+    right = x + length
+    return ('M %s,%s L %s,%s Q %s,%s %s,%s L %s,%s Q %s,%s %s,%s L %s,%s Z' % (
+        round(x, 2), round(y, 2),
+        round(right - r, 2), round(y, 2),
+        round(right, 2), round(y, 2), round(right, 2), round(y + r, 2),
+        round(right, 2), round(y + thickness - r, 2),
+        round(right, 2), round(y + thickness, 2),
+        round(right - r, 2), round(y + thickness, 2),
+        round(x, 2), round(y + thickness, 2)))
+
+
 @register.inclusion_tag('info/charts/trend_line.html')
 def attendance_trend(sessions, threshold=SAFE_FLOOR):
     """Running attendance percentage after each session, oldest first.

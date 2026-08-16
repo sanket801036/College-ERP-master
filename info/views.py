@@ -997,9 +997,79 @@ def edit_marks(request, marks_c_id):
 @teacher_required
 @owns_assign('assign_id')
 def student_marks(request, assign_id):
-    ass = Assign.objects.get(id=assign_id)
-    sc_list = StudentCourse.objects.filter(student__in=ass.class_id.student_set.all(), course=ass.course)
-    return render(request, 'info/t_student_marks.html', {'sc_list': sc_list})
+    """The class roster with marks, plus what they add up to.
+
+    A bare .get() here raised an uncaught DoesNotExist on an unknown id and
+    500'd where every neighbouring view returns 404.
+    """
+    ass = get_object_or_404(
+        Assign.objects.select_related('course', 'class_id'), id=assign_id)
+    students = list(ass.class_id.student_set.order_by('name'))
+
+    # attach_attendance reads AttendanceTotal, and those rows only appear when
+    # someone opens the attendance page - without this the whole class reads as
+    # 0% and every student is flagged at risk. Third page to stand in this
+    # trap; the dashboards avoid it by computing from Attendance directly.
+    AttendanceTotal.objects.bulk_create(
+        [AttendanceTotal(student=s, course=ass.course) for s in students],
+        ignore_conflicts=True,
+    )
+
+    sc_list = list(StudentCourse.objects
+                   .filter(student__in=students, course=ass.course)
+                   .select_related('student', 'course')
+                   .prefetch_related('marks_set'))
+    StudentCourse.attach_submitted(sc_list, ass.class_id_id)
+    StudentCourse.attach_attendance(sc_list, ass.course)
+
+    marked = [sc for sc in sc_list if sc.has_marks]
+    cies = sorted(sc.get_cie() for sc in marked)
+
+    return render(request, 'info/t_student_marks.html', {
+        'assign': ass,
+        'sc_list': sc_list,
+        'cie_max': CIE_MAX,
+        'headcount': len(sc_list),
+        'marked_count': len(marked),
+        'average_cie': round(sum(cies) / len(cies), 1) if cies else None,
+        'median_cie': _median(cies),
+        'lowest_cie': cies[0] if cies else None,
+        'highest_cie': cies[-1] if cies else None,
+        # Only students whose CIE is complete have an eligibility answer at
+        # all. Counting the undecided ones as zero reads as "nobody qualifies"
+        # when the truth is "not settled yet".
+        'decided': [sc for sc in marked if sc.cie_is_final],
+        'eligible_count': sum(1 for sc in marked if sc.is_see_eligible is True),
+        'at_risk': [sc for sc in marked if sc.is_at_risk],
+        'distribution': _cie_bands(cies),
+    })
+
+
+def _median(values):
+    if not values:
+        return None
+    middle = len(values) // 2
+    if len(values) % 2:
+        return values[middle]
+    return round((values[middle - 1] + values[middle]) / 2, 1)
+
+
+# Ten-mark bands across the CIE's 0-50. Wide enough that a class of forty does
+# not scatter into a flat line, narrow enough to show a shape.
+CIE_BANDS = ((0, 10), (11, 20), (21, 30), (31, 40), (41, 50))
+
+
+def _cie_bands(cies):
+    """(label, count) per band - the shape of the class's marks.
+
+    Tells the teacher whether the paper was too hard or too easy, which a
+    column of per-student numbers never does.
+    """
+    if not cies:
+        return []
+    return [('%d-%d' % (low, high),
+             sum(1 for cie in cies if low <= cie <= high))
+            for low, high in CIE_BANDS]
 
 
 @login_required()

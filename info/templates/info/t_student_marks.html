@@ -1,46 +1,114 @@
 {% extends 'info/base.html' %}
-    {% load static %}
+{% load static charts %}
 
-    {% block content %}
-                  <div class="card mb-3">
-            <div class="card-header">
-              <i class="fas fa-table"></i>
-            <b>Marks</b></div>
-            <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
-                  <thead>
-                    <tr>
-                        <th>Student USN</th>
-                        <th>Student Name</th>
-                        <th>Internals 1</th>
-                        <th>Internals 2</th>
-                        <th>Internals 3</th>
-                        <th>Event 1</th>
-                        <th>Event 2</th>
-                        <th>SEE</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for sc in sc_list %}
-                    <tr>
-                        <td>{{ sc.student_id }}</td>
-                        <td><b>{{ sc.student.name }} </b></td>
-                        {% for m in sc.marks_set.all %}
-                            <td>{{ m.marks1 }}</td>
-                        {% endfor %}
-                    </tr>
-                    {% empty %}
-                            <p>student has no courses</p>
-                    {% endfor %}
+{% block title %}Class marks{% endblock %}
 
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+{% block content %}
 
+{% comment %}
+The roster listed six numbers per student and no aggregate at all - nothing
+said whether the paper was hard, who was in trouble, or what the class as a
+whole had scored.
 
-    {% endblock %}
+The marks columns used to iterate marks_set.all() straight into headings, but
+Marks has no Meta.ordering, so a value could land under the wrong test. That
+was fixed on the student's own page and left here.
+{% endcomment %}
 
+<div class="card mb-3">
+  <div class="card-header">
+    <i class="fas fa-chart-column"></i>
+    <b>{{ assign.class_id }} &mdash; {{ assign.course.name }}</b>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-3 mb-3">
+        <div class="erp-stat-label">Average CIE</div>
+        {% if average_cie is not None %}
+          <div class="erp-stat-value">{{ average_cie }}<span class="erp-stat-of"> / {{ cie_max }}</span></div>
+          <div class="text-muted small">Median {{ median_cie }} &middot; range {{ lowest_cie }}&ndash;{{ highest_cie }}</div>
+        {% else %}
+          <div class="text-muted">Nothing marked yet</div>
+        {% endif %}
+      </div>
+      <div class="col-md-3 mb-3">
+        <div class="erp-stat-label">Marked</div>
+        <div class="erp-stat-value">{{ marked_count }}<span class="erp-stat-of"> / {{ headcount }}</span></div>
+      </div>
+      <div class="col-md-3 mb-3">
+        <div class="erp-stat-label">Eligible for SEE</div>
+        {% if decided %}
+          <div class="erp-stat-value">{{ eligible_count }}<span class="erp-stat-of"> / {{ decided|length }}</span></div>
+          <div class="text-muted small">of those whose CIE is complete</div>
+        {% else %}
+          <div class="text-muted">Not settled &mdash; components outstanding</div>
+        {% endif %}
+      </div>
+      <div class="col-md-3 mb-3">
+        <div class="erp-stat-label">At risk</div>
+        <div class="erp-stat-value {% if at_risk %}text-danger{% endif %}">{{ at_risk|length }}</div>
+        <div class="text-muted small">Low marks <i>and</i> low attendance</div>
+      </div>
+    </div>
 
+    {% if distribution %}
+      {% bar_chart distribution caption="How the class scored, by CIE band. A shape that piles up at one end says more about the paper than about the students." unit=" students" %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-bordered" width="100%" cellspacing="0">
+        <thead class="thead-light">
+          <tr>
+            <th>USN</th>
+            <th>Student</th>
+            <th class="text-right">Int 1</th>
+            <th class="text-right">Int 2</th>
+            <th class="text-right">Int 3</th>
+            <th class="text-right">Event 1</th>
+            <th class="text-right">Event 2</th>
+            <th class="text-right">SEE</th>
+            <th class="text-right">CIE</th>
+            <th class="text-right">Attendance</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sc in sc_list %}
+          <tr class="{% if sc.is_at_risk %}erp-row-at-risk{% endif %}">
+            <td>{{ sc.student_id }}</td>
+            <td><b>{{ sc.student.name }}</b></td>
+            {% comment %}
+            marks_in_order looks each component up by name instead of trusting
+            the queryset's order, which has no guarantee.
+            {% endcomment %}
+            {% for m in sc.marks_in_order %}
+              <td class="text-right">
+                {% if m %}{{ m.marks1 }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}
+              </td>
+            {% endfor %}
+            <td class="text-right"><b>{{ sc.get_cie }}</b></td>
+            <td class="text-right">{{ sc.get_attendance }}%</td>
+            <td>
+              {% if sc.is_at_risk %}
+                <span class="erp-badge erp-badge-danger">
+                  <i class="fas fa-exclamation-triangle" aria-hidden="true"></i> At risk
+                </span>
+              {% elif sc.is_see_eligible is False %}
+                <span class="erp-badge erp-badge-warning">Not eligible</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="11" class="text-muted">No students in this class yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

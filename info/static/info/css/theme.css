@@ -675,3 +675,27 @@ body {
   background: var(--erp-bg);
   border-top: 0;
 }
+
+/* ---------- Bar chart ----------
+   One hue: the bars are one series, so colouring each differently would spend
+   the identity channel re-encoding what bar length already shows. */
+.erp-chart-bar { fill: var(--erp-primary); }
+
+/* Emphasis form: one bar in the accent, the rest receding. */
+.erp-chart-bar-muted { fill: var(--erp-border); }
+
+.erp-chart-barlabel {
+  fill: var(--erp-ink);
+  font-size: 11px;
+  text-anchor: end;
+}
+
+/* Values wear ink, never the mark colour. */
+.erp-chart-barvalue {
+  fill: var(--erp-ink);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.erp-chart-bar:hover { fill: var(--erp-primary-dark); }
