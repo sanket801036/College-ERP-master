@@ -5,7 +5,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from info.models import Attendance, AttendanceClass, AssignTime
-from info.templatetags.charts import attendance_meter, attendance_trend, zone_for
+from info.templatetags.charts import attendance_trend, meter, zone_for
 from info.tests import factories as f
 
 
@@ -35,26 +35,39 @@ class MeterTests(TestCase):
     def test_geometry_is_clamped_but_the_number_is_not(self):
         """A percentage over 100 must not draw a bar past the track - but the
         printed value stays whatever the data actually said."""
-        context = attendance_meter(140)
+        context = meter(140)
 
         self.assertEqual(context['width'], 100)
         self.assertEqual(context['percent'], 140)
 
     def test_negative_does_not_draw_backwards(self):
-        self.assertEqual(attendance_meter(-10)['width'], 0)
+        self.assertEqual(meter(-10)['width'], 0)
 
     def test_none_reads_as_zero(self):
-        self.assertEqual(attendance_meter(None)['width'], 0)
+        self.assertEqual(meter(None)['width'], 0)
 
     def test_state_carries_a_word_and_an_icon_not_just_colour(self):
-        context = attendance_meter(40)
+        context = meter(40)
 
         self.assertEqual(context['label'], 'Critical')
         self.assertTrue(context['icon'])
 
+    def test_zones_follow_the_threshold_they_are_given(self):
+        """A CIE meter reads against 40, not attendance's 75 - pinning the
+        bands to 75 called a passing CIE critical."""
+        self.assertEqual(zone_for(42, threshold=40), 'safe')
+        self.assertEqual(zone_for(35, threshold=40), 'risk')
+        self.assertEqual(zone_for(20, threshold=40), 'critical')
+
+    def test_an_unsettled_ratio_withholds_the_verdict(self):
+        context = meter(42, threshold=40, settled=False)
+
+        self.assertEqual(context['zone'], 'pending')
+        self.assertEqual(context['label'], 'In progress')
+
     def test_renders_the_threshold_marker(self):
         html = Template(
-            '{% load charts %}{% attendance_meter 83 %}'
+            '{% load charts %}{% meter 83 %}'
         ).render(Context({}))
 
         self.assertIn('erp-meter-safe', html)
@@ -161,7 +174,7 @@ class LocalisationTests(TestCase):
     @override_settings(USE_THOUSAND_SEPARATOR=True, LANGUAGE_CODE='de')
     def test_meter_width_survives_a_comma_decimal_locale(self):
         html = Template(
-            '{% load charts %}{% attendance_meter 71.4 %}'
+            '{% load charts %}{% meter 71.4 %}'
         ).render(Context({}))
 
         self.assertIn('width: 71.4%', html)

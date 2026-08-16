@@ -29,8 +29,24 @@ was found, so anything listed here as closed has already changed in the code.
 | 16 | Notice board built out | NB1–NB7, NB9, NB10, NB12, NB13, NB16, NB18, NB19 | 28 |
 | 17 | Free-teacher finder made to actually find free teachers; `Course.credits` | FT7, FT8, FT9, FT10, MK14 (field only) | 13 |
 | 18 | Charts: an inline-SVG/CSS toolkit, attendance meters and the trend line | E3, B3, B2, AT12, part of AT4, part of QA1 | 27 |
+| 19 | Marks page rebuilt on VTU's 10-point scale | MK1, MK2, MK3, MK4, MK5, MK6, MK7, MK9, MK14 | 30 |
 
-**213 tests**, from zero.
+**244 tests**, from zero.
+
+### The grading rules, decided
+
+Nothing in the codebase defined these; they were a policy choice, not a code
+one, and everything on the marks page follows from them.
+
+- **Final** = CIE (out of 50) + SEE / 2, so a final out of 100
+- **Scale**: VTU's 10-point — O 90+ (10), A+ 80 (9), A 70 (8), B+ 60 (7),
+  B 55 (6), C 50 (5), P 40 (4), F below (0)
+- **SEE eligibility**: a CIE of at least 20/50, i.e. 40%
+- **SGPA** = Σ(grade points × credits) / Σ(credits), over the courses whose
+  result is actually in
+
+They live in `info/models.py` as `GRADE_BANDS`, `SEE_ELIGIBILITY_CIE` and
+`sgpa_for()`. Changing the scale is a one-place edit.
 
 ### Query counts, measured before and after
 
@@ -60,7 +76,7 @@ their **features**.
 | **Login** (§5) | 🟢 rebuilt | §5.1 (OTP reset) is the only part unbuilt, and it is blocked on CF3 (no SMTP host). "Forgot password?" currently opens a modal pointing at the admin rather than a real reset flow |
 | **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB17 (email on publish, blocked on CF3), NB22 (should a teacher be able to address the whole institution?) |
 | **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
-| **Marks - student** (§7.2) | 🟠 bugs fixed, page unchanged | Still the same eight-column table. No GPA/score card, accordion, CIE progress bar, letter grades, required-marks calculator, SEE eligibility, rank, PDF report card, or charts. `Course.credits` now exists, but nothing computes a grade point yet — see the note under MK14 |
+| **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA all landed in pass 19 on VTU's 10-point scale. Still open: class rank (MK8), PDF report card (MK10), the charts (MK11/MK12/MK16), semester history (MK15, needs semester tagging), and the Phase C workflows (MK18 re-evaluation, MK20 publication control) |
 | **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
 | **Attendance - teacher** (§7.3) | 🟢 secured, queue on dashboard | Entry UX untouched: no mark-all-present default, live counter, keyboard entry, roster search, unsaved-changes guard, or bulk import. TA-C4 (magic status numbers) and TA-C6 (past sessions only) stand |
 | **Marks entry - teacher** (§7.7) | 🟢 secured and validated | No keyboard entry, live statistics, absent-vs-zero marker, draft save, bulk import, post-entry statistics, or publication control |
@@ -84,26 +100,22 @@ has credentials for yet.
    notice attachments (NB8) and roster photos (TA6) need S3/Cloudinary, not just
    a settings change. AC4 is done — accounts now collect an email address — so
    CF3 is purely a credentials decision
-2. **MK14 follow-through** — `Course.credits` exists, but computing an SGPA/CGPA
-   from it needs a marks→grade-point scale, which is a policy decision, not a
-   code one. Pick the band (e.g. VTU's 10-point scale) and MK1, MK6 and MK7
-   unlock together
-3. **API13, API14–API20** — no OpenAPI/Swagger docs, and the API is still
+2. **API13, API14–API20** — no OpenAPI/Swagger docs, and the API is still
    student-only and read-only. API4 (a GET handler that writes), API11
    (pagination) and API12 (tests) are also open
-4. **§6.5 Phase 2, the rest of the charts** — E3 is done (pass 18): an inline
+3. **§6.5 Phase 2, the rest of the charts** — E3 is done (pass 18): an inline
    SVG/CSS toolkit in `info/templatetags/charts.py`, no chart library and no CDN,
    with B3 (per-course meters) and B2 (attendance trend) built on it. Still to
    draw, all now cheap: C4/C6 (class performance, marks distribution),
    D1/D2/D7 (admin analytics), MK11/MK12 (marks trend and cross-subject)
-5. **FE3, FE10, FE14** — receipts as PDF, and bulk fee assignment to a whole
+4. **FE3, FE10, FE14** — receipts as PDF, and bulk fee assignment to a whole
    class instead of one student at a time
-6. **AC15, AC20** — profile editing and the student directory (there is still a
+5. **AC15, AC20** — profile editing and the student directory (there is still a
    commented-out `student_search` URL in `info/urls.py`)
-7. **IN4, IN5** — Docker and linting config. CI exists; these do not
-8. **MD2, MD3, MD4, MD7** — model-layer tidying: string boolean defaults, stale
+6. **IN4, IN5** — Docker and linting config. CI exists; these do not
+7. **MD2, MD3, MD4, MD7** — model-layer tidying: string boolean defaults, stale
    hardcoded dates, a default FK to a class that may not exist, no `updated_at`
-9. **TA-C4** — `AttendanceClass.status` still has no `choices`. `CLASS_CANCELLED`
+8. **TA-C4** — `AttendanceClass.status` still has no `choices`. `CLASS_CANCELLED`
    in `views.py` names the one value read outside `cancel_class`; the field
    itself is still a bare integer
 
@@ -796,15 +808,15 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
-| MK1 | **GPA / performance card** | Overall score card at the top. See MK14 first — a *true* GPA needs course credits, which the schema doesn't have. Until then this should be an honestly-labelled "Average Score", not a fake "3.8/4.0 GPA" | ⚠️ |
-| MK2 | **Per-course accordion** | Replace the 8-column table (unreadable on a phone) with one expandable card per course: CIE total, component breakdown, SEE status | ✅ |
-| MK3 | **CIE progress bar** | "CIE: 38 / 50" with a bar — instantly more readable than six loose numbers | ✅ `get_cie()` |
+| ~~MK1~~ | **GPA / performance card** ✅ (pass 19) | Overall score card at the top. See MK14 first — a *true* GPA needs course credits, which the schema doesn't have. Until then this should be an honestly-labelled "Average Score", not a fake "3.8/4.0 GPA" | ⚠️ |
+| ~~MK2~~ | **Per-course accordion** ✅ (pass 19) | Replace the 8-column table (unreadable on a phone) with one expandable card per course: CIE total, component breakdown, SEE status | ✅ |
+| ~~MK3~~ | **CIE progress bar** ✅ (pass 19), as a meter against the 40% eligibility line | "CIE: 38 / 50" with a bar — instantly more readable than six loose numbers | ✅ `get_cie()` |
 | MK4 | **Pending vs. zero distinction** | **Correctness issue.** `marks1` defaults to `0`, so a test that hasn't happened yet displays as **0** — identical to actually scoring zero. `MarksClass.status` already records whether the teacher submitted that batch, but the student page never consults it. Must render "Not yet conducted" instead of `0` | ✅ (`MarksClass.status` exists, just unused here) |
-| MK5 | **Expected / required-marks calculator** | The counterpart to the attendance bunk calculator: *"You have CIE 38/50. You need **44/100** in the SEE to reach an A grade."* Solve the grade formula backwards for the SEE mark. This is the feature students actually want from a marks page | ✅ |
-| MK6 | **Letter grade + grade points** | Compute final = CIE + SEE/2 (out of 100), then map to a grade band. Show provisional grade while the SEE is pending | ✅ |
-| MK7 | **SEE eligibility flag** | Most colleges require a minimum CIE to sit the final exam. Flag any course where CIE is below the cut-off | ✅ (threshold configurable) |
+| ~~MK5~~ | **Expected / required-marks calculator** ✅ (pass 19) | The counterpart to the attendance bunk calculator: *"You have CIE 38/50. You need **44/100** in the SEE to reach an A grade."* Solve the grade formula backwards for the SEE mark. This is the feature students actually want from a marks page | ✅ |
+| ~~MK6~~ | **Letter grade + grade points** ✅ (pass 19), VTU 10-point | Compute final = CIE + SEE/2 (out of 100), then map to a grade band. Show provisional grade while the SEE is pending | ✅ |
+| ~~MK7~~ | **SEE eligibility flag** ✅ (pass 19), CIE 20/50. Undecided rather than False while components are outstanding — flagging a course that has not started as already failed was the bug the first render caught | Most colleges require a minimum CIE to sit the final exam. Flag any course where CIE is below the cut-off | ✅ (threshold configurable) |
 | MK8 | **Class rank / percentile** | "Rank 12 of 45" for the student's *own* position — standard in Indian colleges and privacy-safe, since each student sees only their own rank. Do **not** build a public leaderboard | ✅ |
-| MK9 | **Weakest/strongest subject callout** | "Strongest: DBMS (46/50) · Needs work: OS (21/50)" | ✅ |
+| ~~MK9~~ | **Weakest/strongest subject callout** ✅ (pass 19) | "Strongest: DBMS (46/50) · Needs work: OS (21/50)" | ✅ |
 | MK10 | **Print / PDF report card** | `reportlab` is installed and still completely unused. A proper marks card with the college header is a very demo-able artifact | ✅ |
 
 #### Phase B — Analysis & insight
@@ -814,7 +826,7 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 | MK11 | **Performance trend across internals** | Line chart of Internal 1 → 2 → 3 per course — shows improvement or decline over the semester | ✅ |
 | MK12 | **Radar/bar chart across subjects** | All courses on one chart, so relative strengths are visible at a glance | ✅ |
 | MK13 | **Comparison against class average** | "You: 38 · Class average: 31" per component. Aggregate only — never a per-classmate breakdown | ✅ |
-| MK14 | **Credits & true CGPA** | 🟠 **Half done (pass 17).** `Course.credits` now exists — `PositiveSmallIntegerField`, default 4, bounded 1–10, editable inline in the admin list — so the weighting a credit-weighted SGPA/CGPA needs is finally recordable. What is *not* done is the computation, and it is blocked on a decision rather than on code: turning a mark into a grade point needs a chosen band (VTU's 10-point scale, or whatever the college uses). Pick the scale and MK1, MK6 and MK7 fall out of it together | 🟠 field added, scale undecided |
+| ~~MK14~~ | **Credits & true CGPA** | ✅ **Done (passes 17 and 18-19).** `Course.credits` is a `PositiveSmallIntegerField`, default 4, bounded 1–10, editable inline in the admin list, and `sgpa_for()` computes a credit-weighted SGPA from it on VTU's 10-point scale. It deliberately returns None rather than a partial figure while no course has a result — a fabricated "3.8 / 4.0" was the thing to avoid. Semester-over-semester CGPA (MK15) still needs semester tagging on `StudentCourse` | ✅ |
 | MK15 | **Semester-over-semester history** | SGPA per semester and cumulative CGPA over time | ⚠️ needs semester tagging on `StudentCourse` |
 | MK16 | **Attendance ↔ marks correlation** | `StudentCourse.get_attendance()` already exists alongside `get_cie()` — plotting the two together across courses is a genuinely interesting insight and costs one scatter chart | ✅ |
 | MK17 | **Grade distribution for a course** | Where the student sits in the class histogram | ✅ |
@@ -1760,16 +1772,16 @@ been settled in code:
 - **Forgot Password / OTP** — **deferred**, because CF3 blocks it. The link
   opens a modal pointing at the support form instead of dead-ending
 
-### Three decisions still needed — each one blocks work that is otherwise ready
+### Two decisions still needed — each one blocks work that is otherwise ready
 
 1. **SMTP credentials (CF3)** — a Gmail App Password is enough. This single
    decision unblocks §5.1 (OTP reset), FE22, NB17, AT23 and MK21
 2. **Media storage (CF1)** — S3, Cloudinary or drop photos/attachments from
    scope. Render's disk is ephemeral, so "just configure `MEDIA_ROOT`" is not an
    option. Blocks AC16, NB8, TA6
-3. **Grade scale (MK14)** — `Course.credits` now exists but nothing maps a mark
-   to a grade point. Name the band (VTU 10-point, or the college's own) and MK1,
-   MK6, MK7 and a real SGPA/CGPA all unlock at once
+
+The grade scale is no longer among them: VTU's 10-point scale and a 40% CIE
+eligibility rule were adopted in pass 19 (see "The grading rules, decided").
 
 ### Ready to build with no decision outstanding
 
@@ -1778,11 +1790,15 @@ E3 is done, so the chart work is now just drawing: `{% attendance_meter %}` and
 charts reuse the same geometry-in-Python, SVG-in-template shape.
 
 1. **C4, C6, TM11/TM12** — class performance and marks distribution on the
-   teacher side. `student_marks` already has CIE per student; it needs an
-   aggregate, not a query rewrite
+   teacher side. `student_marks` already has CIE per student, and pass 19 put
+   the grade logic on `StudentCourse`, so a distribution is now an aggregate
+   over existing properties rather than a query rewrite
 2. **D1, D2, D7** — the admin analytics strip
 3. **RP1/RP2/RP4** — class report summary header, at-risk highlighting, export.
    No charts needed at all, which makes it the cheapest visible win left
+4. **MK8, MK10** — class rank and a PDF report card. `reportlab` has been an
+   installed, unused dependency since the beginning; the report card is now
+   just a rendering of numbers the model already computes
 
 **One thing to know before adding charts:** Django's `{# #}` comment is
 single-line only. A multi-line one is not a comment — the text renders into the

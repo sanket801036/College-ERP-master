@@ -1,7 +1,8 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
-    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest, NoticeRead, notice_category_choice
+    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest, NoticeRead, notice_category_choice, \
+    CIE_MAX, SEE_MAX, SEE_ELIGIBILITY_CIE, sgpa_for
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.db import transaction
@@ -579,12 +580,30 @@ def marks_list(request, stud_id):
         [StudentCourse(student=stud, course=c) for c in courses],
         ignore_conflicts=True,
     )
-    sc_list = (StudentCourse.objects
-               .filter(student=stud, course__in=courses)
-               .select_related('course')
-               .prefetch_related('marks_set'))
+    sc_list = list(StudentCourse.objects
+                   .filter(student=stud, course__in=courses)
+                   .select_related('course')
+                   .prefetch_related('marks_set'))
 
-    return render(request, 'info/marks_list.html', {'sc_list': sc_list})
+    # One query for the whole page rather than a status lookup per component.
+    StudentCourse.attach_submitted(sc_list, stud.class_id_id)
+
+    # Courses with something actually marked. Filtering on a truthy CIE instead
+    # would silently drop a course genuinely sitting at zero - which is exactly
+    # the one worth calling out - while keeping one that has simply not started.
+    with_cie = [sc for sc in sc_list if sc.has_marks]
+    return render(request, 'info/marks_list.html', {
+        'sc_list': sc_list,
+        'sgpa': sgpa_for(sc_list),
+        'cie_max': CIE_MAX,
+        'see_max': SEE_MAX,
+        'eligibility_cie': SEE_ELIGIBILITY_CIE,
+        # Honest label while no result is in: an average CIE is not a GPA.
+        'average_cie': (round(sum(sc.get_cie() for sc in with_cie) / len(with_cie), 1)
+                        if with_cie else None),
+        'best': max(with_cie, key=lambda sc: sc.get_cie(), default=None),
+        'weakest': min(with_cie, key=lambda sc: sc.get_cie(), default=None),
+    })
 
 
 # teacher marks

@@ -332,17 +332,27 @@ body {
   box-shadow: var(--erp-shadow);
 }
 
-.erp-stat .erp-stat-value {
+/* Unscoped so the same figure can be used outside a tile - the marks page
+   leads with one inside an ordinary card. Proportional figures, not
+   tabular-nums: equal-width digits make a large standalone number look loose. */
+.erp-stat-value {
   font-size: 1.6rem;
   font-weight: 800;
   color: var(--erp-ink);
 }
 
-.erp-stat .erp-stat-label {
+.erp-stat-label {
   color: var(--erp-muted);
   font-size: .8rem;
   text-transform: uppercase;
   letter-spacing: .04em;
+}
+
+/* The "/ 10" after an SGPA is context, not the value. */
+.erp-stat-of {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--erp-muted);
 }
 
 /* ---------- Login: role tabs, password toggle ---------- */
@@ -592,6 +602,12 @@ body {
 .erp-meter-critical .erp-meter-track { background: var(--erp-danger-tint); }
 .erp-meter-critical .erp-meter-fill  { background: var(--erp-danger); }
 .erp-meter-critical .erp-meter-state { color: var(--erp-danger-ink); }
+
+/* Still accumulating: draw the bar, withhold the verdict. Slate rather than a
+   status hue, so it cannot be read as good or bad. */
+.erp-meter-pending  .erp-meter-track { background: var(--erp-border); }
+.erp-meter-pending  .erp-meter-fill  { background: var(--erp-muted); }
+.erp-meter-pending  .erp-meter-state { color: var(--erp-muted); }
 
 @media print {
   .erp-chart-hit { display: none; }

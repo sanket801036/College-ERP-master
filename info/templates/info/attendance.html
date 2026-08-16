@@ -34,7 +34,7 @@
               line", and a two-slice donut answers it worse than a track with
               the 75% mark drawn on it.
               {% endcomment %}
-              <td class="text-left">{% attendance_meter a.attendance %}</td>
+              <td class="text-left">{% meter a.attendance %}</td>
               <td class="text-left">
                 {% if a.attendance < 75 %}
                   Attend <b>{{ a.classes_to_attend }}</b> more in a row to reach 75%

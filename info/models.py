@@ -54,6 +54,69 @@ test_name = (
     ('Semester End Exam', 'Semester End Exam'),
 )
 
+SEE_NAME = 'Semester End Exam'
+
+# The marking scheme, stated once. Five CIE components of 20 each, halved to a
+# CIE out of 50; the semester-end exam is out of 100 and contributes half its
+# mark, so a final is out of 100.
+CIE_MAX = 50
+SEE_MAX = 100
+
+# VTU's 10-point scale: (minimum final mark, letter, grade points). Ordered
+# high to low so the first match wins.
+GRADE_BANDS = (
+    (90, 'O', 10),
+    (80, 'A+', 9),
+    (70, 'A', 8),
+    (60, 'B+', 7),
+    (55, 'B', 6),
+    (50, 'C', 5),
+    (40, 'P', 4),
+    (0, 'F', 0),
+)
+
+# 40% of the CIE is needed to sit the semester-end exam.
+SEE_ELIGIBILITY_CIE = 20
+
+
+def grade_for(final_marks):
+    """(letter, points) for a final mark out of 100."""
+    for floor, letter, points in GRADE_BANDS:
+        if final_marks >= floor:
+            return letter, points
+    return 'F', 0
+
+
+def required_see_for(cie, floor):
+    """SEE mark needed to reach `floor`, given a CIE already banked.
+
+    final = cie + see/2, so see = (floor - cie) * 2. Returns 0 when the band is
+    already secured on the CIE alone, and None when it cannot be reached even
+    with a perfect paper - which is the honest answer, not a number over 100.
+    """
+    needed = math.ceil((floor - cie) * 2)
+    if needed <= 0:
+        return 0
+    if needed > SEE_MAX:
+        return None
+    return needed
+
+
+def sgpa_for(student_courses):
+    """Credit-weighted SGPA over the courses whose result is actually in.
+
+    This is what Course.credits was added for: an unweighted mean would let a
+    one-credit lab pull the same weight as a four-credit core paper. Returns
+    None while no course has a semester-end mark - a partial SGPA presented as
+    a whole one is worse than no number.
+    """
+    graded = [(sc.grade[1], sc.course.credits)
+              for sc in student_courses if sc.grade]
+    if not graded:
+        return None
+    credits = sum(credit for _, credit in graded)
+    return round(sum(points * credit for points, credit in graded) / credits, 2)
+
 
 class User(AbstractUser):
     # Set when an admin creates the account, cleared once the user picks their
@@ -328,6 +391,10 @@ class StudentCourse(models.Model):
     # attach_attendance(), so a class listing does not query per row.
     _cie_cache = None
     _attendance_cache = None
+    # Which components the teacher has actually submitted, filled in bulk by
+    # attach_submitted(). None means "not loaded", and everything below then
+    # falls back to treating a component as submitted - the old behaviour.
+    _submitted_cache = None
 
     class Meta:
         unique_together = (('student', 'course'),)
@@ -367,6 +434,114 @@ class StudentCourse(models.Model):
         """
         scored = {m.name: m for m in self.marks_set.all()}
         return [scored.get(name) for name, _ in test_name]
+
+    def is_submitted(self, name):
+        """Has the teacher submitted this component's batch yet?
+
+        marks1 defaults to 0, so a test that has not been sat is indistinguishable
+        from one scored zero unless MarksClass.status is consulted.
+        """
+        if self._submitted_cache is None:
+            return True
+        return name in self._submitted_cache
+
+    def component_rows(self):
+        """The five CIE components, each with its mark or a pending flag."""
+        scored = {m.name: m for m in self.marks_set.all()}
+        rows = []
+        for name in CIE_COMPONENTS:
+            mark = scored.get(name)
+            rows.append({
+                'name': name,
+                'marks': mark.marks1 if mark else 0,
+                'total': mark.total_marks if mark else 20,
+                'pending': mark is None or not self.is_submitted(name),
+            })
+        return rows
+
+    def get_see(self):
+        """The semester-end mark out of 100, or None if it has not been sat."""
+        if not self.is_submitted(SEE_NAME):
+            return None
+        mark = next((m for m in self.marks_set.all() if m.name == SEE_NAME), None)
+        return mark.marks1 if mark else None
+
+    @property
+    def cie_percent(self):
+        """CIE as a percentage, so the meter can read it against a limit."""
+        return round(self.get_cie() / CIE_MAX * 100, 1)
+
+    @property
+    def has_marks(self):
+        """Has any CIE component been submitted for this course yet?"""
+        return any(not row['pending'] for row in self.component_rows())
+
+    @property
+    def cie_is_final(self):
+        """Are all five CIE components in?
+
+        Until they are, the CIE is a running subtotal and nothing should be
+        concluded from it - a course whose tests have not been sat yet sits at
+        0 and would otherwise read as a failing one.
+        """
+        return all(not row['pending'] for row in self.component_rows())
+
+    @property
+    def is_see_eligible(self):
+        """None while the CIE is still incomplete - not yet decided.
+
+        Returning False there would flag a course that has simply not started
+        as one the student has already failed out of.
+        """
+        if not self.cie_is_final:
+            return None
+        return self.get_cie() >= SEE_ELIGIBILITY_CIE
+
+    @property
+    def final_marks(self):
+        """CIE out of 50 plus half the SEE, so a final out of 100."""
+        see = self.get_see()
+        if see is None:
+            return None
+        return self.get_cie() + see / 2
+
+    @property
+    def grade(self):
+        """(letter, points), or None while the semester-end exam is pending."""
+        final = self.final_marks
+        return grade_for(final) if final is not None else None
+
+    @property
+    def reachable_grades(self):
+        """What the student still has to score to reach each band.
+
+        The counterpart to the attendance bunk calculator, and the thing a
+        marks page is actually opened for. Bands already secured on the CIE
+        alone, and bands a perfect paper cannot reach, are both dropped.
+        """
+        if self.get_see() is not None:
+            return []
+        cie = self.get_cie()
+        out = []
+        for floor, letter, points in GRADE_BANDS:
+            needed = required_see_for(cie, floor)
+            if needed:
+                out.append({'letter': letter, 'points': points,
+                            'required_see': needed})
+        return list(reversed(out))
+
+    @staticmethod
+    def attach_submitted(student_courses, class_id):
+        """Fill the submitted-component cache for a list of rows in one query."""
+        rows = list(student_courses)
+        submitted = {}
+        for mc in (MarksClass.objects
+                   .filter(assign__class_id=class_id, status=True)
+                   .select_related('assign')):
+            submitted.setdefault(mc.assign.course_id, set()).add(mc.name)
+        for sc in rows:
+            sc._submitted_cache = submitted.get(sc.course_id, set())
+        return rows
 
     @staticmethod
     def attach_attendance(student_courses, course):

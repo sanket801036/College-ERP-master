@@ -1,44 +1,160 @@
 {% extends 'info/base.html' %}
-    {% load static %}
+{% load static charts %}
 
-    {% block content %}
-                  <div class="card mb-3">
-            <div class="card-header">
-              <i class="fas fa-table"></i>
-            <b>Marks</b></div>
-            <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
-                  <thead>
-                    <tr>
-                        <th>Course ID</th>
-                        <th>Course name</th>
-                        <th>Internals 1</th>
-                        <th>Internals 2</th>
-                        <th>Internals 3</th>
-                        <th>Event 1</th>
-                        <th>Event 2</th>
-                        <th>SEE</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for sc in sc_list %}
-                    <tr>
-                        <td>{{ sc.course_id }}</td>
-                        <td>{{sc.course.name}}</td>
-                        {% for m in sc.marks_in_order %}
-                            <td>{{ m.marks1|default:"-" }}</td>
-                        {% endfor %}
-                    </tr>
-                    {% empty %}
-                            <p>student has no courses</p>
-                    {% endfor %}
+{% block title %}Marks{% endblock %}
 
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+{% block content %}
 
+{% comment %}
+Replaces an eight-column table that was unreadable on a phone and said nothing
+beyond the raw numbers - no CIE total, no grade, and no way to tell a test that
+had not happened yet from one scored zero.
+{% endcomment %}
 
-    {% endblock %}
+<div class="card mb-3">
+  <div class="card-header"><i class="fas fa-award"></i><b>Performance</b></div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-4 mb-3">
+        {% if sgpa %}
+          <div class="erp-stat-label">SGPA</div>
+          <div class="erp-stat-value">{{ sgpa }}<span class="erp-stat-of"> / 10</span></div>
+          <div class="text-muted small">Credit-weighted, over the courses whose result is in.</div>
+        {% elif average_cie %}
+          {% comment %}
+          Deliberately not called a GPA. No course has a semester-end mark yet,
+          so there is no grade point to weight - printing a "3.8 / 4.0" here
+          would be a made-up number.
+          {% endcomment %}
+          <div class="erp-stat-label">Average CIE</div>
+          <div class="erp-stat-value">{{ average_cie }}<span class="erp-stat-of"> / {{ cie_max }}</span></div>
+          <div class="text-muted small">No semester-end result yet, so no SGPA to show.</div>
+        {% else %}
+          <div class="erp-stat-label">Marks</div>
+          <div class="text-muted">Nothing entered yet.</div>
+        {% endif %}
+      </div>
+      {% if best %}
+      <div class="col-md-4 mb-3">
+        <div class="erp-stat-label">Strongest</div>
+        <div><b>{{ best.course.name }}</b></div>
+        <div class="text-muted small">CIE {{ best.get_cie }} / {{ cie_max }}</div>
+      </div>
+      {% endif %}
+      {% if weakest and weakest.pk != best.pk %}
+      <div class="col-md-4 mb-3">
+        <div class="erp-stat-label">Needs work</div>
+        <div><b>{{ weakest.course.name }}</b></div>
+        <div class="text-muted small">CIE {{ weakest.get_cie }} / {{ cie_max }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="accordion" id="marksAccordion">
+  {% for sc in sc_list %}
+  <div class="card mb-2">
+    <div class="card-header d-flex align-items-center flex-wrap" id="head{{ forloop.counter }}"
+         data-toggle="collapse" data-target="#body{{ forloop.counter }}"
+         aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}"
+         aria-controls="body{{ forloop.counter }}" style="cursor: pointer;">
+      <span class="mr-auto">
+        <b>{{ sc.course.name }}</b>
+        <span class="text-muted small">{{ sc.course_id }} &middot; {{ sc.course.credits }} credit{{ sc.course.credits|pluralize }}</span>
+      </span>
+      {% if sc.grade %}
+        <span class="erp-badge erp-badge-info mr-2">Grade {{ sc.grade.0 }} &middot; {{ sc.grade.1 }} pts</span>
+      {% elif sc.is_see_eligible is False %}
+        <span class="erp-badge erp-badge-danger mr-2">
+          <i class="fas fa-times-circle" aria-hidden="true"></i> Not eligible for SEE
+        </span>
+      {% endif %}
+      <span class="text-muted small">CIE {{ sc.get_cie }} / {{ cie_max }}</span>
+    </div>
+
+    <div id="body{{ forloop.counter }}" class="collapse{% if forloop.first %} show{% endif %}"
+         aria-labelledby="head{{ forloop.counter }}" data-parent="#marksAccordion">
+      <div class="card-body">
+
+        {% comment %}
+        settled only once every component is in: 21/50 with two tests unsat is
+        a running subtotal, and a green "Safe" on it would be a verdict on
+        marks that do not exist yet.
+        {% endcomment %}
+        {% meter sc.cie_percent 40 "CIE" sc.cie_is_final %}
+
+        <table class="table table-sm mt-3 mb-2">
+          <thead class="thead-light">
+            <tr><th>Component</th><th class="text-right">Marks</th></tr>
+          </thead>
+          <tbody>
+            {% for c in sc.component_rows %}
+            <tr>
+              <td>{{ c.name }}</td>
+              <td class="text-right">
+                {% if c.pending %}
+                  <span class="text-muted">Not yet conducted</span>
+                {% else %}
+                  {{ c.marks }} / {{ c.total }}
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            <tr>
+              <td><b>Continuous Internal Evaluation</b></td>
+              <td class="text-right"><b>{{ sc.get_cie }} / {{ cie_max }}</b></td>
+            </tr>
+            <tr>
+              <td>Semester End Exam</td>
+              <td class="text-right">
+                {% if sc.get_see is not None %}
+                  {{ sc.get_see }} / {{ see_max }}
+                {% else %}
+                  <span class="text-muted">Pending</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% if sc.final_marks is not None %}
+            <tr>
+              <td><b>Final</b></td>
+              <td class="text-right"><b>{{ sc.final_marks|floatformat:1 }} / 100</b></td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+
+        {% if sc.is_see_eligible is False %}
+          <p class="text-danger mb-2">
+            <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+            A CIE of at least {{ eligibility_cie }} / {{ cie_max }} is required to sit
+            the semester-end exam.
+          </p>
+        {% endif %}
+
+        {% if sc.reachable_grades %}
+          {% comment %}
+          The counterpart to the attendance bunk calculator, and the reason a
+          student opens this page at all.
+          {% endcomment %}
+          <p class="mb-1"><b>What you still need in the semester-end exam</b></p>
+          <ul class="list-inline mb-0">
+            {% for target in sc.reachable_grades %}
+              <li class="list-inline-item mr-3">
+                <b>{{ target.required_see }}</b><span class="text-muted"> / {{ see_max }} for </span><b>{{ target.letter }}</b>
+              </li>
+            {% endfor %}
+          </ul>
+        {% elif not sc.grade %}
+          <p class="text-muted mb-0">No grade is still reachable from this CIE.</p>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="card"><div class="card-body text-muted">No courses assigned yet.</div></div>
+  {% endfor %}
+</div>
+
+{% endblock %}

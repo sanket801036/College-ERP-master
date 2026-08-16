@@ -8,7 +8,8 @@ hands the template plain numbers.
 
 Two forms, picked by the job the data does:
 
-* `attendance_meter` - one ratio against a limit (75%). A meter, not a donut:
+* `meter` - one ratio against a limit (75% attendance, 40% CIE for exam
+  eligibility). A meter, not a donut:
   a two-slice ring is a pie of two slices, and the reader's real question is
   "am I above the line", which a track with a threshold marker answers
   directly.
@@ -22,42 +23,55 @@ from django import template
 
 register = template.Library()
 
-# Attendance zones, per the roadmap's ordering: green at or above the rule,
-# amber within ten points of it, red below that.
+# The attendance rule, and the default limit a meter is read against.
 SAFE_FLOOR = 75
-RISK_FLOOR = 65
+
+# How far below the limit still counts as a warning rather than a failure.
+# Relative to the limit, so the same bands work for a 75% attendance rule and a
+# 40% exam-eligibility rule.
+RISK_MARGIN = 10
 
 ZONES = {
     'safe': {'label': 'Safe', 'icon': 'fa-check-circle'},
     'risk': {'label': 'At risk', 'icon': 'fa-exclamation-triangle'},
     'critical': {'label': 'Critical', 'icon': 'fa-times-circle'},
+    # For a ratio still being accumulated. A verdict on a running subtotal is
+    # not a verdict - a CIE of 21/50 with two components unsat is neither safe
+    # nor failing, and calling it either misleads.
+    'pending': {'label': 'In progress', 'icon': 'fa-hourglass-half'},
 }
 
 
-def zone_for(percent):
-    """Which severity band a percentage falls in."""
-    if percent >= SAFE_FLOOR:
+def zone_for(percent, threshold=SAFE_FLOOR):
+    """Which severity band a percentage falls in, relative to its own limit."""
+    if percent >= threshold:
         return 'safe'
-    if percent >= RISK_FLOOR:
+    if percent >= threshold - RISK_MARGIN:
         return 'risk'
     return 'critical'
 
 
 @register.inclusion_tag('info/charts/meter.html')
-def attendance_meter(percent, threshold=SAFE_FLOOR):
+def meter(percent, threshold=SAFE_FLOOR, subject='Attendance', settled=True):
     """A single ratio against a limit.
 
     The unfilled track is a lighter step of the fill's own hue rather than a
     neutral grey, so the state reads across the whole bar and not just the
-    filled part.
+    filled part. `threshold` is the limit the reader is judged against - 75 for
+    the attendance rule, 40 for exam eligibility - and the zones follow it
+    rather than being pinned to attendance's numbers.
+
+    Pass settled=False while the ratio is still a running subtotal; the bar
+    still draws, but it withholds the verdict instead of guessing one.
     """
     percent = float(percent or 0)
-    zone = zone_for(percent)
+    zone = zone_for(percent, threshold) if settled else 'pending'
     return {
         'percent': percent,
         # Only the geometry is clamped - the printed number stays honest.
         'width': max(0.0, min(100.0, percent)),
         'threshold': threshold,
+        'subject': subject,
         'zone': zone,
         'label': ZONES[zone]['label'],
         'icon': ZONES[zone]['icon'],

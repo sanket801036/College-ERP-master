@@ -16,7 +16,7 @@ the SVG coordinates are - "width: 71,4%" is not a CSS length.
   <div class="erp-meter-track"
        role="meter"
        aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100"
-       aria-label="Attendance {{ percent }} percent, {{ label }}, {{ threshold }} percent required">
+       aria-label="{{ subject }} {{ percent }} percent, {{ label }}, {{ threshold }} percent required">
     <div class="erp-meter-fill" style="width: {{ width|unlocalize }}%"></div>
     <div class="erp-meter-threshold" style="left: {{ threshold|unlocalize }}%"
          title="{{ threshold }}% required"></div>
