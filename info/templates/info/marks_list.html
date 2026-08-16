@@ -93,8 +93,13 @@ had not happened yet from one scored zero.
             <tr>
               <td>{{ c.name }}</td>
               <td class="text-right">
-                {% if c.pending %}
+                {% if c.awaiting_release %}
+                  <span class="text-muted">Results not released yet</span>
+                {% elif c.pending %}
                   <span class="text-muted">Not yet conducted</span>
+                {% elif c.absent %}
+                  <span class="erp-badge erp-badge-warning">Absent</span>
+                  <span class="text-muted small">counts as 0</span>
                 {% else %}
                   {{ c.marks }} / {{ c.total }}
                 {% endif %}

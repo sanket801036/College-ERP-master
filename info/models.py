@@ -313,7 +313,11 @@ class Attendance(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     attendanceclass = models.ForeignKey(AttendanceClass, on_delete=models.CASCADE, default=1)
     date = models.DateField(default='2018-10-23')
-    status = models.BooleanField(default='True')
+    # Was the string 'True'. It round-trips through the database correctly, so
+    # this was never data corruption - but an unsaved instance held the literal
+    # string, and bool('False') is True, so any check on a fresh object read
+    # the opposite of what it said.
+    status = models.BooleanField(default=True)
 
     def __str__(self):
         return '%s : %s' % (self.student.name, self.course.shortname)
@@ -436,6 +440,10 @@ class StudentCourse(models.Model):
     # attach_submitted(). None means "not loaded", and everything below then
     # falls back to treating a component as submitted - the old behaviour.
     _submitted_cache = None
+    # Which components have been *entered*, as opposed to released. On the
+    # student page these differ, and telling a student that a test they sat
+    # last week was "not yet conducted" is its own small lie.
+    _entered_cache = None
 
     class Meta:
         unique_together = (('student', 'course'),)
@@ -445,10 +453,18 @@ class StudentCourse(models.Model):
         return '%s : %s' % (self.student.name, self.course.shortname)
 
     def get_cie(self):
+        """CIE over the components the viewer is allowed to see.
+
+        This has to respect visibility, not just sum everything: on the student
+        page a withheld component that still counted towards the total let the
+        mark be recovered by subtracting the visible ones, which defeats the
+        point of holding results back.
+        """
         # Templates reference this twice per row (once to pick a colour, once
         # to print it), so memoise rather than walking the marks each time.
         if self._cie_cache is None:
-            scored = {m.name: m.marks1 for m in self.marks_set.all()}
+            scored = {m.name: m.marks1 for m in self.marks_set.all()
+                      if self.is_submitted(m.name)}
             self._cie_cache = math.ceil(
                 sum(scored.get(name, 0) for name in CIE_COMPONENTS) / 2)
         return self._cie_cache
@@ -477,14 +493,20 @@ class StudentCourse(models.Model):
         return [scored.get(name) for name, _ in test_name]
 
     def is_submitted(self, name):
-        """Has the teacher submitted this component's batch yet?
+        """Is this component's mark visible to whoever is looking?
 
         marks1 defaults to 0, so a test that has not been sat is indistinguishable
-        from one scored zero unless MarksClass.status is consulted.
+        from one scored zero unless MarksClass is consulted.
         """
         if self._submitted_cache is None:
             return True
         return name in self._submitted_cache
+
+    def is_entered(self, name):
+        """Has the teacher entered this component, whether or not it is out?"""
+        if self._entered_cache is None:
+            return self.is_submitted(name)
+        return name in self._entered_cache
 
     def component_rows(self):
         """The five CIE components, each with its mark or a pending flag."""
@@ -497,6 +519,13 @@ class StudentCourse(models.Model):
                 'marks': mark.marks1 if mark else 0,
                 'total': mark.total_marks if mark else 20,
                 'pending': mark is None or not self.is_submitted(name),
+                # Entered but held back. "Not yet conducted" would be wrong for
+                # a test the student sat last week.
+                'awaiting_release': (not self.is_submitted(name)
+                                     and self.is_entered(name)),
+                # Still counts as zero towards the CIE, but the page says which
+                # of the two it was rather than showing a bare 0.
+                'absent': bool(mark and mark.is_absent),
             })
         return rows
 
@@ -583,16 +612,25 @@ class StudentCourse(models.Model):
         return list(reversed(out))
 
     @staticmethod
-    def attach_submitted(student_courses, class_id):
-        """Fill the submitted-component cache for a list of rows in one query."""
+    def attach_submitted(student_courses, class_id, published_only=False):
+        """Fill the visible-component cache for a list of rows in one query.
+
+        Entry and publication are different questions. A teacher looking at the
+        class report should see what has been entered; a student should see
+        what has been released. Pass published_only for the student-facing side.
+        """
         rows = list(student_courses)
-        submitted = {}
+        visible, entered = {}, {}
         for mc in (MarksClass.objects
                    .filter(assign__class_id=class_id, status=True)
                    .select_related('assign')):
-            submitted.setdefault(mc.assign.course_id, set()).add(mc.name)
+            entered.setdefault(mc.assign.course_id, set()).add(mc.name)
+            if mc.is_published or not published_only:
+                visible.setdefault(mc.assign.course_id, set()).add(mc.name)
+
         for sc in rows:
-            sc._submitted_cache = submitted.get(sc.course_id, set())
+            sc._submitted_cache = visible.get(sc.course_id, set())
+            sc._entered_cache = entered.get(sc.course_id, set())
         return rows
 
     @staticmethod
@@ -613,6 +651,10 @@ class Marks(models.Model):
     studentcourse = models.ForeignKey(StudentCourse, on_delete=models.CASCADE)
     name = models.CharField(max_length=50, choices=test_name, default='Internal test 1')
     marks1 = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    # A student who missed a test is not a student who scored zero. The mark
+    # still counts as zero towards the CIE - that is how the scheme works - but
+    # the record says which of the two it was, and the pages say so too.
+    is_absent = models.BooleanField(default=False)
 
     class Meta:
         unique_together = (('studentcourse', 'name'),)
@@ -627,10 +669,26 @@ class Marks(models.Model):
 class MarksClass(models.Model):
     assign = models.ForeignKey(Assign, on_delete=models.CASCADE)
     name = models.CharField(max_length=50, choices=test_name, default='Internal test 1')
-    status = models.BooleanField(default='False')
+    # Entered by the teacher.
+    status = models.BooleanField(default=False)
+    # Released to students. Colleges do not expose a mark the instant it is
+    # typed - entry and publication are separate acts, and separating them also
+    # gives the teacher room to correct a slip before anyone has seen it.
+    is_published = models.BooleanField(default=False)
+    published_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = (('assign', 'name'),)
+
+    def publish(self):
+        self.is_published = True
+        self.published_at = timezone.now()
+        self.save(update_fields=['is_published', 'published_at'])
+
+    def unpublish(self):
+        self.is_published = False
+        self.published_at = None
+        self.save(update_fields=['is_published', 'published_at'])
 
     @property
     def total_marks(self):
@@ -941,6 +999,8 @@ audit_action_choice = (
     ('attendance.cancelled', 'Class cancelled'),
     ('marks.entered', 'Marks entered'),
     ('marks.changed', 'Marks changed'),
+    ('marks.published', 'Marks published'),
+    ('marks.unpublished', 'Marks withdrawn'),
     ('fee.payment', 'Payment recorded'),
 )
 

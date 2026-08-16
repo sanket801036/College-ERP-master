@@ -33,8 +33,9 @@ was found, so anything listed here as closed has already changed in the code.
 | 20 | Class report: summary header, at-risk flagging, sort, export, print | RP1, RP2, RP3, RP4, RP8 | 14 |
 | 21 | Attendance entry made usable daily; real session states | TA1, TA2, TA3, TA4, TA5, TA7, TA8, TA-C4, TA-C6 | 20 |
 | 22 | Marks entry given the same treatment; edit and entry unified | TM1, TM2, TM3, TM4, TM8, TM9, TM10, rest of TM19 | 14 |
+| 23 | Absent is not zero; results are published rather than leaked on entry | TM5, MK20, TM15, MD2 | 22 |
 
-**292 tests**, from zero.
+**314 tests**, from zero.
 
 ### The grading rules, decided
 
@@ -116,8 +117,9 @@ has credentials for yet.
 5. **AC15, AC20** — profile editing and the student directory (there is still a
    commented-out `student_search` URL in `info/urls.py`)
 6. **IN4, IN5** — Docker and linting config. CI exists; these do not
-7. **MD2, MD3, MD4, MD7** — model-layer tidying: string boolean defaults, stale
-   hardcoded dates, a default FK to a class that may not exist, no `updated_at`
+7. **MD3, MD4, MD7** — model-layer tidying: stale hardcoded dates
+   (`Attendance.date` still defaults to 2018-10-23), a default FK to a class
+   that may not exist, and no `updated_at` anywhere. MD2 is done
 8. **TA9, TA16, TA12–TA14** — bulk attendance import, class export, and the
    teacher-side attendance analytics. The entry flow is done; the reporting
    around it is not
@@ -840,7 +842,7 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 |---|---|---|---|
 | MK18 | **Re-evaluation request** | Student disputes a mark → teacher/admin reviews → mark updated with full audit trail. Same shape as the attendance-correction workflow (AT20) and can share its state machine and permission logic | ❌ `MarkRevaluationRequest` |
 | MK19 | **Marks audit log** | Today `marks_confirm` and `edit_marks` overwrite `marks1` in place with no record of the previous value, who changed it, or when. For grades specifically, that is the kind of gap an interviewer will press on | ❌ audit model |
-| MK20 | **Result publication control** | Teacher enters marks, but students only see them once results are formally published — colleges never expose marks the instant they're typed | ⚠️ `MarksClass.is_published` |
+| ~~MK20~~ | **Result publication control** ✅ **Done (pass 23).** `MarksClass.is_published` + `published_at`. The student page reads the published set, the teacher's class report reads the entered set | Teacher enters marks, but students only see them once results are formally published — colleges never expose marks the instant they're typed | ⚠️ `MarksClass.is_published` |
 | MK21 | **Marks release notification** | Email/in-app alert when a batch is published (reuses the SMTP work from §5.1) | ⚠️ |
 
 #### Phase D — Technical fixes this module needs (all verified against the running app)
@@ -1322,7 +1324,7 @@ This module shares the marks *data* problems already documented in §7.2.x (MK22
 | ~~TM2~~ | **Inline validation while typing** ✅ (pass 22). Statistics are computed over valid marks only - counting an out-of-range typo gave "Average 30.5" on a test worth 20, hiding the very outlier they exist to expose | Flag out-of-range values before submit, rather than silently storing 85/20 (MK25) | ✅ |
 | ~~TM3~~ | **Keyboard-first entry** ✅ (pass 22). Enter and the arrow keys move between students | Enter/↓ moves to the next student, so a teacher can type 45 marks without touching the mouse. Same rationale as TA4 in attendance | ✅ |
 | ~~TM4~~ | **Live progress + statistics** ✅ (pass 22) | "38 of 45 entered · avg 14.2 · range 6–20" while typing, so an outlier is caught at entry time | ✅ |
-| TM5 | **Absent / not-appeared marker** | A student who missed the test is not a student who scored 0. Needs a distinct state, exactly like MK4 on the student side | ⚠️ needs a flag on `Marks` |
+| ~~TM5~~ | **Absent / not-appeared marker** ✅ (pass 23). `Marks.is_absent`. An absentee still scores zero towards the CIE - that is how the scheme works - but the record and both pages say which of the two it was | A student who missed the test is not a student who scored 0. Needs a distinct state, exactly like MK4 on the student side | ⚠️ needs a flag on `Marks` |
 | TM6 | **Save draft** | Marks entry for a large class is currently all-or-nothing in one POST. Allow partial saves | ⚠️ |
 | TM7 | **Bulk import from Excel** | Upload a marks sheet; `openpyxl` already in use for fees export | ✅ |
 | ~~TM8~~ | **Unsaved-changes guard** ✅ (pass 22) | Warn before navigating away mid-entry | ✅ |
@@ -1337,7 +1339,7 @@ This module shares the marks *data* problems already documented in §7.2.x (MK22
 | TM12 | **Marks distribution histogram** | Tells the teacher whether the paper was too hard or too easy (same as C6) | ✅ |
 | TM13 | **Highlight at-risk students** | Low CIE + low attendance together — `StudentCourse` already exposes `get_cie()` and `get_attendance()` side by side | ✅ |
 | TM14 | **Export marks sheet** | Excel/PDF for department records | ✅ |
-| TM15 | **Publication control** | Enter now, release to students later (MK20) | ⚠️ `MarksClass.is_published` |
+| ~~TM15~~ | **Publication control** ✅ (pass 23). Publish / withdraw from the batch list, both audit-logged | Enter now, release to students later (MK20) | ⚠️ `MarksClass.is_published` |
 | TM16 | **Re-evaluation queue** | Teacher-side view of student disputes (MK18) | ❌ |
 
 #### Phase C — Correctness & security (verified against the running app)
@@ -1696,7 +1698,7 @@ Every view in `info/views.py` (33 total), checked against what this document act
 | # | Issue | Detail |
 |---|---|---|
 | MD1 | **A fresh deployment breaks on the first timetable entry** | The `create_attendance` signal opens with `AttendanceRange.objects.all()[:1].get()`. Verified: with no `AttendanceRange` row, saving an `AssignTime` raises **`AttendanceRange.DoesNotExist`**. A newly-deployed instance has an empty database and no such row, so the very first setup step an admin performs — adding a timetable slot — fails with an error that names a model they've never heard of. Needs either a data migration seeding a default range, a guard in the signal, or a documented setup order |
-| MD2 | **`BooleanField` defaults are strings** | `Attendance.status = BooleanField(default='True')` and `MarksClass.status = BooleanField(default='False')`. Verified round-trip: the value **is** stored and read back correctly as a real boolean, so this is not data corruption. But an unsaved instance holds the literal string — `bool('False') is True` — so `if mc.status:` on a fresh, unsaved object returns the opposite of what's intended. A latent trap rather than an active bug; fix the defaults to `True`/`False` |
+| ~~MD2~~ | **`BooleanField` defaults are strings** ✅ **Fixed (pass 23).** Both are real booleans now | `Attendance.status = BooleanField(default='True')` and `MarksClass.status = BooleanField(default='False')`. Verified round-trip: the value **is** stored and read back correctly as a real boolean, so this is not data corruption. But an unsaved instance holds the literal string — `bool('False') is True` — so `if mc.status:` on a fresh, unsaved object returns the opposite of what's intended. A latent trap rather than an active bug; fix the defaults to `True`/`False` |
 | MD3 | **Stale hardcoded defaults** | `Attendance.date` defaults to `'2018-10-23'`, `Student.DOB` to `'1998-01-01'`, `Teacher.DOB` to `'1980-01-01'`. Any record created without an explicit value silently gets 2018 data. Dates should have no default, or use `timezone.now` |
 | MD4 | **`Student.class_id` defaults to `1`** | A default foreign key to whatever `Class` has primary key `1` — and `Class.id` is a `CharField`, so `1` is unlikely to exist at all. Remove the default |
 | MD5 | **Signals create rows one at a time** | `create_marks` issues six `marks_set.create()` calls per student per course; `create_attendance` loops every date in the semester calling `.get()` then `.save()`. Adding one `Assign` to a 60-student class triggers hundreds of individual inserts. Use `bulk_create` |
@@ -1788,7 +1790,7 @@ eligibility rule were adopted in pass 19 (see "The grading rules, decided").
 
 ### Ready to build with no decision outstanding
 
-E3 is done, so the chart work is now just drawing: `{% attendance_meter %}` and
+E3 is done, so the chart work is now just drawing: `{% meter %}` and
 `{% attendance_trend %}` are in `info/templatetags/charts.py`, and the next
 charts reuse the same geometry-in-Python, SVG-in-template shape.
 
@@ -1797,14 +1799,12 @@ charts reuse the same geometry-in-Python, SVG-in-template shape.
    the grade logic on `StudentCourse`, so a distribution is now an aggregate
    over existing properties rather than a query rewrite
 2. **D1, D2, D7** — the admin analytics strip
-3. **MK8, MK10** — class rank and a PDF report card. `reportlab` has been an
-   installed, unused dependency since the beginning; the report card is now
-   just a rendering of numbers the model already computes
-4. **TM5 + MK20/TM15** — the two remaining marks-workflow gaps, and they pair
-   naturally: a distinct absent state on `Marks` (so a student who missed a
-   test stops being recorded as having scored zero), and publication control
-   (so students see marks when results are released rather than the instant
-   they are typed). One small migration each
+3. **MK8, MK10** — class rank and the PDF report card. `reportlab` has been an
+   installed, unused dependency from the start, and every number a report card
+   needs is now computed on `StudentCourse`
+4. **MK18 / TM16 / AT20** — the request-and-approve workflows (re-evaluation,
+   attendance correction, leave). All the same state machine, so §7.2.x's note
+   applies: build it once and apply it three times, rather than three times
 
 **One thing to know before adding charts:** Django's `{# #}` comment is
 single-line only. A multi-line one is not a comment — the text renders into the

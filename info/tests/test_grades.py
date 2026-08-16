@@ -211,11 +211,17 @@ class MarksPageTests(TestCase):
         return reverse('marks_list', args=(self.student.pk,))
 
     def score(self, name, marks, submitted=True):
+        """Entered and released.
+
+        These tests are about what the student page computes, and since pass 23
+        a mark has to be published before it gets there.
+        """
         sc = StudentCourse.objects.get(student=self.student, course=self.course)
         Marks.objects.update_or_create(
             studentcourse=sc, name=name, defaults={'marks1': marks})
         MarksClass.objects.update_or_create(
-            assign=self.assign, name=name, defaults={'status': submitted})
+            assign=self.assign, name=name,
+            defaults={'status': submitted, 'is_published': submitted})
 
     def test_page_renders_with_nothing_entered(self):
         self.client.force_login(self.student.user)

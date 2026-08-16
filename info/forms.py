@@ -118,6 +118,9 @@ class MarksEntryForm(forms.Form):
     are built at runtime rather than declared.
     """
 
+    #: Prefix for the per-student "did not sit this test" checkbox.
+    ABSENT_PREFIX = 'absent_'
+
     def __init__(self, data=None, students=None, total_marks=20, **kwargs):
         super().__init__(data, **kwargs)
         self.students = students or []
@@ -125,18 +128,48 @@ class MarksEntryForm(forms.Form):
         for student in self.students:
             self.fields[student.USN] = forms.IntegerField(
                 label=student.name,
+                required=False,
                 min_value=0,
                 max_value=total_marks,
                 error_messages={
                     'max_value': 'Maximum for this test is %d.' % total_marks,
                     'min_value': 'Marks cannot be negative.',
-                    'required': 'Enter a mark.',
                     'invalid': 'Enter a whole number.',
                 },
             )
+            self.fields[self.absent_field(student)] = forms.BooleanField(
+                required=False)
+
+    @classmethod
+    def absent_field(cls, student):
+        return cls.ABSENT_PREFIX + student.USN
+
+    def clean(self):
+        """A blank is not a zero.
+
+        The mark field is optional so that "absent" can be submitted without
+        one, which means the blank case has to be rejected here instead - a
+        student left empty is one the teacher has not got to yet, and saving
+        them as having scored nothing is the bug this whole field exists to
+        avoid.
+        """
+        cleaned = super().clean()
+        for student in self.students:
+            if cleaned.get(self.absent_field(student)):
+                continue
+            if self.errors.get(student.USN):
+                continue
+            if cleaned.get(student.USN) is None:
+                self.add_error(student.USN,
+                               'Enter a mark, or mark the student absent.')
+        return cleaned
 
     def marks_for(self, student):
-        return self.cleaned_data[student.USN]
+        """(marks, is_absent). An absentee scores zero towards the CIE - that
+        is how the scheme works - but the record says which it was."""
+        if self.cleaned_data.get(self.absent_field(student)):
+            return 0, True
+        return self.cleaned_data[student.USN], False
 
     def errors_for(self, student):
         return self.errors.get(student.USN, [])

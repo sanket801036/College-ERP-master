@@ -37,6 +37,8 @@ urlpatterns = [
          views.t_extra_class, name='t_extra_class'),
     path('teacher/<slug:assign_id>/Extra_class/confirm/',
          views.e_confirm, name='e_confirm'),
+    path('teacher/<int:marks_c_id>/publish_marks/', views.publish_marks,
+         name='publish_marks'),
     path('teacher/<int:assign_id>/Report/', views.t_report, name='t_report'),
     path('teacher/<int:assign_id>/Report/export/', views.t_report_export,
          name='t_report_export'),

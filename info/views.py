@@ -724,8 +724,10 @@ def marks_list(request, stud_id):
                    .select_related('course')
                    .prefetch_related('marks_set'))
 
-    # One query for the whole page rather than a status lookup per component.
-    StudentCourse.attach_submitted(sc_list, stud.class_id_id)
+    # Published, not merely entered: a student sees a mark when the result is
+    # released, not the instant the teacher types it.
+    StudentCourse.attach_submitted(sc_list, stud.class_id_id,
+                                   published_only=True)
 
     # Courses with something actually marked. Filtering on a truthy CIE instead
     # would silently drop a course genuinely sitting at zero - which is exactly
@@ -753,8 +755,41 @@ def marks_list(request, stud_id):
 @owns_assign('assign_id')
 def t_marks_list(request, assign_id):
     ass = get_object_or_404(Assign, id=assign_id)
-    m_list = MarksClass.objects.filter(assign=ass)
-    return render(request, 'info/t_marks_list.html', {'m_list': m_list})
+    return render(request, 'info/t_marks_list.html', {
+        'assign': ass,
+        'm_list': MarksClass.objects.filter(assign=ass),
+    })
+
+
+@login_required()
+@teacher_required
+@owns_marks_class('marks_c_id')
+@require_POST
+def publish_marks(request, marks_c_id):
+    """Release an entered batch to the students, or pull it back.
+
+    Entry and publication were the same act, so a mark was visible the instant
+    it was typed - including a slip the teacher was about to correct.
+    """
+    mc = get_object_or_404(MarksClass, id=marks_c_id)
+    if not mc.status:
+        messages.error(request, 'Enter the marks before publishing them.')
+        return redirect('t_marks_list', assign_id=mc.assign_id)
+
+    if request.POST.get('action') == 'unpublish':
+        mc.unpublish()
+        AuditLog.record(
+            actor=request.user, action='marks.unpublished', target=mc,
+            summary='%s withdrawn for %s' % (mc.name, mc.assign.class_id))
+        messages.success(request, '%s is hidden from students again.' % mc.name)
+    else:
+        mc.publish()
+        AuditLog.record(
+            actor=request.user, action='marks.published', target=mc,
+            summary='%s published for %s' % (mc.name, mc.assign.class_id))
+        messages.success(request, '%s is now visible to students.' % mc.name)
+
+    return redirect('t_marks_list', assign_id=mc.assign_id)
 
 
 @login_required()
@@ -804,14 +839,17 @@ def _marks_entry_context(mc, students, form=None, existing=None):
     for s in students:
         if form is not None:
             value = form.data.get(s.USN, '')
+            absent = bool(form.data.get(MarksEntryForm.absent_field(s)))
         else:
             # Blank, not 0. A pre-filled zero is indistinguishable from a mark
             # of zero, so a student the teacher scrolled past used to be
             # recorded as having scored nothing.
-            value = existing.get(s.USN, '')
+            value, absent = existing.get(s.USN, ('', False))
         rows.append({
             'student': s,
             'value': value,
+            'absent': absent,
+            'absent_field': MarksEntryForm.absent_field(s),
             'previous': previous.get(s.USN),
             'errors': form.errors_for(s) if form else [],
         })
@@ -851,11 +889,12 @@ def marks_confirm(request, marks_c_id):
             # get_or_create rather than get: a student without a StudentCourse
             # row used to raise DoesNotExist and take down the whole batch.
             sc, _ = StudentCourse.objects.get_or_create(course=cr, student=s)
-            scored = form.marks_for(s)
+            scored, absent = form.marks_for(s)
             existing = sc.marks_set.filter(name=mc.name).first()
             was = existing.marks1 if existing else None
-            sc.marks_set.update_or_create(name=mc.name,
-                                          defaults={'marks1': scored})
+            sc.marks_set.update_or_create(
+                name=mc.name,
+                defaults={'marks1': scored, 'is_absent': absent})
             # Overwriting a grade with no record of the old value is the gap
             # people ask about first.
             if revision and was is not None and was != scored:
@@ -896,7 +935,7 @@ def edit_marks(request, marks_c_id):
     mc = get_object_or_404(MarksClass, id=marks_c_id)
     students = _roster(mc, request)
     existing = {
-        m.studentcourse.student_id: m.marks1
+        m.studentcourse.student_id: ('' if m.is_absent else m.marks1, m.is_absent)
         for m in Marks.objects
         .filter(studentcourse__course=mc.assign.course,
                 studentcourse__student__in=students, name=mc.name)

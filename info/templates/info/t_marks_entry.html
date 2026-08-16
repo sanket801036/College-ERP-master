@@ -81,9 +81,15 @@ recorded as having scored nothing.
                          min="0" max="{{ mc.total_marks }}" step="1"
                          inputmode="numeric" autocomplete="off"
                          aria-label="Marks for {{ row.student.name }}, out of {{ mc.total_marks }}"
-                         value="{{ row.value }}">
+                         value="{{ row.value }}"
+                         {% if row.absent %}disabled{% endif %}>
                   {# The ceiling was known but never shown next to the box. #}
                   <span class="text-muted ml-2 text-nowrap">/ {{ mc.total_marks }}</span>
+                  <label class="ml-3 mb-0 text-nowrap small erp-absent-label">
+                    <input type="checkbox" class="erp-absent-input"
+                           name="{{ row.absent_field }}"
+                           {% if row.absent %}checked{% endif %}> Absent
+                  </label>
                 </div>
                 {% for error in row.errors %}
                   <div class="text-danger small mt-1">{{ error }}</div>
@@ -112,8 +118,20 @@ recorded as having scored nothing.
   var max = {{ mc.total_marks }};
   var dirty = false;
 
+  var absents = Array.prototype.slice.call(
+      form.querySelectorAll('.erp-absent-input'));
+
+  // An absentee is accounted for, so they count towards progress - the counter
+  // answers "how much of the class is done", not "how many marks are typed".
+  function accountedFor() {
+    return inputs.filter(function (input, index) {
+      return absents[index].checked || input.value.trim() !== '';
+    }).length;
+  }
+
   function entered() {
     return inputs
+      .filter(function (input, index) { return !absents[index].checked; })
       .map(function (input) { return input.value.trim(); })
       .filter(function (value) { return value !== ''; });
   }
@@ -132,7 +150,7 @@ recorded as having scored nothing.
   }
 
   function render() {
-    progress.textContent = entered().length + ' / ' + inputs.length + ' entered';
+    progress.textContent = accountedFor() + ' / ' + inputs.length + ' entered';
 
     var marks = valid();
     if (!marks.length) { stats.textContent = ''; return; }
@@ -152,6 +170,18 @@ recorded as having scored nothing.
     input.classList.toggle('is-invalid', bad);
     return !bad;
   }
+
+  absents.forEach(function (box, index) {
+    box.addEventListener('change', function () {
+      dirty = true;
+      var input = inputs[index];
+      input.disabled = box.checked;
+      // Clearing matters: a disabled field is not submitted, so a stale
+      // number left behind would reappear the moment the box is unticked.
+      if (box.checked) { input.value = ''; input.classList.remove('is-invalid'); }
+      render();
+    });
+  });
 
   inputs.forEach(function (input, index) {
     input.addEventListener('input', function () {

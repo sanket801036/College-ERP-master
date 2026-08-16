@@ -1,42 +1,93 @@
 {% extends 'info/base.html' %}
 
+{% block title %}Marks{% endblock %}
+
 {% block content %}
-    <div class="card mb-3">
-        <div class="card-header">
-              <i class="fas fa-table"></i>
-            <b>Attendance</b></div>
-            <div class="card-body">
-              <div class="table-responsive">
-                <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
-                  <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for m in m_list %}
-                    <tr>
-                        <td>{{ m.name }}</td>
-                        {% if not m.status %}
-                            <td class="p-3 mb-2 bg-danger text-white">Not Marked</td>
-                            <td>
-                                <a class="btn btn-primary" href="{% url 't_marks_entry' m.id %}" role="button">Enter Marks</a>
-                            </td>
 
-                        {% else %}
-                            <td class="p-3 mb-2 bg-success text-white">Marked</td>
-                            <td><a class="btn btn-warning" href="{% url 'edit_marks' m.id %}" role="button">Edit Marks</a> </td>
-                        {% endif %}
-                    </tr>
-                    {% empty %}
-                            <p>student has no courses</p>
-                    {% endfor %}
+{% comment %}
+Entering a batch and releasing it to students are separate acts now. The list
+shows both, because "entered" and "the class can see it" are different states
+a teacher needs to tell apart.
+{% endcomment %}
 
-                  </tbody>
-                </table>
-              </div>
-        </div>
+<div class="card mb-3">
+  <div class="card-header">
+    <i class="fas fa-list-check"></i>
+    <b>{{ assign.class_id }} &mdash; {{ assign.course.name }}</b>
+  </div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-bordered" width="100%" cellspacing="0">
+        <thead class="thead-light">
+          <tr>
+            <th>Component</th>
+            <th>Entry</th>
+            <th>Students</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in m_list %}
+          <tr>
+            <td>{{ m.name }}<span class="text-muted small"> / {{ m.total_marks }}</span></td>
+            <td>
+              {% if m.status %}
+                <span class="erp-badge erp-badge-success">
+                  <i class="fas fa-check-circle" aria-hidden="true"></i> Entered
+                </span>
+              {% else %}
+                <span class="erp-badge erp-badge-danger">
+                  <i class="fas fa-hourglass-half" aria-hidden="true"></i> Not entered
+                </span>
+              {% endif %}
+            </td>
+            <td>
+              {% if m.is_published %}
+                <span class="erp-badge erp-badge-info">
+                  <i class="fas fa-eye" aria-hidden="true"></i> Published
+                </span>
+                <span class="text-muted small">{{ m.published_at|date:"j M" }}</span>
+              {% elif m.status %}
+                <span class="text-muted">
+                  <i class="fas fa-eye-slash" aria-hidden="true"></i> Not released
+                </span>
+              {% else %}
+                <span class="text-muted">&mdash;</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if m.status %}
+                <a class="btn btn-sm btn-secondary" href="{% url 'edit_marks' m.id %}">
+                  Edit marks
+                </a>
+                <form class="d-inline" method="post"
+                      action="{% url 'publish_marks' m.id %}">
+                  {% csrf_token %}
+                  {% if m.is_published %}
+                    <input type="hidden" name="action" value="unpublish">
+                    <button class="btn btn-sm btn-outline-secondary" type="submit">
+                      Withdraw
+                    </button>
+                  {% else %}
+                    <button class="btn btn-sm btn-primary" type="submit">
+                      Publish to students
+                    </button>
+                  {% endif %}
+                </form>
+              {% else %}
+                <a class="btn btn-sm btn-primary" href="{% url 't_marks_entry' m.id %}">
+                  Enter marks
+                </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-muted">No components for this course.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+  </div>
+</div>
+
 {% endblock %}
