@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Count, Q
 from django.core.paginator import Paginator
+from urllib.parse import urlencode
 from django.core.exceptions import PermissionDenied
 from datetime import timedelta
 from django.contrib.auth.decorators import login_required
@@ -38,6 +39,15 @@ logger = logging.getLogger(__name__)
 REMEMBER_ME_SECONDS = 60 * 60 * 24 * 14
 
 WEEKDAY_INDEX = {name: index for index, (name, _) in enumerate(DAYS_OF_WEEK)}
+
+# Overdue is not one of Fee.status's three values - it cuts across them - but
+# it is the filter staff actually reach for, so it sits in the same control.
+FEE_STATUS_FILTERS = (
+    ('unpaid', 'Unpaid'),
+    ('partial', 'Partially paid'),
+    ('paid', 'Paid'),
+    ('overdue', 'Overdue'),
+)
 
 # Create your views here.
 
@@ -1124,16 +1134,53 @@ def t_fees(request):
         return redirect('/')
 
     q = request.GET.get('q', '').strip()
-    students = Student.objects.all().order_by('class_id_id', 'name')
-    if q:
-        students = students.filter(name__icontains=q) | students.filter(USN__icontains=q)
+    status = request.GET.get('status', '')
+    fee_type = request.GET.get('fee_type', '')
+    class_id = request.GET.get('class_id', '')
 
-    fee_list = Fee.objects.select_related('student').all()
+    # Class.__str__ reads dept.name, so the dept has to come along or the
+    # list costs a query per row.
+    fee_list = Fee.objects.select_related('student', 'student__class_id',
+                                          'student__class_id__dept')
     if q:
-        fee_list = fee_list.filter(student__in=students)
+        fee_list = fee_list.filter(Q(student__name__icontains=q)
+                                   | Q(student__USN__icontains=q))
+    if fee_type:
+        fee_list = fee_list.filter(fee_type=fee_type)
+    if class_id:
+        fee_list = fee_list.filter(student__class_id=class_id)
 
-    context = {'fee_list': fee_list, 'q': q}
-    return render(request, 'info/t_fees.html', context)
+    # Applied in the database rather than by walking rows and reading the
+    # status property, which is what made this page unusable at real volume.
+    if status == 'paid':
+        fee_list = fee_list.paid()
+    elif status == 'unpaid':
+        fee_list = fee_list.unpaid()
+    elif status == 'partial':
+        fee_list = fee_list.partial()
+    elif status == 'overdue':
+        fee_list = fee_list.overdue()
+
+    # Totals cover the whole filtered set, not just the page being looked at -
+    # a summary that changed as you paged would be worse than none.
+    totals = fee_list.totals()
+
+    return render(request, 'info/t_fees.html', {
+        'page': Paginator(fee_list.with_balance(), 25).get_page(
+            request.GET.get('page')),
+        'q': q,
+        'status': status,
+        'fee_type': fee_type,
+        'class_id': class_id,
+        'fee_types': fee_type_choice,
+        'status_options': FEE_STATUS_FILTERS,
+        'classes': Class.objects.select_related('dept'),
+        'totals': totals,
+        'overdue_count': fee_list.overdue().count(),
+        # Everything except `page`, so the pager keeps the current filters.
+        'querystring': urlencode({k: v for k, v in request.GET.items()
+                                  if k != 'page' and v}),
+    })
 
 
 @login_required()

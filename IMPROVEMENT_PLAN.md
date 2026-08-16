@@ -36,8 +36,9 @@ was found, so anything listed here as closed has already changed in the code.
 | 23 | Absent is not zero; results are published rather than leaked on entry | TM5, MK20, TM15, MD2 | 22 |
 | 24 | Class rank and the PDF marks card | MK8, MK10 | 14 |
 | 25 | Fee receipts, payment history and bulk assignment; messages finally shown | FE3, FE10, FE14, rest of FE2 | 15 |
+| 26 | Fee list: filters, pagination and a collection summary computed in the database | FE15, FE16 (part), FE17, FE30 | 17 |
 
-**343 tests**, from zero.
+**360 tests**, from zero.
 
 ### The grading rules, decided
 
@@ -1272,9 +1273,9 @@ Published (15)
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
 | ~~FE14~~ | **Bulk fee assignment** ✅ (pass 25). One statement for the class, and re-running the same assignment skips students who already have it rather than doubling their fees | Assign "Semester 5 Exam Fee ₹2,000" to an entire class or department in one action, rather than adding it student by student. This is the most obviously missing staff feature | ✅ views only |
-| FE15 | **Defaulters report** | Overdue + balance > 0, sorted by amount, filterable by class/department, exportable. Same as D3 on the admin dashboard | ✅ |
-| FE16 | **Collection dashboard** | Collected vs. outstanding, by department, class and fee type, with a trend over time | ✅ |
-| FE17 | **Pagination + filters on `/fees/`** | The staff list currently returns **every fee record in the institution** unpaginated. The query itself is efficient (6 queries thanks to `select_related`) — the problem is page size, not query count. Add pagination plus filters for status, class, fee type and date range | ✅ |
+| ~~FE15~~ | **Defaulters report** ✅ (pass 26). The overdue filter on the staff list, which cuts across the three status values rather than being one of them | Overdue + balance > 0, sorted by amount, filterable by class/department, exportable. Same as D3 on the admin dashboard | ✅ |
+| 🟠 FE16 | **Collection dashboard** | Raised / collected / outstanding / overdue now head the staff list, and they follow the filters rather than the page. Still missing the breakdown by department and the trend over time | Collected vs. outstanding, by department, class and fee type, with a trend over time | ✅ |
+| ~~FE17~~ | **Pagination + filters on `/fees/`** ✅ (pass 26). Status, fee type and class, all applied in the database - `status` and `balance` are properties, so filtering by them used to mean loading every row and looping | The staff list currently returns **every fee record in the institution** unpaginated. The query itself is efficient (6 queries thanks to `select_related`) — the problem is page size, not query count. Add pagination plus filters for status, class, fee type and date range | ✅ |
 | FE18 | **Record-payment form instead of edit-total** | Today "recording a payment" means overwriting `paid_amount` with a new total, so staff must do the arithmetic themselves and any mistake is unrecoverable. Replace with "add a payment of ₹X" | ❌ (with FE1) |
 | FE19 | **Waivers, scholarships, discounts** | A concession is not a payment and shouldn't be recorded as one — it needs its own type so reporting can separate "collected" from "waived" | ❌ |
 | FE20 | **Installment plans** | Split a fee into scheduled instalments with their own due dates | ❌ |
@@ -1292,7 +1293,7 @@ Published (15)
 | FE27 | **No validation on `add_fee`** | `fee_type` is never checked against `fee_type_choice`, so an arbitrary string can be stored; `amount` and `due_date` are raw strings from POST, so bad input raises an unhandled exception → 500. A `ModelForm` fixes all of it — the same fix already needed in MK25, TA-C3 and NB18 |
 | FE28 | **Lost update on concurrent payments** | `edit_fee` does read-modify-write on `paid_amount` with no locking. Two staff recording payments for the same student at the same time: last write wins, one payment vanishes. FE1 removes this class of bug entirely, since transactions are inserts rather than overwrites |
 | FE29 | **No audit trail** | Nothing records who created a fee or who changed `paid_amount`. For money, that's the gap a reviewer will go straight to — and it's the same gap as MK19 (marks) and TA-S7 (attendance) |
-| FE30 | **Totals computed in Python** | `fees()` does `sum(f.amount for f in fee_list)` over the queryset instead of `aggregate(Sum(...))`. Harmless at demo scale, wrong habit at real scale |
+| ~~FE30~~ | **Totals computed in Python** ✅ **Fixed on the staff list (pass 26)**, via `FeeQuerySet.totals()`. The per-student page still sums a handful of rows in Python, which is fine at that size | `fees()` does `sum(f.amount for f in fee_list)` over the queryset instead of `aggregate(Sum(...))`. Harmless at demo scale, wrong habit at real scale |
 | FE31 | **Teacher can list fees but not open one** | `t_fees` allows teachers, but `fees(stud_id)` allows only the student or a superuser — so a teacher sees fee rows in the list and gets redirected to `/` when clicking through. Decide the policy and make the two views agree |
 | FE32 | **No tests** | Balance/status logic plus the transaction sum are pure functions over model data — ideal first unit tests, including the boundaries proven broken above (overpayment, zero amount, negative values) |
 
@@ -1809,10 +1810,9 @@ charts reuse the same geometry-in-Python, SVG-in-template shape.
    teacher side. `student_marks` already has CIE per student, and pass 19 put
    the grade logic on `StudentCourse`, so a distribution is now an aggregate
    over existing properties rather than a query rewrite
-2. **D1, D2, D7** — the admin analytics strip
-3. **FE16, FE17** — the fee collection dashboard and pagination/filters on a
-   staff list that still returns every fee record in the institution
-4. **MK18 / TM16 / AT20** — the request-and-approve workflows (re-evaluation,
+2. **D1, D2, D7** — the admin analytics strip. `FeeQuerySet.totals()` from
+   pass 26 is most of what a collection chart needs
+3. **MK18 / TM16 / AT20** — the request-and-approve workflows (re-evaluation,
    attendance correction, leave). All the same state machine, so §7.2.x's note
    applies: build it once and apply it three times, rather than three times
 

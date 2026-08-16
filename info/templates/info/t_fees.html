@@ -5,41 +5,119 @@
 
 {% block content %}
 
+{% comment %}
+The list returned every fee record in the institution, unpaginated, with a
+search box and nothing else - no way to answer "who has not paid" or "how much
+is outstanding" without reading all of it.
+{% endcomment %}
+
 <div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span><i class="fas fa-wallet"></i><b>Fee Management</b></span>
-    <a class="btn btn-primary btn-sm" href="{% url 'add_fee' %}"><i class="fas fa-plus"></i> Add Fee Record</a>
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'add_class_fee' %}"><i class="fas fa-layer-group"></i> Raise for a class</a>
+  <div class="card-header d-flex align-items-center flex-wrap">
+    <span class="mr-auto"><i class="fas fa-wallet"></i><b>Fee management</b></span>
+    <a class="btn btn-primary btn-sm mr-2" href="{% url 'add_fee' %}">
+      <i class="fas fa-plus"></i> Add fee record
+    </a>
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'add_class_fee' %}">
+      <i class="fas fa-layer-group"></i> Raise for a class
+    </a>
   </div>
   <div class="card-body">
-    <form method="get" class="form-inline mb-3">
-      <input type="text" name="q" class="form-control mr-2" placeholder="Search student name / USN" value="{{ q }}">
-      <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i> Search</button>
+    <div class="row">
+      <div class="col-md-3 mb-2">
+        <div class="erp-stat-label">Raised</div>
+        <div class="erp-stat-value">&#8377;{{ totals.raised }}</div>
+      </div>
+      <div class="col-md-3 mb-2">
+        <div class="erp-stat-label">Collected</div>
+        <div class="erp-stat-value">&#8377;{{ totals.collected }}</div>
+      </div>
+      <div class="col-md-3 mb-2">
+        <div class="erp-stat-label">Outstanding</div>
+        <div class="erp-stat-value {% if totals.outstanding %}text-danger{% endif %}">
+          &#8377;{{ totals.outstanding }}
+        </div>
+      </div>
+      <div class="col-md-3 mb-2">
+        <div class="erp-stat-label">Overdue records</div>
+        <div class="erp-stat-value {% if overdue_count %}text-danger{% endif %}">
+          {{ overdue_count }}
+        </div>
+      </div>
+    </div>
+    <p class="text-muted small mb-0">
+      Totals cover everything matching the current filters, not just this page.
+    </p>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" class="form-row align-items-end mb-3">
+      <div class="col-md-4 mb-2">
+        <label class="small text-muted mb-1" for="q">Student</label>
+        <input type="text" id="q" name="q" class="form-control form-control-sm"
+               placeholder="Name or USN" value="{{ q }}">
+      </div>
+      <div class="col-md-2 mb-2">
+        <label class="small text-muted mb-1" for="status">Status</label>
+        <select id="status" name="status" class="form-control form-control-sm">
+          <option value="">Any</option>
+          {% for value, label in status_options %}
+            <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 mb-2">
+        <label class="small text-muted mb-1" for="fee_type">Fee type</label>
+        <select id="fee_type" name="fee_type" class="form-control form-control-sm">
+          <option value="">Any</option>
+          {% for value, label in fee_types %}
+            <option value="{{ value }}" {% if fee_type == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 mb-2">
+        <label class="small text-muted mb-1" for="class_id">Class</label>
+        <select id="class_id" name="class_id" class="form-control form-control-sm">
+          <option value="">Any</option>
+          {% for c in classes %}
+            <option value="{{ c.pk }}" {% if class_id == c.pk %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 mb-2">
+        <button class="btn btn-outline-primary btn-sm btn-block" type="submit">
+          <i class="fas fa-filter"></i> Filter
+        </button>
+      </div>
     </form>
+
     <div class="table-responsive">
-      <table class="table table-bordered text-center" id="dataTable" width="100%" cellspacing="0">
+      <table class="table table-bordered" width="100%" cellspacing="0">
         <thead class="thead-light">
           <tr>
             <th>USN</th>
             <th>Student</th>
-            <th>Fee Type</th>
-            <th>Amount</th>
-            <th>Paid</th>
-            <th>Balance</th>
+            <th>Class</th>
+            <th>Fee type</th>
+            <th class="text-right">Amount</th>
+            <th class="text-right">Paid</th>
+            <th class="text-right">Balance</th>
             <th>Status</th>
-            <th>Due Date</th>
-            <th>Action</th>
+            <th>Due</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
-          {% for f in fee_list %}
+          {% for f in page %}
           <tr>
             <td>{{ f.student.USN }}</td>
             <td>{{ f.student.name }}</td>
+            <td>{{ f.student.class_id }}</td>
             <td>{{ f.fee_type }}</td>
-            <td>₹{{ f.amount }}</td>
-            <td>₹{{ f.paid_amount }}</td>
-            <td>₹{{ f.balance }}</td>
+            <td class="text-right">&#8377;{{ f.amount }}</td>
+            <td class="text-right">&#8377;{{ f.paid_amount }}</td>
+            <td class="text-right">&#8377;{{ f.balance }}</td>
             <td>
               {% if f.status == 'Paid' %}
                 <span class="erp-badge erp-badge-success">Paid</span>
@@ -49,15 +127,42 @@
                 <span class="erp-badge erp-badge-danger">Unpaid</span>
               {% endif %}
             </td>
-            <td>{{ f.due_date }}</td>
-            <td><a class="btn btn-sm btn-outline-primary" href="{% url 'edit_fee' f.id %}"><i class="fas fa-edit"></i></a></td>
+            <td class="text-nowrap">
+              {{ f.due_date }}
+              {% if f.is_overdue %}
+                <span class="erp-badge erp-badge-danger">Overdue</span>
+              {% endif %}
+            </td>
+            <td>
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'edit_fee' f.id %}">
+                <i class="fas fa-edit" aria-hidden="true"></i>
+                <span class="sr-only">Edit</span>
+              </a>
+            </td>
           </tr>
           {% empty %}
-          <tr><td colspan="9">No fee records yet.</td></tr>
+          <tr><td colspan="10" class="text-muted">No fee records match these filters.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+
+    {% if page.paginator.num_pages > 1 %}
+      <nav class="d-flex align-items-center">
+        <span class="text-muted small mr-auto">
+          Page {{ page.number }} of {{ page.paginator.num_pages }}
+          &middot; {{ page.paginator.count }} record{{ page.paginator.count|pluralize }}
+        </span>
+        {% if page.has_previous %}
+          <a class="btn btn-sm btn-outline-secondary mr-2"
+             href="?page={{ page.previous_page_number }}&amp;{{ querystring }}">Previous</a>
+        {% endif %}
+        {% if page.has_next %}
+          <a class="btn btn-sm btn-outline-secondary"
+             href="?page={{ page.next_page_number }}&amp;{{ querystring }}">Next</a>
+        {% endif %}
+      </nav>
+    {% endif %}
   </div>
 </div>
 

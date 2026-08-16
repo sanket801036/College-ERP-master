@@ -777,6 +777,48 @@ payment_mode_choice = (
 )
 
 
+class FeeQuerySet(models.QuerySet):
+    """Status and balance live in the database, not only in Python.
+
+    `Fee.balance` and `Fee.status` are properties, so filtering or totalling by
+    them meant pulling every row and looping. That is fine for one student and
+    wrong for a staff list covering the whole institution.
+    """
+
+    def with_balance(self):
+        return self.annotate(
+            balance_due=models.F('amount') - models.F('paid_amount'))
+
+    def paid(self):
+        # A fully waived fee of zero is paid, not unpaid - the same ordering
+        # bug the status property had.
+        return self.filter(models.Q(amount__lte=0)
+                           | models.Q(paid_amount__gte=models.F('amount')))
+
+    def unpaid(self):
+        return self.filter(paid_amount__lte=0).exclude(amount__lte=0)
+
+    def partial(self):
+        return (self.filter(paid_amount__gt=0,
+                            paid_amount__lt=models.F('amount'))
+                .exclude(amount__lte=0))
+
+    def outstanding(self):
+        return self.filter(paid_amount__lt=models.F('amount'), amount__gt=0)
+
+    def overdue(self):
+        return self.outstanding().filter(due_date__lt=timezone.localdate())
+
+    def totals(self):
+        """Raised, collected and outstanding, in one query."""
+        zero = Decimal('0')
+        summary = self.aggregate(
+            raised=Coalesce(models.Sum('amount'), zero),
+            collected=Coalesce(models.Sum('paid_amount'), zero))
+        summary['outstanding'] = summary['raised'] - summary['collected']
+        return summary
+
+
 class Fee(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='fees')
     fee_type = models.CharField(max_length=50, choices=fee_type_choice, default='Tuition Fee')
@@ -790,6 +832,8 @@ class Fee(models.Model):
     paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     due_date = models.DateField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = FeeQuerySet.as_manager()
 
     class Meta:
         ordering = ['-due_date']
