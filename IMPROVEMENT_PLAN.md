@@ -32,8 +32,9 @@ was found, so anything listed here as closed has already changed in the code.
 | 19 | Marks page rebuilt on VTU's 10-point scale | MK1, MK2, MK3, MK4, MK5, MK6, MK7, MK9, MK14 | 30 |
 | 20 | Class report: summary header, at-risk flagging, sort, export, print | RP1, RP2, RP3, RP4, RP8 | 14 |
 | 21 | Attendance entry made usable daily; real session states | TA1, TA2, TA3, TA4, TA5, TA7, TA8, TA-C4, TA-C6 | 20 |
+| 22 | Marks entry given the same treatment; edit and entry unified | TM1, TM2, TM3, TM4, TM8, TM9, TM10, rest of TM19 | 14 |
 
-**278 tests**, from zero.
+**292 tests**, from zero.
 
 ### The grading rules, decided
 
@@ -81,7 +82,7 @@ their **features**.
 | **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA all landed in pass 19 on VTU's 10-point scale. Still open: class rank (MK8), PDF report card (MK10), the charts (MK11/MK12/MK16), semester history (MK15, needs semester tagging), and the Phase C workflows (MK18 re-evaluation, MK20 publication control) |
 | **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
 | **Attendance - teacher** (§7.3) | 🟢 secured, entry rebuilt | Pass 21 landed one-click marking from the dashboard, mark-all-present, a live counter, keyboard entry, roster search, the unsaved-changes guard, and real session states; TA-C4 and TA-C6 are closed. Still open: TA6 (photos, blocked on CF1), TA9/TA10 (bulk import, offline drafts), TA12-TA17 (class analytics and export), TA19-TA21 (cancel reason, reschedule, substitutes) |
-| **Marks entry - teacher** (§7.7) | 🟢 secured and validated | No keyboard entry, live statistics, absent-vs-zero marker, draft save, bulk import, post-entry statistics, or publication control |
+| **Marks entry - teacher** (§7.7) | 🟢 secured, validated, entry rebuilt | Pass 22 landed the max-marks hint, live inline validation, keyboard entry, running statistics, the previous component alongside, sorting and the unsaved-changes guard, and folded the separate edit template into this one. Still open: TM5 (absent-vs-zero, needs a flag on `Marks`), TM6 (draft save), TM7 (bulk import), TM11-TM14 (post-entry statistics and export), TM15 (publication control), TM16 (re-evaluation queue), TM24 (confirmation screen) |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
 | **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
 | **Fees** (§7.6) | 🟢 ledger rebuilt | No PDF receipts, bulk assignment to a class, defaulters report, collection charts, pagination, waivers, instalments, late fees or reminders. FE31 (a teacher can list fees but not open one) stands |
@@ -1317,16 +1318,16 @@ This module shares the marks *data* problems already documented in §7.2.x (MK22
 
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
-| TM1 | **Show max marks in the form** | `Marks.total_marks` already knows the ceiling (20 for internals, 100 for SEE) but the entry form never shows it. Display "/20" beside each input and set `max` on the field | ✅ |
-| TM2 | **Inline validation while typing** | Flag out-of-range values before submit, rather than silently storing 85/20 (MK25) | ✅ |
-| TM3 | **Keyboard-first entry** | Enter/↓ moves to the next student, so a teacher can type 45 marks without touching the mouse. Same rationale as TA4 in attendance | ✅ |
-| TM4 | **Live progress + statistics** | "38 of 45 entered · avg 14.2 · range 6–20" while typing, so an outlier is caught at entry time | ✅ |
+| ~~TM1~~ | **Show max marks in the form** ✅ (pass 22) | `Marks.total_marks` already knows the ceiling (20 for internals, 100 for SEE) but the entry form never shows it. Display "/20" beside each input and set `max` on the field | ✅ |
+| ~~TM2~~ | **Inline validation while typing** ✅ (pass 22). Statistics are computed over valid marks only - counting an out-of-range typo gave "Average 30.5" on a test worth 20, hiding the very outlier they exist to expose | Flag out-of-range values before submit, rather than silently storing 85/20 (MK25) | ✅ |
+| ~~TM3~~ | **Keyboard-first entry** ✅ (pass 22). Enter and the arrow keys move between students | Enter/↓ moves to the next student, so a teacher can type 45 marks without touching the mouse. Same rationale as TA4 in attendance | ✅ |
+| ~~TM4~~ | **Live progress + statistics** ✅ (pass 22) | "38 of 45 entered · avg 14.2 · range 6–20" while typing, so an outlier is caught at entry time | ✅ |
 | TM5 | **Absent / not-appeared marker** | A student who missed the test is not a student who scored 0. Needs a distinct state, exactly like MK4 on the student side | ⚠️ needs a flag on `Marks` |
 | TM6 | **Save draft** | Marks entry for a large class is currently all-or-nothing in one POST. Allow partial saves | ⚠️ |
 | TM7 | **Bulk import from Excel** | Upload a marks sheet; `openpyxl` already in use for fees export | ✅ |
-| TM8 | **Unsaved-changes guard** | Warn before navigating away mid-entry | ✅ |
-| TM9 | **Sort roster by USN or name** | Fixed order today; teachers often work from a printed list in a different order | ✅ |
-| TM10 | **Show previous test's marks alongside** | Context while entering Internal 2 — helps spot a transposed row immediately | ✅ |
+| ~~TM8~~ | **Unsaved-changes guard** ✅ (pass 22) | Warn before navigating away mid-entry | ✅ |
+| ~~TM9~~ | **Sort roster by USN or name** ✅ (pass 22) | Fixed order today; teachers often work from a printed list in a different order | ✅ |
+| ~~TM10~~ | **Show previous test's marks alongside** ✅ (pass 22) | Context while entering Internal 2 — helps spot a transposed row immediately | ✅ |
 
 #### Phase B — Post-entry
 
@@ -1345,7 +1346,7 @@ This module shares the marks *data* problems already documented in §7.2.x (MK22
 |---|---|---|
 | TM17 | **All four entry endpoints open to students** | Verified, logged in as the `teststud` student account: `t_marks_list`, `student_marks`, `t_marks_entry` and `edit_marks` all returned **HTTP 200**. So a student can read the whole class's marks and open the marks-entry form. The POST handler `marks_confirm` carries the identical `@login_required()`-only guard, which means **a student can submit marks for an entire class**. Same root cause and same fix as TA-S1/TA-S2 — a `@teacher_required` decorator plus an ownership assertion. Do all of these in one pass |
 | TM18 | **`student_marks` returns 500 instead of 404** | Verified: `Assign.objects.get(id=assign_id)` with an unknown id raises an uncaught `Assign.DoesNotExist` and the request 500s. Every neighbouring view uses `get_object_or_404`; this one doesn't. One-line fix |
-| TM19 | **Unguarded `StudentCourse.objects.get()` in both `marks_confirm` and `edit_marks`** | Neither wraps the lookup in `try/except`, so any student missing a `StudentCourse` row 500s the entire batch — the same crash path as G3 (`t_report`). Note this is *also* the branch that MK22's `type='I'` bug lives in, so the "self-healing" fallback in `marks_list` would itself crash. Two independent faults on the same path |
+| ~~TM19~~ | **Unguarded `StudentCourse.objects.get()` in both `marks_confirm` and `edit_marks`** ✅ **Now fully fixed.** `marks_confirm` was covered in pass 4, but `edit_marks` kept its bare `StudentCourse.objects.get()` *and* `marks_set.get()` until pass 22 - either one raising DoesNotExist took the page down for the whole class. Both are gone; the view now loads existing marks in one query and tolerates rows that are missing | Neither wraps the lookup in `try/except`, so any student missing a `StudentCourse` row 500s the entire batch — the same crash path as G3 (`t_report`). Note this is *also* the branch that MK22's `type='I'` bug lives in, so the "self-healing" fallback in `marks_list` would itself crash. Two independent faults on the same path |
 | TM20 | **No transaction around `marks_confirm`** | The view loops over students saving one `Marks` row at a time, then flips `mc.status = True`. A `KeyError` from `request.POST[s.USN]` partway through leaves half the class saved. Unlike the attendance equivalent (TA-C2), the status flag *is* correctly set after the loop — so a partial failure leaves marks saved but the batch still flagged unsubmitted, which is the safer of the two failure modes but still wrong. Wrap in `@transaction.atomic` |
 | TM21 | **No validation of the submitted value** | `m.marks1 = request.POST[s.USN]` assigns a raw string with no bounds check — this is MK25, restated here because this is the view that does it. `ModelForm`/formset with `clean()` bounded by `total_marks` |
 | TM22 | **No audit trail on overwrite** | `edit_marks` → `marks_confirm` overwrites `marks1` in place; the previous value, the editor, and the timestamp are all lost (MK19). For grades this is the gap most worth closing |
@@ -1799,10 +1800,11 @@ charts reuse the same geometry-in-Python, SVG-in-template shape.
 3. **MK8, MK10** — class rank and a PDF report card. `reportlab` has been an
    installed, unused dependency since the beginning; the report card is now
    just a rendering of numbers the model already computes
-4. **TM1–TM4** — the marks entry UX. The attendance roster got this treatment
-   in pass 21 and the marks entry form is the same shape: no max-marks hint, no
-   inline validation, no keyboard entry, no running statistics. The JS pattern
-   in `t_attendance.html` transfers almost directly
+4. **TM5 + MK20/TM15** — the two remaining marks-workflow gaps, and they pair
+   naturally: a distinct absent state on `Marks` (so a student who missed a
+   test stops being recorded as having scored zero), and publication control
+   (so students see marks when results are released rather than the instant
+   they are typed). One small migration each
 
 **One thing to know before adding charts:** Django's `{# #}` comment is
 single-line only. A multi-line one is not a comment — the text renders into the

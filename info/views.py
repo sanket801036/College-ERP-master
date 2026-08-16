@@ -3,7 +3,7 @@ from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
     DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest, NoticeRead, notice_category_choice, \
     CIE_MAX, SEE_MAX, SEE_ELIGIBILITY_CIE, sgpa_for, \
-    CLASS_PENDING, CLASS_TAKEN, CLASS_CANCELLED
+    CLASS_PENDING, CLASS_TAKEN, CLASS_CANCELLED, test_name
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.db import transaction
@@ -762,27 +762,64 @@ def t_marks_list(request, assign_id):
 @owns_marks_class('marks_c_id')
 def t_marks_entry(request, marks_c_id):
     mc = get_object_or_404(MarksClass, id=marks_c_id)
-    ass = mc.assign
-    c = ass.class_id
     return render(request, 'info/t_marks_entry.html',
-                  _marks_entry_context(mc, list(c.student_set.all())))
+                  _marks_entry_context(mc, _roster(mc, request)))
 
 
-def _marks_entry_context(mc, students, form=None):
+def _roster(mc, request):
+    order = 'name' if request.GET.get('sort') != 'usn' else 'USN'
+    return list(mc.assign.class_id.student_set.order_by(order))
+
+
+def _previous_component(name):
+    """The component entered before this one, for context while typing.
+
+    Seeing Internal test 1 beside Internal test 2 is how a transposed row gets
+    spotted at entry time rather than after the grades are published.
+    """
+    names = [choice for choice, _ in test_name]
+    index = names.index(name) if name in names else 0
+    return names[index - 1] if index > 0 else None
+
+
+def _marks_entry_context(mc, students, form=None, existing=None):
     """Build the per-student rows the marks entry template renders.
 
     Templates can't index a dict by a variable key, so the pairing of student to
-    input value and error list is done here rather than in the template.
+    input value, previous mark and error list is done here.
     """
+    existing = existing or {}
+    previous_name = _previous_component(mc.name)
+    previous = {}
+    if previous_name:
+        previous = {
+            m.studentcourse.student_id: m.marks1
+            for m in Marks.objects
+            .filter(studentcourse__course=mc.assign.course,
+                    studentcourse__student__in=students, name=previous_name)
+            .select_related('studentcourse')
+        }
+
     rows = []
     for s in students:
+        if form is not None:
+            value = form.data.get(s.USN, '')
+        else:
+            # Blank, not 0. A pre-filled zero is indistinguishable from a mark
+            # of zero, so a student the teacher scrolled past used to be
+            # recorded as having scored nothing.
+            value = existing.get(s.USN, '')
         rows.append({
             'student': s,
-            'value': form.data.get(s.USN, '') if form else 0,
+            'value': value,
+            'previous': previous.get(s.USN),
             'errors': form.errors_for(s) if form else [],
         })
+
     return {'ass': mc.assign, 'c': mc.assign.class_id, 'mc': mc,
-            'rows': rows, 'form': form}
+            'rows': rows, 'form': form,
+            'previous_name': previous_name,
+            'is_revision': mc.status}
 
 
 @login_required()
@@ -794,7 +831,9 @@ def marks_confirm(request, marks_c_id):
     ass = mc.assign
     cr = ass.course
     cl = ass.class_id
-    students = list(cl.student_set.all())
+    # Same ordering as the form that posted, so a re-render after a validation
+    # error puts the rows back where the teacher left them.
+    students = _roster(mc, request)
 
     # Marks went in as raw POST strings with no bounds check, so a slip of the
     # keyboard stored 85 on a test worth 20 - the field validators never run on
@@ -846,19 +885,25 @@ def marks_confirm(request, marks_c_id):
 @teacher_required
 @owns_marks_class('marks_c_id')
 def edit_marks(request, marks_c_id):
+    """Re-open a submitted batch, on the same form that entered it.
+
+    This used to be a second, near-identical template that had no error
+    display at all - so a failed edit re-rendered the *other* template - and it
+    walked the roster with bare StudentCourse.objects.get() and marks_set.get()
+    calls, either of which raised DoesNotExist and 500'd the page for the whole
+    class if a single row was missing.
+    """
     mc = get_object_or_404(MarksClass, id=marks_c_id)
-    cr = mc.assign.course
-    stud_list = mc.assign.class_id.student_set.all()
-    m_list = []
-    for stud in stud_list:
-        sc = StudentCourse.objects.get(course=cr, student=stud)
-        m = sc.marks_set.get(name=mc.name)
-        m_list.append(m)
-    context = {
-        'mc': mc,
-        'm_list': m_list,
+    students = _roster(mc, request)
+    existing = {
+        m.studentcourse.student_id: m.marks1
+        for m in Marks.objects
+        .filter(studentcourse__course=mc.assign.course,
+                studentcourse__student__in=students, name=mc.name)
+        .select_related('studentcourse')
     }
-    return render(request, 'info/edit_marks.html', context)
+    return render(request, 'info/t_marks_entry.html',
+                  _marks_entry_context(mc, students, existing=existing))
 
 
 @login_required()

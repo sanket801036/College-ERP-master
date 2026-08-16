@@ -1,56 +1,191 @@
 {% extends 'info/base.html' %}
-{% block content %}
-{% if rows %}
 
-<form action="{% url 'marks_confirm' mc.id %}" method="post">
-            {% csrf_token %}
-    <div class="card mb-3">
-        <div class="card-header">
-          <i class="fas fa-table"></i>
-         <b>{{ mc.name }} &mdash; {{ ass.course.name }}</b></div>
-        <div class="card-body">
-          {% if form.errors %}
-            <div class="alert alert-danger">
-              Nothing was saved. Correct the marks highlighted below and submit again.
-            </div>
-          {% endif %}
-          <div class="table-responsive">
-            <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
-              <thead>
-                <tr>
-                    <th>Student Name</th>
-                    <th>Total Marks</th>
-                    <th>Enter Marks</th>
-                </tr>
-              </thead>
-                <tbody>
-                {% for row in rows %}
-                    <tr>
-                    <td>{{ row.student.name }}</td>
-                    <td>{{ mc.total_marks }}</td>
-                    <td>
-                        <input type="number" name="{{ row.student.USN }}"
-                               min="0" max="{{ mc.total_marks }}"
-                               value="{{ row.value }}">
-                        {% for error in row.errors %}
-                          <div class="text-danger small mt-1">{{ error }}</div>
-                        {% endfor %}
-                    </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-          </div>
+{% block title %}Enter marks{% endblock %}
+
+{% block content %}
+
+{% comment %}
+Serves both entry and editing. There used to be a second, near-identical
+template for edits which had no error display at all, so a failed edit
+re-rendered this one instead and the teacher lost their place.
+
+Inputs start blank rather than at 0: a pre-filled zero is indistinguishable
+from a mark of zero, so a student the teacher scrolled past was silently
+recorded as having scored nothing.
+{% endcomment %}
+
+{% if rows %}
+<form action="{% url 'marks_confirm' mc.id %}" method="post" id="marksForm">
+  {% csrf_token %}
+
+  <div class="card mb-3">
+    <div class="card-header d-flex align-items-center flex-wrap">
+      <span class="mr-auto">
+        <i class="fas fa-pen-to-square"></i>
+        <b>{{ mc.name }} &mdash; {{ ass.course.name }}</b>
+        <span class="text-muted small">{{ ass.class_id }} &middot; out of {{ mc.total_marks }}</span>
+      </span>
+      {% if is_revision %}
+        <span class="erp-badge erp-badge-warning mr-2">
+          <i class="fas fa-clock-rotate-left" aria-hidden="true"></i> Revising a submitted batch
+        </span>
+      {% endif %}
+      <span class="erp-badge erp-badge-info" id="progress" aria-live="polite"></span>
+    </div>
+
+    <div class="card-body">
+      {% if form.errors %}
+        <div class="alert alert-danger">
+          Nothing was saved. Correct the marks highlighted below and submit again.
         </div>
+      {% endif %}
+
+      <div class="d-flex flex-wrap align-items-center mb-2">
+        <div class="btn-group btn-group-sm mr-3 mb-2">
+          <a class="btn btn-outline-secondary" href="?sort=name">Sort by name</a>
+          <a class="btn btn-outline-secondary" href="?sort=usn">Sort by USN</a>
+        </div>
+        <span class="text-muted small mb-2" id="stats"></span>
       </div>
 
+      <p class="text-muted small">
+        <kbd>Enter</kbd> or <kbd>&darr;</kbd> moves to the next student, so a
+        whole class can be typed without the mouse. Out-of-range marks are
+        flagged as you type.
+      </p>
 
-    <input class="btn btn-success" type="submit" value="Submit">
+      <div class="table-responsive">
+        <table class="table table-bordered" width="100%" cellspacing="0">
+          <thead class="thead-light">
+            <tr>
+              <th>USN</th>
+              <th>Student name</th>
+              {% if previous_name %}<th class="text-right">{{ previous_name }}</th>{% endif %}
+              <th style="width: 190px">Marks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td>{{ row.student.USN }}</td>
+              <td>{{ row.student.name }}</td>
+              {% if previous_name %}
+                <td class="text-right text-muted">
+                  {% if row.previous is not None %}{{ row.previous }}{% else %}&mdash;{% endif %}
+                </td>
+              {% endif %}
+              <td>
+                <div class="d-flex align-items-center">
+                  <input type="number" class="form-control form-control-sm erp-mark-input"
+                         name="{{ row.student.USN }}"
+                         min="0" max="{{ mc.total_marks }}" step="1"
+                         inputmode="numeric" autocomplete="off"
+                         aria-label="Marks for {{ row.student.name }}, out of {{ mc.total_marks }}"
+                         value="{{ row.value }}">
+                  {# The ceiling was known but never shown next to the box. #}
+                  <span class="text-muted ml-2 text-nowrap">/ {{ mc.total_marks }}</span>
+                </div>
+                {% for error in row.errors %}
+                  <div class="text-danger small mt-1">{{ error }}</div>
+                {% endfor %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-success" type="submit" id="submitButton">
+    {% if is_revision %}Save changes{% else %}Submit marks{% endif %}
+  </button>
 </form>
 
+<script>
+(function () {
+  var form = document.getElementById('marksForm');
+  var inputs = Array.prototype.slice.call(
+      form.querySelectorAll('.erp-mark-input'));
+  var progress = document.getElementById('progress');
+  var stats = document.getElementById('stats');
+  var max = {{ mc.total_marks }};
+  var dirty = false;
+
+  function entered() {
+    return inputs
+      .map(function (input) { return input.value.trim(); })
+      .filter(function (value) { return value !== ''; });
+  }
+
+  // Only marks that could actually be saved. An out-of-range typo counted
+  // towards the average gave "Average 30.5" on a test worth 20 - a nonsense
+  // number that hides the very outlier the statistics exist to expose. The
+  // bad value is flagged on its own input instead.
+  function valid() {
+    return entered()
+      .map(Number)
+      .filter(function (value) {
+        return !isNaN(value) && Number.isInteger(value)
+               && value >= 0 && value <= max;
+      });
+  }
+
+  function render() {
+    progress.textContent = entered().length + ' / ' + inputs.length + ' entered';
+
+    var marks = valid();
+    if (!marks.length) { stats.textContent = ''; return; }
+    var sum = marks.reduce(function (a, b) { return a + b; }, 0);
+    // Shown while typing so an outlier is caught at entry rather than after
+    // the grades are out.
+    stats.textContent = 'Average ' + (sum / marks.length).toFixed(1)
+      + ' · range ' + Math.min.apply(null, marks)
+      + '–' + Math.max.apply(null, marks);
+  }
+
+  function validate(input) {
+    var raw = input.value.trim();
+    var value = Number(raw);
+    var bad = raw !== '' && (isNaN(value) || value < 0 || value > max
+                             || !Number.isInteger(value));
+    input.classList.toggle('is-invalid', bad);
+    return !bad;
+  }
+
+  inputs.forEach(function (input, index) {
+    input.addEventListener('input', function () {
+      dirty = true;
+      validate(input);
+      render();
+    });
+    input.addEventListener('keydown', function (event) {
+      var next = null;
+      if (event.key === 'Enter') { next = inputs[index + 1]; event.preventDefault(); }
+      else if (event.key === 'ArrowDown') { next = inputs[index + 1]; event.preventDefault(); }
+      else if (event.key === 'ArrowUp') { next = inputs[index - 1]; event.preventDefault(); }
+      if (next) { next.focus(); next.select(); }
+    });
+  });
+
+  // Marks entry is one POST for the whole class, so leaving mid-way loses the
+  // lot - there is no draft state.
+  window.addEventListener('beforeunload', function (event) {
+    if (!dirty) { return; }
+    event.preventDefault();
+    event.returnValue = '';
+  });
+  form.addEventListener('submit', function () { dirty = false; });
+
+  inputs.forEach(validate);
+  render();
+})();
+</script>
 
 {% else %}
-    <p>No students in Class</p>
+  <div class="card"><div class="card-body text-muted">
+    No students in this class yet.
+  </div></div>
 {% endif %}
 
 {% endblock %}

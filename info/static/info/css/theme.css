@@ -658,3 +658,13 @@ body {
   background: var(--erp-primary-light);
   box-shadow: inset 3px 0 0 var(--erp-primary);
 }
+
+/* ---------- Marks entry ----------
+   Bootstrap only paints .is-invalid when it sits inside a validated form, and
+   this one is flagged live as the teacher types rather than on submit. */
+.erp-mark-input { max-width: 90px; }
+
+.erp-mark-input.is-invalid {
+  border-color: var(--erp-danger);
+  background: var(--erp-danger-tint);
+}
