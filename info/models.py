@@ -444,6 +444,8 @@ class StudentCourse(models.Model):
     # student page these differ, and telling a student that a test they sat
     # last week was "not yet conducted" is its own small lie.
     _entered_cache = None
+    # (rank, class size) for this course, filled by attach_rank().
+    _rank_cache = None
 
     class Meta:
         unique_together = (('student', 'course'),)
@@ -501,6 +503,12 @@ class StudentCourse(models.Model):
         if self._submitted_cache is None:
             return True
         return name in self._submitted_cache
+
+    @property
+    def visible_components(self):
+        """The component names this row is allowed to show."""
+        return self._submitted_cache if self._submitted_cache is not None \
+            else set(CIE_COMPONENTS)
 
     def is_entered(self, name):
         """Has the teacher entered this component, whether or not it is out?"""
@@ -610,6 +618,55 @@ class StudentCourse(models.Model):
                 out.append({'letter': letter, 'points': points,
                             'required_see': needed})
         return list(reversed(out))
+
+    @property
+    def rank(self):
+        """(position, class size) on this course, or None if not computed.
+
+        Each student sees only their own standing. Ranking classmates against
+        each other in a list they can all read is a privacy problem rather than
+        a feature, so there is deliberately no leaderboard anywhere.
+        """
+        return self._rank_cache
+
+    @staticmethod
+    def attach_rank(student_courses, class_id, visible_components):
+        """Fill each row's rank against its own class, in one query.
+
+        Ranked on the same components the student can see. Ranking on the full
+        entered set would let a withheld mark move someone's position, which
+        leaks the thing publication control exists to hold back.
+        """
+        rows = list(student_courses)
+        if not rows:
+            return rows
+
+        courses = {sc.course_id for sc in rows}
+        totals = {}
+        for mark in (Marks.objects
+                     .filter(studentcourse__course__in=courses,
+                             studentcourse__student__class_id=class_id,
+                             name__in=CIE_COMPONENTS)
+                     .select_related('studentcourse')):
+            course_id = mark.studentcourse.course_id
+            if mark.name not in visible_components.get(course_id, set()):
+                continue
+            key = (course_id, mark.studentcourse.student_id)
+            totals[key] = totals.get(key, 0) + mark.marks1
+
+        by_course = {}
+        for (course_id, student_id), total in totals.items():
+            by_course.setdefault(course_id, {})[student_id] = total
+
+        for sc in rows:
+            scores = by_course.get(sc.course_id)
+            if not scores:
+                continue
+            mine = scores.get(sc.student_id, 0)
+            # Standard competition ranking: equal scores share a position.
+            position = 1 + sum(1 for other in scores.values() if other > mine)
+            sc._rank_cache = (position, len(scores))
+        return rows
 
     @staticmethod
     def attach_submitted(student_courses, class_id, published_only=False):

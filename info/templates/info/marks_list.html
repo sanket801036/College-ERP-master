@@ -12,7 +12,13 @@ had not happened yet from one scored zero.
 {% endcomment %}
 
 <div class="card mb-3">
-  <div class="card-header"><i class="fas fa-award"></i><b>Performance</b></div>
+  <div class="card-header d-flex align-items-center flex-wrap">
+    <span class="mr-auto"><i class="fas fa-award"></i><b>Performance</b></span>
+    <a class="btn btn-sm btn-outline-primary"
+       href="{% url 'marks_card' student.USN %}">
+      <i class="fas fa-file-pdf" aria-hidden="true"></i> Marks card
+    </a>
+  </div>
   <div class="card-body">
     <div class="row">
       <div class="col-md-4 mb-3">
@@ -63,6 +69,13 @@ had not happened yet from one scored zero.
         <b>{{ sc.course.name }}</b>
         <span class="text-muted small">{{ sc.course_id }} &middot; {{ sc.course.credits }} credit{{ sc.course.credits|pluralize }}</span>
       </span>
+      {% if sc.rank %}
+        {% comment %}
+        Own position only. A leaderboard of classmates would be a privacy
+        problem rather than a feature.
+        {% endcomment %}
+        <span class="text-muted small mr-3">Rank {{ sc.rank.0 }} of {{ sc.rank.1 }}</span>
+      {% endif %}
       {% if sc.grade %}
         <span class="erp-badge erp-badge-info mr-2">Grade {{ sc.grade.0 }} &middot; {{ sc.grade.1 }} pts</span>
       {% elif sc.is_see_eligible is False %}

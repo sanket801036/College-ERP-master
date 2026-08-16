@@ -286,7 +286,8 @@ class MarksPageTests(TestCase):
     def test_query_count_does_not_grow_with_the_number_of_courses(self):
         self.client.force_login(self.student.user)
 
-        with self.assertNumQueries(11):
+        # 12 since pass 24: attach_rank adds one query for the whole class.
+        with self.assertNumQueries(12):
             self.assertEqual(self.client.get(self.url()).status_code, 200)
 
         dept = self.course.dept
@@ -296,5 +297,6 @@ class MarksPageTests(TestCase):
                                   shortname='EX%d' % n)
             f.make_assign(self.klass, extra, teacher)
 
-        with self.assertNumQueries(11):
+        # 12 since pass 24: attach_rank adds one query for the whole class.
+        with self.assertNumQueries(12):
             self.assertEqual(self.client.get(self.url()).status_code, 200)

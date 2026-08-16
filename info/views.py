@@ -22,6 +22,7 @@ from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
                         ErpLoginForm, SupportRequestForm, NoticeForm)
 from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
                              owns_marks_class, owns_teacher_id, assert_teaches)
+from info.reports import report_card
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
@@ -705,9 +706,12 @@ def free_teachers(request, asst_id):
 # student marks
 
 
-@login_required()
-def marks_list(request, stud_id):
-    stud = get_object_or_404(Student, USN=stud_id)
+def _student_marks_rows(stud):
+    """The student's courses with marks, visibility and rank loaded.
+
+    Shared with the PDF marks card so the paper and the screen cannot disagree
+    about what a student scored.
+    """
     courses = Course.objects.filter(assign__class_id=stud.class_id_id).distinct()
 
     # The old fallback here passed type='I' to marks_set.create(), but Marks has
@@ -728,12 +732,23 @@ def marks_list(request, stud_id):
     # released, not the instant the teacher types it.
     StudentCourse.attach_submitted(sc_list, stud.class_id_id,
                                    published_only=True)
+    StudentCourse.attach_rank(
+        sc_list, stud.class_id_id,
+        {sc.course_id: sc.visible_components for sc in sc_list})
+    return sc_list
+
+
+@login_required()
+def marks_list(request, stud_id):
+    stud = get_object_or_404(Student, USN=stud_id)
+    sc_list = _student_marks_rows(stud)
 
     # Courses with something actually marked. Filtering on a truthy CIE instead
     # would silently drop a course genuinely sitting at zero - which is exactly
     # the one worth calling out - while keeping one that has simply not started.
     with_cie = [sc for sc in sc_list if sc.has_marks]
     return render(request, 'info/marks_list.html', {
+        'student': stud,
         'sc_list': sc_list,
         'sgpa': sgpa_for(sc_list),
         'cie_max': CIE_MAX,
@@ -745,6 +760,28 @@ def marks_list(request, stud_id):
         'best': max(with_cie, key=lambda sc: sc.get_cie(), default=None),
         'weakest': min(with_cie, key=lambda sc: sc.get_cie(), default=None),
     })
+
+
+@login_required()
+def marks_card(request, stud_id):
+    """The marks page as a one-page PDF.
+
+    Same access rule as the marks page itself, and the same numbers: the rows
+    are built by the same helper, so the paper and the screen cannot disagree.
+    """
+    stud = get_object_or_404(Student, USN=stud_id)
+    if not (request.user.is_superuser
+            or (request.user.is_student
+                and request.user.student.USN == stud.USN)):
+        raise PermissionDenied
+
+    sc_list = _student_marks_rows(stud)
+    buffer = report_card(stud, sc_list, sgpa_for(sc_list), timezone.localdate())
+
+    response = HttpResponse(buffer.read(), content_type='application/pdf')
+    response['Content-Disposition'] = (
+        'attachment; filename="%s_marks_card.pdf"' % stud.USN)
+    return response
 
 
 # teacher marks

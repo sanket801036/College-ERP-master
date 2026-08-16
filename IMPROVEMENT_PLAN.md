@@ -34,8 +34,9 @@ was found, so anything listed here as closed has already changed in the code.
 | 21 | Attendance entry made usable daily; real session states | TA1, TA2, TA3, TA4, TA5, TA7, TA8, TA-C4, TA-C6 | 20 |
 | 22 | Marks entry given the same treatment; edit and entry unified | TM1, TM2, TM3, TM4, TM8, TM9, TM10, rest of TM19 | 14 |
 | 23 | Absent is not zero; results are published rather than leaked on entry | TM5, MK20, TM15, MD2 | 22 |
+| 24 | Class rank and the PDF marks card | MK8, MK10 | 14 |
 
-**314 tests**, from zero.
+**328 tests**, from zero.
 
 ### The grading rules, decided
 
@@ -820,9 +821,9 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 | ~~MK5~~ | **Expected / required-marks calculator** ✅ (pass 19) | The counterpart to the attendance bunk calculator: *"You have CIE 38/50. You need **44/100** in the SEE to reach an A grade."* Solve the grade formula backwards for the SEE mark. This is the feature students actually want from a marks page | ✅ |
 | ~~MK6~~ | **Letter grade + grade points** ✅ (pass 19), VTU 10-point | Compute final = CIE + SEE/2 (out of 100), then map to a grade band. Show provisional grade while the SEE is pending | ✅ |
 | ~~MK7~~ | **SEE eligibility flag** ✅ (pass 19), CIE 20/50. Undecided rather than False while components are outstanding — flagging a course that has not started as already failed was the bug the first render caught | Most colleges require a minimum CIE to sit the final exam. Flag any course where CIE is below the cut-off | ✅ (threshold configurable) |
-| MK8 | **Class rank / percentile** | "Rank 12 of 45" for the student's *own* position — standard in Indian colleges and privacy-safe, since each student sees only their own rank. Do **not** build a public leaderboard | ✅ |
+| ~~MK8~~ | **Class rank / percentile** ✅ (pass 24). Ranked on the *published* components only - ranking on the entered set would let a withheld mark move someone's position, which leaks exactly what publication holds back. Own standing only; no leaderboard anywhere | "Rank 12 of 45" for the student's *own* position — standard in Indian colleges and privacy-safe, since each student sees only their own rank. Do **not** build a public leaderboard | ✅ |
 | ~~MK9~~ | **Weakest/strongest subject callout** ✅ (pass 19) | "Strongest: DBMS (46/50) · Needs work: OS (21/50)" | ✅ |
-| MK10 | **Print / PDF report card** | `reportlab` is installed and still completely unused. A proper marks card with the college header is a very demo-able artifact | ✅ |
+| ~~MK10~~ | **PDF marks card** ✅ (pass 24). `info/reports.py`, built from the same rows the marks page renders so paper and screen cannot disagree. `reportlab` finally does something | `reportlab` is installed and still completely unused. A proper marks card with the college header is a very demo-able artifact | ✅ |
 
 #### Phase B — Analysis & insight
 
@@ -1799,15 +1800,22 @@ charts reuse the same geometry-in-Python, SVG-in-template shape.
    the grade logic on `StudentCourse`, so a distribution is now an aggregate
    over existing properties rather than a query rewrite
 2. **D1, D2, D7** — the admin analytics strip
-3. **MK8, MK10** — class rank and the PDF report card. `reportlab` has been an
-   installed, unused dependency from the start, and every number a report card
-   needs is now computed on `StudentCourse`
+3. **FE3, FE10** — PDF fee receipts. `info/reports.py` now exists and the
+   marks card is a working example to copy; a receipt is the same shape
 4. **MK18 / TM16 / AT20** — the request-and-approve workflows (re-evaluation,
    attendance correction, leave). All the same state machine, so §7.2.x's note
    applies: build it once and apply it three times, rather than three times
 
-**One thing to know before adding charts:** Django's `{# #}` comment is
-single-line only. A multi-line one is not a comment — the text renders into the
+**Two things to know before adding pages.**
+
+*PDF layout is not visible in the text.* The marks card's first version
+accumulated column widths and drew three of its five columns at x = 872, 1323
+and 1828pt on a 595pt page. Every string was in the file and readable by any
+text extractor; none of them were on the paper. `test_report_card.py` now
+asserts every drawn point sits inside the page — check coordinates, not just
+content.
+
+*Django's `{# #}` comment is single-line only.* A multi-line one is not a comment — the text renders into the
 page, and inside an `<svg>` it does so invisibly. Three had accumulated before
 pass 18 caught one that landed outside an SVG; `test_charts.py` now fails the
 build on any multi-line `{# #}` in the template tree.
