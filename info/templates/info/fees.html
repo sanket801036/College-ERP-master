@@ -64,6 +64,25 @@
             </td>
             <td>{{ f.due_date }}</td>
           </tr>
+          {% for t in f.transactions.all %}
+          {% comment %}
+          Payment history, with a receipt per payment. The ledger has recorded
+          all of this since transactions replaced the running total; none of it
+          had anywhere to be shown.
+          {% endcomment %}
+          <tr class="erp-payment-row">
+            <td class="text-muted small">&#8627; {{ t.receipt_no }}</td>
+            <td class="text-muted small" colspan="2">
+              {{ t.paid_on }} &middot; {{ t.mode }}{% if t.reference %} &middot; {{ t.reference }}{% endif %}
+            </td>
+            <td class="text-muted small">&#8377;{{ t.amount }}</td>
+            <td colspan="3">
+              <a class="small" href="{% url 'fee_receipt' t.id %}">
+                <i class="fas fa-file-pdf" aria-hidden="true"></i> Receipt
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
           {% empty %}
           <tr><td colspan="7">No fee records yet.</td></tr>
           {% endfor %}

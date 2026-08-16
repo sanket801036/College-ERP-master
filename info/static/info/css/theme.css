@@ -668,3 +668,10 @@ body {
   border-color: var(--erp-danger);
   background: var(--erp-danger-tint);
 }
+
+/* Payment rows sit under the fee they belong to, so they read as detail
+   rather than as more fees. */
+.erp-payment-row > td {
+  background: var(--erp-bg);
+  border-top: 0;
+}

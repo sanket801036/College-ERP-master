@@ -35,8 +35,9 @@ was found, so anything listed here as closed has already changed in the code.
 | 22 | Marks entry given the same treatment; edit and entry unified | TM1, TM2, TM3, TM4, TM8, TM9, TM10, rest of TM19 | 14 |
 | 23 | Absent is not zero; results are published rather than leaked on entry | TM5, MK20, TM15, MD2 | 22 |
 | 24 | Class rank and the PDF marks card | MK8, MK10 | 14 |
+| 25 | Fee receipts, payment history and bulk assignment; messages finally shown | FE3, FE10, FE14, rest of FE2 | 15 |
 
-**328 tests**, from zero.
+**343 tests**, from zero.
 
 ### The grading rules, decided
 
@@ -87,7 +88,7 @@ their **features**.
 | **Marks entry - teacher** (§7.7) | 🟢 secured, validated, entry rebuilt | Pass 22 landed the max-marks hint, live inline validation, keyboard entry, running statistics, the previous component alongside, sorting and the unsaved-changes guard, and folded the separate edit template into this one. Still open: TM5 (absent-vs-zero, needs a flag on `Marks`), TM6 (draft save), TM7 (bulk import), TM11-TM14 (post-entry statistics and export), TM15 (publication control), TM16 (re-evaluation queue), TM24 (confirmation screen) |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
 | **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
-| **Fees** (§7.6) | 🟢 ledger rebuilt | No PDF receipts, bulk assignment to a class, defaulters report, collection charts, pagination, waivers, instalments, late fees or reminders. FE31 (a teacher can list fees but not open one) stands |
+| **Fees** (§7.6) | 🟢 ledger rebuilt, receipts and bulk assignment added | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class. Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE17 (pagination and filters), FE19-FE23 (waivers, instalments, late fees, reminders, year tagging). **FE31 still stands and needs a decision** - see below |
 | **Dashboards** (§6) | 🟢 rebuilt | No charts anywhere, no today's-schedule strip, dark mode, global search, notification badge or breadcrumbs |
 | **Accounts** (§7.9) | 🟢 creation and passwords fixed | No profile editing, photo upload, student directory, bulk import, edit/deactivate, or soft delete |
 | **API** (§7.10) | 🟢 working | No OpenAPI docs, pagination, teacher/admin endpoints, write endpoints, throttling or versioning |
@@ -1248,8 +1249,8 @@ Published (15)
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
 | FE1 | **`FeeTransaction` model** | One `Fee` → many transactions: `amount`, `paid_on`, `mode`, `reference`, `received_by`, `note`, `receipt_no`. `Fee.paid_amount` becomes a derived `Sum` instead of a stored value that gets clobbered. This single change unlocks FE2–FE6 and fixes FE18 | ❌ new model |
-| FE2 | **Payment history on the student page** | "₹5,000 on 12 Aug via UPI · ₹5,000 on 3 Sep via cash" — currently impossible to display because the data was never kept | ❌ (with FE1) |
-| FE3 | **Receipts** | Sequential receipt number per payment, downloadable PDF with college header. `reportlab` is installed and still unused — this is its most natural use in the whole project | ❌ (with FE1) |
+| ~~FE2~~ | **Payment history on the student page** ✅ **Now actually done (pass 25).** FE1 landed the model in pass 10 and this was recorded as closed with it, but the student page never rendered any of it - a balance could drop with no record of when or how | "₹5,000 on 12 Aug via UPI · ₹5,000 on 3 Sep via cash" — currently impossible to display because the data was never kept | ❌ (with FE1) |
+| ~~FE3~~ | **Receipts** ✅ (pass 25). Sequential receipt number, downloadable PDF | Sequential receipt number per payment, downloadable PDF with college header. `reportlab` is installed and still unused — this is its most natural use in the whole project | ❌ (with FE1) |
 | FE4 | **Payment mode** | Cash / UPI / Card / Cheque / Bank transfer, plus a reference number for reconciliation | ❌ (with FE1) |
 | FE5 | **Who recorded it** | `received_by` FK to `User` — accountability for cash handling, and the audit trail an interviewer will ask about | ❌ (with FE1) |
 | FE6 | **Reversal / correction** | Wrong entry gets a compensating reversal transaction, never a silent edit — how financial records are actually kept | ❌ (with FE1) |
@@ -1261,7 +1262,7 @@ Published (15)
 | FE7 | **Due countdown + urgency** | "Tuition Fee ₹12,000 — due in 6 days" ramping to red once overdue. Same component as B5 on the dashboard | ✅ `due_date` |
 | FE8 | **Overdue banner** | Persistent warning while anything is past due | ✅ |
 | FE9 | **Fee summary by type** | Tuition / Exam / Hostel / Library totals rather than one flat list | ✅ |
-| FE10 | **Download receipt** | Per payment (needs FE1/FE3) | ❌ |
+| ~~FE10~~ | **Download receipt** ✅ (pass 25) | Per payment (needs FE1/FE3) | ❌ |
 | FE11 | **Payment instructions panel** | Bank details, UPI QR, office hours — what a student actually needs next after seeing a balance | ⚠️ config |
 | FE12 | **Online payment (mock gateway)** | A simulated Razorpay/Stripe checkout flow: order creation, callback handling, idempotent confirmation, failure paths. Clearly labelled as a demo — **no real credentials, no real money**. Payment-flow correctness (idempotency, webhook replay, partial failure) is a strong senior-level talking point | ❌ |
 | FE13 | **Better Excel export** | Existing export is decent — add totals row, date of export, and the transaction history once FE1 lands | ✅ |
@@ -1270,7 +1271,7 @@ Published (15)
 
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
-| FE14 | **Bulk fee assignment** | Assign "Semester 5 Exam Fee ₹2,000" to an entire class or department in one action, rather than adding it student by student. This is the most obviously missing staff feature | ✅ views only |
+| ~~FE14~~ | **Bulk fee assignment** ✅ (pass 25). One statement for the class, and re-running the same assignment skips students who already have it rather than doubling their fees | Assign "Semester 5 Exam Fee ₹2,000" to an entire class or department in one action, rather than adding it student by student. This is the most obviously missing staff feature | ✅ views only |
 | FE15 | **Defaulters report** | Overdue + balance > 0, sorted by amount, filterable by class/department, exportable. Same as D3 on the admin dashboard | ✅ |
 | FE16 | **Collection dashboard** | Collected vs. outstanding, by department, class and fee type, with a trend over time | ✅ |
 | FE17 | **Pagination + filters on `/fees/`** | The staff list currently returns **every fee record in the institution** unpaginated. The query itself is efficient (6 queries thanks to `select_related`) — the problem is page size, not query count. Add pagination plus filters for status, class, fee type and date range | ✅ |
@@ -1778,11 +1779,20 @@ been settled in code:
 - **Forgot Password / OTP** — **deferred**, because CF3 blocks it. The link
   opens a modal pointing at the support form instead of dead-ending
 
-### Two decisions still needed — each one blocks work that is otherwise ready
+### Three decisions still needed — each one blocks work that is otherwise ready
 
-1. **SMTP credentials (CF3)** — a Gmail App Password is enough. This single
+1. **Who may see a student's fees (FE31)** — `t_fees` lets any teacher list
+   every fee record in the institution, but `fees(stud_id)` allows only the
+   student or an administrator, so a teacher sees rows and gets bounced on
+   clicking one. The two views have to agree. Recommendation: make fees
+   admin-only. Collection is an accounts function, a subject teacher has no
+   need for a student's payment history, and it closes the wider exposure of
+   the whole institution's ledger to every teacher account. The alternative -
+   opening `fees(stud_id)` to teachers - is a one-line change if the college
+   works the other way
+2. **SMTP credentials (CF3)** — a Gmail App Password is enough. This single
    decision unblocks §5.1 (OTP reset), FE22, NB17, AT23 and MK21
-2. **Media storage (CF1)** — S3, Cloudinary or drop photos/attachments from
+3. **Media storage (CF1)** — S3, Cloudinary or drop photos/attachments from
    scope. Render's disk is ephemeral, so "just configure `MEDIA_ROOT`" is not an
    option. Blocks AC16, NB8, TA6
 
@@ -1800,8 +1810,8 @@ charts reuse the same geometry-in-Python, SVG-in-template shape.
    the grade logic on `StudentCourse`, so a distribution is now an aggregate
    over existing properties rather than a query rewrite
 2. **D1, D2, D7** — the admin analytics strip
-3. **FE3, FE10** — PDF fee receipts. `info/reports.py` now exists and the
-   marks card is a working example to copy; a receipt is the same shape
+3. **FE16, FE17** — the fee collection dashboard and pagination/filters on a
+   staff list that still returns every fee record in the institution
 4. **MK18 / TM16 / AT20** — the request-and-approve workflows (re-evaluation,
    attendance correction, leave). All the same state machine, so §7.2.x's note
    applies: build it once and apply it three times, rather than three times

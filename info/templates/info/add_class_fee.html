@@ -1,0 +1,24 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Raise a fee for a class{% endblock %}
+
+{% block content %}
+<div class="card mb-3" style="max-width: 620px">
+  <div class="card-header">
+    <i class="fas fa-layer-group"></i><b>Raise a fee for a whole class</b>
+  </div>
+  <div class="card-body">
+    <p class="text-muted small">
+      Every student in the class gets this fee. Anyone who already has an
+      identical one is skipped, so running it twice cannot double a class's
+      fees.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary" type="submit">Raise fee</button>
+      <a class="btn btn-link" href="{% url 't_fees' %}">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -138,3 +138,82 @@ def report_card(student, rows, sgpa, generated_on):
     pdf.save()
     buffer.seek(0)
     return buffer
+
+
+def payment_receipt(transaction, generated_on):
+    """A receipt for one payment.
+
+    Deliberately one payment rather than a statement: a receipt is proof that a
+    specific sum arrived on a specific day, which is what an office asks for.
+    The running balance is shown for context but the amount at the top is the
+    only figure the document is actually certifying.
+    """
+    from io import BytesIO
+
+    fee = transaction.fee
+    student = fee.student
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    pdf.setTitle('%s - receipt' % transaction.receipt_no)
+
+    _header(pdf, student, 'Payment receipt')
+
+    y = PAGE_H - 62 * mm
+    pdf.setFont('Helvetica-Bold', 20)
+    pdf.setFillColor(INK)
+    pdf.drawString(MARGIN, y, 'Rs. %s' % transaction.amount)
+    pdf.setFont('Helvetica', 9)
+    pdf.setFillColor(MUTED)
+    pdf.drawString(MARGIN, y - 7 * mm,
+                   'received on %s' % transaction.paid_on.strftime('%d %b %Y'))
+
+    pdf.setFont('Helvetica-Bold', 11)
+    pdf.setFillColor(INK)
+    pdf.drawRightString(PAGE_W - MARGIN, y, transaction.receipt_no)
+
+    y -= 20 * mm
+    pdf.setStrokeColor(RULE)
+    pdf.line(MARGIN, y, PAGE_W - MARGIN, y)
+    y -= 9 * mm
+
+    detail = [
+        ('Fee', fee.fee_type),
+        ('Description', fee.description or '-'),
+        ('Payment mode', transaction.mode),
+        ('Reference', transaction.reference or '-'),
+        ('Received by', transaction.received_by.username
+         if transaction.received_by else '-'),
+    ]
+    for label, value in detail:
+        pdf.setFont('Helvetica', 9)
+        pdf.setFillColor(MUTED)
+        pdf.drawString(MARGIN, y, label)
+        pdf.setFillColor(INK)
+        pdf.drawString(MARGIN + 45 * mm, y, str(value)[:60])
+        y -= 7 * mm
+
+    y -= 3 * mm
+    pdf.setStrokeColor(RULE)
+    pdf.line(MARGIN, y, PAGE_W - MARGIN, y)
+    y -= 9 * mm
+
+    for label, value in (('Fee total', fee.amount),
+                         ('Paid to date', fee.paid_amount),
+                         ('Balance', fee.balance)):
+        pdf.setFont('Helvetica-Bold' if label == 'Balance' else 'Helvetica', 9)
+        pdf.setFillColor(INK if label == 'Balance' else MUTED)
+        pdf.drawString(MARGIN, y, label)
+        pdf.drawRightString(PAGE_W - MARGIN, y, 'Rs. %s' % value)
+        y -= 7 * mm
+
+    pdf.setFont('Helvetica', 8)
+    pdf.setFillColor(MUTED)
+    pdf.drawString(MARGIN, 15 * mm,
+                   'Generated %s. Computer-generated receipt; '
+                   'no signature required.' % generated_on.strftime('%d %b %Y'))
+
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+    return buffer

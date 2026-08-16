@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
-    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest, NoticeRead, notice_category_choice, \
+    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest, NoticeRead, notice_category_choice, FeeTransaction, \
     CIE_MAX, SEE_MAX, SEE_ELIGIBILITY_CIE, sgpa_for, \
     CLASS_PENDING, CLASS_TAKEN, CLASS_CANCELLED, test_name
 from django.urls import reverse, reverse_lazy
@@ -19,10 +19,11 @@ from django.views.decorators.http import require_POST
 from django.contrib.auth import get_user_model
 from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
                         ExtraClassForm, FeeForm, FeeTransactionForm,
-                        ErpLoginForm, SupportRequestForm, NoticeForm)
+                        ErpLoginForm, SupportRequestForm, NoticeForm,
+                        BulkFeeForm)
 from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
                              owns_marks_class, owns_teacher_id, assert_teaches)
-from info.reports import report_card
+from info.reports import payment_receipt, report_card
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
@@ -1054,7 +1055,9 @@ def fees(request, stud_id):
     if not (request.user.is_superuser or (request.user.is_student and request.user.student.USN == stud.USN)):
         return redirect('/')
 
-    fee_list = stud.fees.all()
+    # The transaction model landed without the page that shows it, so a student
+    # could see a balance drop but never when or how the money was recorded.
+    fee_list = stud.fees.prefetch_related('transactions')
     total_amount = sum(f.amount for f in fee_list)
     total_paid = sum(f.paid_amount for f in fee_list)
     context = {
@@ -1065,6 +1068,29 @@ def fees(request, stud_id):
         'total_balance': total_amount - total_paid,
     }
     return render(request, 'info/fees.html', context)
+
+
+@login_required()
+def fee_receipt(request, transaction_id):
+    """A PDF receipt for one payment.
+
+    Same access rule as the fee page the payment appears on: the student it
+    belongs to, or an administrator.
+    """
+    transaction = get_object_or_404(
+        FeeTransaction.objects.select_related('fee__student', 'received_by'),
+        id=transaction_id)
+    student = transaction.fee.student
+    if not (request.user.is_superuser
+            or (request.user.is_student
+                and request.user.student.USN == student.USN)):
+        raise PermissionDenied
+
+    buffer = payment_receipt(transaction, timezone.localdate())
+    response = HttpResponse(buffer.read(), content_type='application/pdf')
+    response['Content-Disposition'] = (
+        'attachment; filename="%s.pdf"' % transaction.receipt_no)
+    return response
 
 
 @login_required()
@@ -1124,6 +1150,40 @@ def add_fee(request):
         form = FeeForm()
 
     return render(request, 'info/add_fee.html', {'form': form})
+
+
+@login_required()
+def add_class_fee(request):
+    """Raise one fee against a whole class.
+
+    Sixty identical form submissions for a semester exam fee was the most
+    obviously missing staff action in this module.
+    """
+    if not (request.user.is_superuser or request.user.is_teacher):
+        return redirect('/')
+
+    if request.method == 'POST':
+        form = BulkFeeForm(request.POST)
+        if form.is_valid():
+            fees, skipped = form.build()
+            # One statement, and re-running the same assignment cannot double a
+            # class's fees.
+            Fee.objects.bulk_create(fees)
+            if fees:
+                messages.success(
+                    request, 'Raised %s for %d student%s.'
+                    % (form.cleaned_data['fee_type'], len(fees),
+                       '' if len(fees) == 1 else 's'))
+            if skipped:
+                messages.info(
+                    request, '%d student%s already had this fee and %s skipped.'
+                    % (skipped, '' if skipped == 1 else 's',
+                       'was' if skipped == 1 else 'were'))
+            return redirect('t_fees')
+    else:
+        form = BulkFeeForm()
+
+    return render(request, 'info/add_class_fee.html', {'form': form})
 
 
 @login_required()

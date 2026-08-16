@@ -5,9 +5,9 @@ from django.utils.crypto import get_random_string
 
 from django.utils import timezone
 
-from info.models import (AttendanceRange, Fee, FeeTransaction, Notice,
+from info.models import (AttendanceRange, Class, Fee, FeeTransaction, Notice,
                          SupportRequest, Student, Teacher,
-                         notice_audience_choice)
+                         fee_type_choice, notice_audience_choice)
 
 User = get_user_model()
 
@@ -223,6 +223,61 @@ class FeeForm(forms.ModelForm):
         if amount <= 0:
             raise forms.ValidationError('Amount must be greater than zero.')
         return amount
+
+
+class BulkFeeForm(forms.Form):
+    """Raise one fee against every student in a class.
+
+    Adding a semester exam fee to a sixty-student intake meant sixty identical
+    form submissions, which is the most obviously missing staff action in the
+    module.
+    """
+
+    class_id = forms.ModelChoiceField(queryset=None, label='Class')
+    fee_type = forms.ChoiceField(choices=fee_type_choice)
+    description = forms.CharField(max_length=200, required=False)
+    amount = forms.DecimalField(max_digits=10, decimal_places=2)
+    due_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['class_id'].queryset = Class.objects.all()
+
+    def clean_amount(self):
+        amount = self.cleaned_data['amount']
+        if amount <= 0:
+            raise forms.ValidationError('Amount must be greater than zero.')
+        return amount
+
+    def students(self):
+        return self.cleaned_data['class_id'].student_set.all()
+
+    def existing(self):
+        """Students who already have this exact fee.
+
+        Running the same bulk assignment twice is an easy mistake, and silently
+        doubling a class's fees is an expensive one - so these are skipped and
+        reported rather than duplicated.
+        """
+        return set(Fee.objects
+                   .filter(student__in=self.students(),
+                           fee_type=self.cleaned_data['fee_type'],
+                           amount=self.cleaned_data['amount'],
+                           due_date=self.cleaned_data['due_date'])
+                   .values_list('student_id', flat=True))
+
+    def build(self):
+        """(fees to create, number skipped as already raised)."""
+        already = self.existing()
+        fees = [
+            Fee(student=student,
+                fee_type=self.cleaned_data['fee_type'],
+                description=self.cleaned_data['description'],
+                amount=self.cleaned_data['amount'],
+                due_date=self.cleaned_data['due_date'])
+            for student in self.students() if student.pk not in already
+        ]
+        return fees, len(already)
 
 
 class FeeTransactionForm(forms.ModelForm):
