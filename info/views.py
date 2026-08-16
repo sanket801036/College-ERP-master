@@ -33,6 +33,13 @@ logger = logging.getLogger(__name__)
 # a shared machine does not stay signed in indefinitely.
 REMEMBER_ME_SECONDS = 60 * 60 * 24 * 14
 
+# AttendanceClass.status is a bare integer with no choices on the field.
+# Naming the one value read outside cancel_class at least stops it being a
+# magic 2 in two places.
+CLASS_CANCELLED = 2
+
+WEEKDAY_INDEX = {name: index for index, (name, _) in enumerate(DAYS_OF_WEEK)}
+
 # Create your views here.
 
 
@@ -247,7 +254,7 @@ def t_class_date(request, assign_id):
 @owns_attendance_class('ass_c_id')
 def cancel_class(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
-    assc.status = 2
+    assc.status = CLASS_CANCELLED
     assc.save()
     AuditLog.record(
         actor=request.user, action='attendance.cancelled', target=assc,
@@ -492,18 +499,67 @@ def t_timetable(request, teacher_id):
     return render(request, 'info/t_timetable.html', {'class_matrix': class_matrix})
 
 
+def _next_weekday(day, today=None):
+    """The next date `day` falls on, counting today as the next occurrence.
+
+    A timetable slot is a recurring weekday, but a cancellation belongs to one
+    date - so answering "is this teacher free" needs a date to look at.
+    Returns None for a day name that is not in DAYS_OF_WEEK, in which case
+    callers fall back to the static timetable.
+    """
+    target = WEEKDAY_INDEX.get(day)
+    if target is None:
+        return None
+    today = today or timezone.localdate()
+    return today + timedelta(days=(target - today.weekday()) % 7)
+
+
 @login_required()
 @teacher_required
 def free_teachers(request, asst_id):
-    asst = get_object_or_404(AssignTime, id=asst_id)
-    ft_list = []
-    t_list = Teacher.objects.filter(assign__class_id__id=asst.assign.class_id_id)
-    for t in t_list:
-        at_list = AssignTime.objects.filter(assign__teacher=t)
-        if not any([True if at.period == asst.period and at.day == asst.day else False for at in at_list]):
-            ft_list.append(t)
+    """Who across the college could cover this slot.
 
-    return render(request, 'info/free_teachers.html', {'ft_list': ft_list})
+    The candidate pool used to be Teacher.objects.filter(assign__class_id=...),
+    i.e. only teachers already teaching this class - so the page answered a
+    much narrower question than its title and could never find an outside
+    substitute. It also joined across `assign`, which repeated any teacher
+    holding two courses for the class, and then ran one query per candidate to
+    decide availability in Python.
+    """
+    asst = get_object_or_404(
+        AssignTime.objects.select_related('assign__class_id', 'assign__course',
+                                          'assign__teacher'),
+        id=asst_id)
+
+    date = _next_weekday(asst.day)
+
+    # A cancelled session frees its teacher up even though the timetable still
+    # shows them as teaching - which is the case a substitute is being looked
+    # for in the first place.
+    cancelled_assigns = []
+    if date is not None:
+        cancelled_assigns = list(
+            AttendanceClass.objects
+            .filter(date=date, status=CLASS_CANCELLED)
+            .values_list('assign_id', flat=True))
+
+    busy = (AssignTime.objects
+            .filter(day=asst.day, period=asst.period)
+            .exclude(assign_id__in=cancelled_assigns)
+            .values_list('assign__teacher_id', flat=True))
+
+    # exclude() against the collected ids rather than filtering across the
+    # assign join, so a teacher cannot come back twice.
+    ft_list = (Teacher.objects
+               .exclude(id__in=busy)
+               .select_related('dept')
+               .order_by('name'))
+
+    return render(request, 'info/free_teachers.html', {
+        'ft_list': ft_list,
+        'slot': asst,
+        'date': date,
+    })
 
 
 # student marks

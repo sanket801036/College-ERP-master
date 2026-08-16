@@ -50,7 +50,8 @@ class ClassAdmin(admin.ModelAdmin):
 
 
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'dept')
+    list_display = ('id', 'name', 'dept', 'credits')
+    list_editable = ('credits',)
     search_fields = ('id', 'name', 'dept__name')
     ordering = ['dept', 'id']
 

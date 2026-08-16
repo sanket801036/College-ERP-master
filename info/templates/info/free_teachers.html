@@ -8,10 +8,19 @@
 <div class="card mb-3">
   <div class="card-header"><i class="fas fa-user-check"></i><b>Free Teachers</b></div>
   <div class="card-body">
+    <p class="text-muted">
+      Teachers with nothing scheduled in
+      <b>{{ slot.day }}, {{ slot.period }}</b>{% if date %} ({{ date|date:"d M Y" }}){% endif %}
+      &mdash; anyone who could cover
+      {{ slot.assign.course.shortname }} for {{ slot.assign.class_id }}.
+    </p>
+
     <ul class="list-group">
       {% for t in ft_list %}
         <li class="list-group-item d-flex align-items-center">
-          <span class="erp-badge erp-badge-success mr-2">Free</span> {{ t }}
+          <span class="erp-badge erp-badge-success mr-2">Free</span>
+          {{ t.name }}
+          <small class="text-muted ml-auto">{{ t.dept.name }}</small>
         </li>
       {% empty %}
         <li class="list-group-item text-muted">No free teachers for this slot.</li>

@@ -86,6 +86,13 @@ class Course(models.Model):
     id = models.CharField(primary_key='True', max_length=50)
     name = models.CharField(max_length=50)
     shortname = models.CharField(max_length=50, default='X')
+    # Without this a credit-weighted SGPA/CGPA cannot be computed at all - an
+    # average of course percentages weights a 1-credit lab the same as a
+    # 4-credit core paper. 4 is the common default for a theory course; set it
+    # per course in the admin.
+    credits = models.PositiveSmallIntegerField(
+        default=4, validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text='Credit weight used for SGPA/CGPA.')
 
     def __str__(self):
         return self.name
