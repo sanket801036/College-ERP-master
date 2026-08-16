@@ -22,9 +22,11 @@
       {% if notice.expires_at and not notice.is_expired %}&middot; hidden after {{ notice.expires_at }}{% endif %}
     </p>
 
-    {# Notices are plain text and Django escapes them on the way out. If a rich
-       text editor is ever added here, it must be sanitised first - otherwise
-       any teacher account can inject script into every student's page. #}
+    {% comment %}
+    Notices are plain text and Django escapes them on the way out. If a rich
+    text editor is ever added here, it must be sanitised first - otherwise any
+    teacher account can inject script into every student's page.
+    {% endcomment %}
     <div style="white-space: pre-wrap;">{{ notice.message }}</div>
 
     {% if can_edit %}

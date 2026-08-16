@@ -1,5 +1,5 @@
 {% extends 'info/base.html' %}
-{% load static %}
+{% load static charts %}
 
 {% block title %}Attendance{% endblock %}
 
@@ -29,13 +29,12 @@
             {% if a.has_classes %}
               <td>{{ a.att_class }}</td>
               <td>{{ a.total_class }}</td>
-              <td>
-                {% if a.attendance < 75 %}
-                  <span class="erp-badge erp-badge-danger">{{ a.attendance }}%</span>
-                {% else %}
-                  <span class="erp-badge erp-badge-success">{{ a.attendance }}%</span>
-                {% endif %}
-              </td>
+              {% comment %}
+              A meter rather than a ring: the question is "am I above the
+              line", and a two-slice donut answers it worse than a track with
+              the 75% mark drawn on it.
+              {% endcomment %}
+              <td class="text-left">{% attendance_meter a.attendance %}</td>
               <td class="text-left">
                 {% if a.attendance < 75 %}
                   Attend <b>{{ a.classes_to_attend }}</b> more in a row to reach 75%
@@ -46,8 +45,10 @@
                 {% endif %}
               </td>
             {% else %}
-              {# Without this the row reads as a red 0%, which looks like a
-                 failing student rather than a course that hasn't met yet. #}
+              {% comment %}
+              Without this the row reads as a red 0%, which looks like a
+              failing student rather than a course that hasn't met yet.
+              {% endcomment %}
               <td colspan="4" class="text-muted">No classes held yet</td>
             {% endif %}
           </tr>

@@ -1,0 +1,24 @@
+{% load l10n %}
+{% comment %}
+One ratio against a limit. Colour is never the only channel: the badge carries
+an icon and a word, and the number is printed in ink beside the bar.
+
+The inline widths are geometry, so they are unlocalised for the same reason
+the SVG coordinates are - "width: 71,4%" is not a CSS length.
+{% endcomment %}
+<div class="erp-meter erp-meter-{{ zone }}">
+  <div class="erp-meter-head">
+    <span class="erp-meter-value">{{ percent }}%</span>
+    <span class="erp-meter-state">
+      <i class="fas {{ icon }}" aria-hidden="true"></i> {{ label }}
+    </span>
+  </div>
+  <div class="erp-meter-track"
+       role="meter"
+       aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100"
+       aria-label="Attendance {{ percent }} percent, {{ label }}, {{ threshold }} percent required">
+    <div class="erp-meter-fill" style="width: {{ width|unlocalize }}%"></div>
+    <div class="erp-meter-threshold" style="left: {{ threshold|unlocalize }}%"
+         title="{{ threshold }}% required"></div>
+  </div>
+</div>

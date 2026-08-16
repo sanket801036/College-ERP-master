@@ -25,8 +25,12 @@ was found, so anything listed here as closed has already changed in the code.
 | 12 | Password change, forced reset on issued accounts, timezone | AC10, AC14, CF4 | 10 |
 | 13 | Audit trail across attendance, marks and fees | TA-S7, MK19, FE29, D6 | 10 |
 | 14 | Dashboards rebuilt around standing and pending work | AT1, B1, B5, B10, C1, C2, C3, D3, MK4 | 16 |
+| 15 | Login page rebuilt, plus the support-request queue | §5 items 2, 4, 5, 6, 7, 8; §5.2 (`SupportRequest`), D5 | 15 |
+| 16 | Notice board built out | NB1–NB7, NB9, NB10, NB12, NB13, NB16, NB18, NB19 | 28 |
+| 17 | Free-teacher finder made to actually find free teachers; `Course.credits` | FT7, FT8, FT9, FT10, MK14 (field only) | 13 |
+| 18 | Charts: an inline-SVG/CSS toolkit, attendance meters and the trend line | E3, B3, B2, AT12, part of AT4, part of QA1 | 27 |
 
-**130 tests**, from zero.
+**213 tests**, from zero.
 
 ### Query counts, measured before and after
 
@@ -44,17 +48,20 @@ students and assert the query count is unchanged.
 
 ### Page-by-page status
 
-Fourteen passes went almost entirely into correctness - crashes, data loss,
-authorization, query counts - plus the dashboards. Several pages have had their
-**bugs** fixed but not their **features**, and two have not been touched at all.
+The first fourteen passes went almost entirely into correctness - crashes, data
+loss, authorization, query counts - plus the dashboards. Passes 15-18 then took
+the two untouched pages (login, notice board), fixed the free-teacher finder and
+started the chart work. Every module has now had a correctness pass; what
+remains is features, and several pages still have their **bugs** fixed but not
+their **features**.
 
 | Page | State | What is left |
 |---|---|---|
-| **Login** (§5) | 🔴 **untouched** | Every item: role selector, password eye toggle, Remember Me, Forgot Password, button alignment, error styling, "Contact Administrator". §5.1 (OTP reset) and §5.2 (`SupportRequest`) are both still unbuilt |
-| **Notice board** (§7.5) | 🔴 **untouched** | Everything except NB21: no search, date filters, pagination, detail page, unread/read tracking, category tags, pinning, draft/publish, edit/delete, expiry, attachments. NB18 (unvalidated POST) is still live |
-| **Free-teacher finder** (§7.8.2) | 🟠 authorization only | FT7 still scopes the search to teachers *already teaching that class*, so it cannot find a substitute; FT8 (duplicate rows, no `.distinct()`) and FT9 (a query per teacher) both stand |
-| **Marks - student** (§7.2) | 🟠 bugs fixed, page unchanged | Still the same eight-column table. No GPA/score card, accordion, CIE progress bar, letter grades, required-marks calculator, SEE eligibility, rank, PDF report card, or charts. `Course.credits` (MK14) is still missing, so a real CGPA is not computable |
-| **Attendance - student** (§7.1) | 🟢 summary page done | The detail page is untouched: no calendar heatmap, month grouping, filters, trend chart, day-of-week insight, streaks, or export. Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
+| **Login** (§5) | 🟢 rebuilt | §5.1 (OTP reset) is the only part unbuilt, and it is blocked on CF3 (no SMTP host). "Forgot password?" currently opens a modal pointing at the admin rather than a real reset flow |
+| **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB17 (email on publish, blocked on CF3), NB22 (should a teacher be able to address the whole institution?) |
+| **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
+| **Marks - student** (§7.2) | 🟠 bugs fixed, page unchanged | Still the same eight-column table. No GPA/score card, accordion, CIE progress bar, letter grades, required-marks calculator, SEE eligibility, rank, PDF report card, or charts. `Course.credits` now exists, but nothing computes a grade point yet — see the note under MK14 |
+| **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
 | **Attendance - teacher** (§7.3) | 🟢 secured, queue on dashboard | Entry UX untouched: no mark-all-present default, live counter, keyboard entry, roster search, unsaved-changes guard, or bulk import. TA-C4 (magic status numbers) and TA-C6 (past sessions only) stand |
 | **Marks entry - teacher** (§7.7) | 🟢 secured and validated | No keyboard entry, live statistics, absent-vs-zero marker, draft save, bulk import, post-entry statistics, or publication control |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
@@ -64,27 +71,41 @@ authorization, query counts - plus the dashboards. Several pages have had their
 | **Accounts** (§7.9) | 🟢 creation and passwords fixed | No profile editing, photo upload, student directory, bulk import, edit/deactivate, or soft delete |
 | **API** (§7.10) | 🟢 working | No OpenAPI docs, pagination, teacher/admin endpoints, write endpoints, throttling or versioning |
 
-**The two that stand out:** the login page is where this review started and is
-still exactly as it was found, and the notice board is the only feature module
-with none of its bugs fixed.
+**What stands out now:** every module has had its correctness pass. What is
+left is either a feature build, or blocked on a piece of configuration nobody
+has credentials for yet.
 
 ### Still open, highest value first
 
-1. **CF3 + AC17** — email has no SMTP host configured, which blocks the OTP reset
-   flow (§5.1), fee reminders (FE22) and notice notifications (NB17). Needs real
-   credentials before any of it can be built
-2. **API13, API14–API20** — no OpenAPI/Swagger docs, and the API is still
-   student-only and read-only
-3. **§7.5 notice board** — no search, date filters, pagination, draft/publish
-   workflow or read tracking (NB1–NB6, NB10)
-4. **§6.5 Phase 2** — charts: attendance trend, marks distribution, fee
-   collection (B2, B3, C4, C6, D1, D2, E3)
+1. **CF3 + CF1** — the two config blockers. Email has no SMTP host, which blocks
+   the OTP reset flow (§5.1), fee reminders (FE22), notice notifications (NB17),
+   attendance alerts (AT23) and marks-release alerts (MK21). Media storage is
+   unconfigured *and* Render's disk is ephemeral, so profile photos (AC16),
+   notice attachments (NB8) and roster photos (TA6) need S3/Cloudinary, not just
+   a settings change. AC4 is done — accounts now collect an email address — so
+   CF3 is purely a credentials decision
+2. **MK14 follow-through** — `Course.credits` exists, but computing an SGPA/CGPA
+   from it needs a marks→grade-point scale, which is a policy decision, not a
+   code one. Pick the band (e.g. VTU's 10-point scale) and MK1, MK6 and MK7
+   unlock together
+3. **API13, API14–API20** — no OpenAPI/Swagger docs, and the API is still
+   student-only and read-only. API4 (a GET handler that writes), API11
+   (pagination) and API12 (tests) are also open
+4. **§6.5 Phase 2, the rest of the charts** — E3 is done (pass 18): an inline
+   SVG/CSS toolkit in `info/templatetags/charts.py`, no chart library and no CDN,
+   with B3 (per-course meters) and B2 (attendance trend) built on it. Still to
+   draw, all now cheap: C4/C6 (class performance, marks distribution),
+   D1/D2/D7 (admin analytics), MK11/MK12 (marks trend and cross-subject)
 5. **FE3, FE10, FE14** — receipts as PDF, and bulk fee assignment to a whole
    class instead of one student at a time
-6. **AC15, AC16, AC20** — profile editing, photo upload, student directory
-7. **IN4, IN5** — Docker and linting config
+6. **AC15, AC20** — profile editing and the student directory (there is still a
+   commented-out `student_search` URL in `info/urls.py`)
+7. **IN4, IN5** — Docker and linting config. CI exists; these do not
 8. **MD2, MD3, MD4, MD7** — model-layer tidying: string boolean defaults, stale
    hardcoded dates, a default FK to a class that may not exist, no `updated_at`
+9. **TA-C4** — `AttendanceClass.status` still has no `choices`. `CLASS_CANCELLED`
+   in `views.py` names the one value read outside `cancel_class`; the field
+   itself is still a bare integer
 
 ---
 
@@ -483,8 +504,8 @@ Brainstormed against the actual models in `info/models.py`. The **Data ready?** 
 | # | Feature | What it does | Data ready? | Effort |
 |---|---|---|---|---|
 | B1 | **"Classes you must attend" alert** | `AttendanceTotal.classes_to_attend` **already computes this** — "Attend 4 more DBMS classes to reach 75%". Surfacing it as a dashboard alert is nearly free and is the single most useful number to a real student | ✅ already a model property | **S — do this first** |
-| B2 | **Attendance trend chart** | Line/bar chart of attendance % per course, or week over week | ✅ `Attendance.date` | M |
-| B3 | **Subject-wise attendance donut** | Small ring per course, red under 75% — scannable in one glance | ✅ | S |
+| ~~B2~~ | **Attendance trend chart** | ✅ Done (pass 18) — see AT12 | ✅ `Attendance.date` | M |
+| ~~B3~~ | **Subject-wise attendance ~~donut~~ meter** | ✅ **Done (pass 18), as a meter rather than a ring.** A two-slice donut is a pie of two slices, and the reader's actual question is "am I above the line" — which a track with the 75% mark drawn on it answers directly and a ring does not. Green ≥75, amber 65–74, red below, each with an icon and a word so the state never rests on colour alone | ✅ | S |
 | B4 | **CIE / marks progress card** | `StudentCourse.get_cie()` already exists — show CIE per subject with a progress bar out of 50 | ✅ | S |
 | B5 | **Fee due countdown** | "Tuition Fee ₹12,000 due in 6 days" with an urgency color ramp; goes red once overdue | ✅ `Fee.due_date` + `.balance` | S |
 | B6 | **Exam countdown** | "Semester End Exam in 12 days" | ⚠️ needs an exam-date field or `AcademicEvent` | S |
@@ -528,7 +549,7 @@ Brainstormed against the actual models in `info/models.py`. The **Data ready?** 
 |---|---|---|---|---|
 | E1 | **Fix N+1 queries on dashboards** | `AttendanceTotal.attendance` fires 2 queries **per course per student**. A dashboard aggregating this is dozens of queries. Fix with `annotate()`/`aggregate()`. Being able to say "I profiled it, found N+1, cut 60 queries to 3" is a genuinely strong interview answer | ✅ | M |
 | E2 | **Cache expensive dashboard stats** | Django's cache framework, 5-minute TTL on admin aggregates | ✅ | S |
-| E3 | **Chart library** | Chart.js via CDN, or inline SVG to stay dependency-free. Needed by B2, C4, C6, D1, D2, D7 | ✅ | S |
+| ~~E3~~ | **Chart library** | ✅ **Done (pass 18).** Went with inline SVG + CSS over Chart.js on a CDN: the pages are server-rendered, static files go out through whitenoise, and a CDN script is one more thing to fail offline or behind a college proxy — it would also put the numbers out of reach of the print stylesheet. `info/templatetags/charts.py` computes geometry in Python; `attendance_meter` and `attendance_trend` are the two forms so far. Zero new dependencies | ✅ | S |
 | E4 | **`django-debug-toolbar` in dev** | Makes the N+1 work above visible and demonstrable | ✅ | S |
 | E5 | **Auto-refresh dashboard stats** | Poll (or WebSocket) so numbers update without a reload | ✅ | M |
 
@@ -654,7 +675,7 @@ Currently a flat, unpaginated list of every session with a green/red cell. Every
 | AT9 | **Calendar heatmap** | GitHub-contributions-style month grid — green = present, red = absent, grey = no class. Absence *patterns* become visible instantly in a way a list never shows | ✅ `Attendance.date` + `.status` |
 | AT10 | **Month grouping + collapse** | Group sessions under month headers with a per-month mini-summary ("August: 14/16 — 88%") | ✅ |
 | AT11 | **Filters** | Absent-only, date range, month picker | ✅ |
-| AT12 | **Attendance trend chart** | Running cumulative % across the semester — shows whether the student is recovering or sliding | ✅ |
+| ~~AT12~~ | **Attendance trend chart** | ✅ **Done (pass 18).** Running cumulative % across the semester, with the 75% rule drawn on it, above the session table on the detail page. Fewer than two sessions renders nothing — one point is a dot, not a trend | ✅ |
 | AT13 | **Day-of-week insight** | *"You've missed 60% of your Monday classes"* — a genuine behavioural insight, one `annotate` over `date__week_day` | ✅ |
 | AT14 | **Streaks** | "Current streak: 7 present · Longest: 15" — light gamification that costs almost nothing | ✅ |
 | AT15 | **Period/time context** | Show which period each session was (`AssignTime.period`), so "I always miss the 7:30 slot" becomes visible | ✅ |
@@ -793,7 +814,7 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 | MK11 | **Performance trend across internals** | Line chart of Internal 1 → 2 → 3 per course — shows improvement or decline over the semester | ✅ |
 | MK12 | **Radar/bar chart across subjects** | All courses on one chart, so relative strengths are visible at a glance | ✅ |
 | MK13 | **Comparison against class average** | "You: 38 · Class average: 31" per component. Aggregate only — never a per-classmate breakdown | ✅ |
-| MK14 | **Credits & true CGPA** | `Course` has **no `credits` field**, so a genuine credit-weighted GPA is not computable today. Either add `credits` to `Course` (small migration, unlocks real CGPA + SGPA) or keep it an unweighted average and label it as such. Recommend adding the field — CGPA is what a college ERP is expected to produce | ⚠️ `Course.credits` |
+| MK14 | **Credits & true CGPA** | 🟠 **Half done (pass 17).** `Course.credits` now exists — `PositiveSmallIntegerField`, default 4, bounded 1–10, editable inline in the admin list — so the weighting a credit-weighted SGPA/CGPA needs is finally recordable. What is *not* done is the computation, and it is blocked on a decision rather than on code: turning a mark into a grade point needs a chosen band (VTU's 10-point scale, or whatever the college uses). Pick the scale and MK1, MK6 and MK7 fall out of it together | 🟠 field added, scale undecided |
 | MK15 | **Semester-over-semester history** | SGPA per semester and cumulative CGPA over time | ⚠️ needs semester tagging on `StudentCourse` |
 | MK16 | **Attendance ↔ marks correlation** | `StudentCourse.get_attendance()` already exists alongside `get_cie()` — plotting the two together across courses is a genuinely interesting insight and costs one scatter chart | ✅ |
 | MK17 | **Grade distribution for a course** | Where the student sits in the class histogram | ✅ |
@@ -1383,20 +1404,23 @@ Two small pages, grouped because each is a single view with a handful of real de
 
 | # | Issue | Detail |
 |---|---|---|
-| FT7 | **The page doesn't find "free teachers"** | `Teacher.objects.filter(assign__class_id__id=asst.assign.class_id_id)` restricts the candidate pool to teachers **already teaching this class**. So it answers "which of this class's own teachers are free in this slot" — a much narrower question than the page title, and useless for finding an outside substitute. Widening the pool to the department (or the institution) is a one-line change |
-| FT8 | **Duplicate rows — no `.distinct()`** | Filtering `Teacher` across the `assign` join returns one row per matching `Assign`, so a teacher who takes two courses for the same class appears **twice** in the list. Standard Django join behaviour; `.distinct()` is missing. *Noted by inspection — I could not reproduce it locally because the dev database has only one `Course`, so no teacher has two assignments to the same class* |
-| FT9 | **N+1 in the availability check** | The loop runs `AssignTime.objects.filter(assign__teacher=t)` once per candidate teacher, then does the day/period comparison **in Python**. Measured 7 queries while scanning a single teacher. Should be one query: exclude teachers who have any `AssignTime` matching that day and period |
-| FT10 | **Cancelled classes ignored** | A teacher whose session was cancelled (`AttendanceClass.status == 2`) is genuinely free but still counted as busy, because availability is computed from the static timetable only |
-| FT11 | **No authorization check** | `@login_required()` only — same pattern as the rest of the teacher views |
+| ~~FT7~~ | ~~**The page doesn't find "free teachers"**~~ | ✅ **Fixed (pass 17).** `Teacher.objects.filter(assign__class_id__id=...)` restricted the candidate pool to teachers **already teaching this class**, so the page answered a much narrower question than its title and could never find an outside substitute. The pool is now every teacher in the college, minus those the timetable shows as busy in that day+period |
+| ~~FT8~~ | ~~**Duplicate rows — no `.distinct()`**~~ | ✅ **Fixed (pass 17).** Filtering `Teacher` across the `assign` join returned one row per matching `Assign`, so a teacher taking two courses for the same class appeared twice. The query is now an `exclude()` against collected teacher ids, so there is no join to fan out — `.distinct()` is unnecessary rather than merely added. Covered by a test |
+| ~~FT9~~ | ~~**N+1 in the availability check**~~ | ✅ **Fixed (pass 17).** The loop ran `AssignTime.objects.filter(assign__teacher=t)` per candidate and compared day/period **in Python**. Availability is now two queries regardless of headcount; a test adds ten teachers and asserts the count is unchanged |
+| ~~FT10~~ | ~~**Cancelled classes ignored**~~ | ✅ **Fixed (pass 17).** A teacher whose session was cancelled (`AttendanceClass.status == 2`) counted as busy because availability came from the static timetable only. A slot is a recurring weekday and a cancellation belongs to one date, so `_next_weekday()` resolves the slot to its coming date and cancellations on that date free their teacher |
+| ~~FT11~~ | ~~**No authorization check**~~ | ✅ Fixed in pass 3 — `@teacher_required` |
 
 **Recommended order for both pages**
 
-1. **RP10, RP9** — the 500 crash and the open access on the report page
-2. **FT7, FT8** — make the finder actually find free teachers, and stop duplicating them
-3. **RP11, FT9** — the N+1s (RP11 mostly falls out of the AT26/AT27 fix)
-4. **RP1, RP2, RP4** — summary header, at-risk highlighting, export
-5. **FT1, FT4, FT5** — surface the finder and make its output useful
-6. **FT10, FT6** — cancelled-class awareness, then the substitute-request workflow
+1. ~~**RP10, RP9**~~ — ✅ done, passes 3 and 8
+2. ~~**FT7, FT8**~~ — ✅ done, pass 17
+3. ~~**RP11, FT9**~~ — ✅ done (RP11 fell out of the AT26/AT27 fix; FT9 in pass 17)
+4. **RP1, RP2, RP4** — summary header, at-risk highlighting, export ← **next here**
+5. **FT1, FT4, FT5** — surface the finder and make its output useful. The page is
+   still reachable only from a cell in the teacher timetable, and now that the
+   pool is college-wide, a department filter (FT4) and teaching load (FT5) are
+   what make a long list decidable
+6. ~~**FT10**~~ — ✅ done, pass 17. **FT6** (substitute-request workflow) still open
 
 ---
 
@@ -1695,7 +1719,7 @@ Verified absent from the repository: `.github/`, `Dockerfile`, `docker-compose.y
 
 | # | Area | Detail |
 |---|---|---|
-| QA1 | **Accessibility** | §6.4 sets targets for the dashboards only. Nothing else has been assessed — the red/green attendance cells in particular convey status by colour alone, which fails for colour-blind users. Add text or icons alongside |
+| QA1 | **Accessibility** | 🟠 **Partly addressed (pass 18).** The attendance cells no longer rely on colour alone: every meter ships an icon and a word (Safe / At risk / Critical) beside the number, and each chart sits above the table it summarises. The badge tints were also re-stepped — `--erp-success`/`--erp-warning` sat at ~3.0:1 and ~2.9:1 as text on their own tints, so status words now use new `-ink` tokens measured at 4.5:1+. Still unassessed: keyboard order and focus outlines outside the dashboards, and §6.4's other targets on every non-specced page |
 | QA2 | **Mobile responsiveness beyond the specced pages** | Every table view (marks, fees, reports, session lists) overflows on a phone |
 | QA3 | **No type hints** | Nothing is annotated; `mypy` would find real issues in the view layer |
 | QA4 | **Internationalisation** | `LANGUAGE_CODE='en-us'`, no `gettext` usage. Probably out of scope, but worth an explicit decision rather than an accident |
@@ -1725,14 +1749,43 @@ Verified absent from the repository: `.github/`, `Dockerfile`, `docker-compose.y
 
 ---
 
-## Next steps (PAUSED — awaiting your review)
+## Next steps
 
-**Login (§5)**, **Dashboards (§6)**, **Feature Ideas (§6.5)** and **Page Specs (§7)** are now complete. Before we code:
+Seventeen passes in. The planning phase is closed and the two §5 decisions have
+been settled in code:
 
-1. **Review §7** — which page designs do you like? Any changes?
-2. **Confirm build order** — ready to start with Login page, then Dashboards, then Pages?
-3. **Two open decisions from §5:**
-   - Role selector: cosmetic (just show "Student | Faculty | Admin" tabs, don't enforce) or real (validate role matches after login)?
-   - Forgot Password / OTP: include now (needs SMTP setup, can use Gmail App Password) or defer to later?
+- **Role selector** — built as **enforced**, not cosmetic. Signing in as a
+  student from the Admin tab is rejected with "That account is not registered
+  as Admin" rather than silently redirecting (`ErpLoginForm`, `info/forms.py`)
+- **Forgot Password / OTP** — **deferred**, because CF3 blocks it. The link
+  opens a modal pointing at the support form instead of dead-ending
 
-Mark up the file with feedback, send it back, and we start coding. **No more planning—only code from here on.**
+### Three decisions still needed — each one blocks work that is otherwise ready
+
+1. **SMTP credentials (CF3)** — a Gmail App Password is enough. This single
+   decision unblocks §5.1 (OTP reset), FE22, NB17, AT23 and MK21
+2. **Media storage (CF1)** — S3, Cloudinary or drop photos/attachments from
+   scope. Render's disk is ephemeral, so "just configure `MEDIA_ROOT`" is not an
+   option. Blocks AC16, NB8, TA6
+3. **Grade scale (MK14)** — `Course.credits` now exists but nothing maps a mark
+   to a grade point. Name the band (VTU 10-point, or the college's own) and MK1,
+   MK6, MK7 and a real SGPA/CGPA all unlock at once
+
+### Ready to build with no decision outstanding
+
+E3 is done, so the chart work is now just drawing: `{% attendance_meter %}` and
+`{% attendance_trend %}` are in `info/templatetags/charts.py`, and the next
+charts reuse the same geometry-in-Python, SVG-in-template shape.
+
+1. **C4, C6, TM11/TM12** — class performance and marks distribution on the
+   teacher side. `student_marks` already has CIE per student; it needs an
+   aggregate, not a query rewrite
+2. **D1, D2, D7** — the admin analytics strip
+3. **RP1/RP2/RP4** — class report summary header, at-risk highlighting, export.
+   No charts needed at all, which makes it the cheapest visible win left
+
+**One thing to know before adding charts:** Django's `{# #}` comment is
+single-line only. A multi-line one is not a comment — the text renders into the
+page, and inside an `<svg>` it does so invisibly. Three had accumulated before
+pass 18 caught one that landed outside an SVG; `test_charts.py` now fails the
+build on any multi-line `{# #}` in the template tree.

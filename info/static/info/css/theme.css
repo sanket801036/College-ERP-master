@@ -8,6 +8,18 @@
   --erp-success: #16a34a;
   --erp-danger: #dc2626;
   --erp-warning: #d97706;
+  /* The -600 steps above clear 3:1 on white, so they are fine as marks (a
+     meter fill, a chart line) but not as small text. These -700 steps clear
+     4.5:1 both on white and on their own tint, and carry every status word.
+     Measured, not eyeballed. */
+  --erp-success-ink: #15803d;
+  --erp-danger-ink: #b91c1c;
+  --erp-warning-ink: #b45309;
+  /* Meter tracks: a lighter step of the fill's own hue, so the state reads
+     across the whole bar rather than only the filled part. */
+  --erp-success-tint: #dcfce7;
+  --erp-danger-tint: #fee2e2;
+  --erp-warning-tint: #fef3c7;
   --erp-ink: #1e293b;
   --erp-muted: #64748b;
   --erp-border: #e2e8f0;
@@ -237,9 +249,10 @@ body {
   font-weight: 700;
 }
 
-.erp-badge-success { background: #dcfce7; color: var(--erp-success); }
-.erp-badge-danger  { background: #fee2e2; color: var(--erp-danger); }
-.erp-badge-warning { background: #fef3c7; color: var(--erp-warning); }
+/* Text steps, not the mark steps - the -600s sat at ~3:1 on their own tints. */
+.erp-badge-success { background: var(--erp-success-tint); color: var(--erp-success-ink); }
+.erp-badge-danger  { background: var(--erp-danger-tint);  color: var(--erp-danger-ink); }
+.erp-badge-warning { background: var(--erp-warning-tint); color: var(--erp-warning-ink); }
 .erp-badge-info    { background: #e0f2fe; color: #0369a1; }
 
 /* Recolor legacy inline bg-success/bg-danger table cells to pill-style */
@@ -419,4 +432,168 @@ body {
   font-weight: 700;
   line-height: 17px;
   text-align: center;
+}
+
+/* ---------- Charts ----------
+   No chart library: geometry is computed server-side and these style the
+   result. Marks stay thin, grid stays recessive, and every colour here is a
+   token so the dark-mode work (A3) has one place to change. */
+
+.erp-chart { margin: 0 0 .5rem; }
+
+.erp-chart-caption {
+  color: var(--erp-muted);
+  font-size: .82rem;
+  margin-bottom: .35rem;
+}
+
+/* Below ~480px the whole coordinate system shrinks with the box, which takes
+   the axis text down with it until it is unreadable. Hold a floor and let the
+   chart scroll sideways instead - the table underneath carries every value
+   anyway, so nothing is gated behind the scroll. */
+/* The SVG keeps its own size (set as width/height attributes by the tag), so
+   the axis text is never scaled up in a wide card or down into illegibility in
+   a narrow one. This scrolls it sideways on a phone instead; the table under
+   the chart carries every value, so nothing is gated behind the scroll. */
+.erp-chart-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.erp-chart-svg {
+  display: block;
+  max-width: none;
+  overflow: visible;
+}
+
+/* Hairline, solid, one step off the surface. Never dashed - dashing reads as
+   a threshold, and this page has a real one. */
+.erp-chart-grid {
+  stroke: var(--erp-border);
+  stroke-width: 1;
+}
+
+.erp-chart-threshold {
+  stroke: var(--erp-muted);
+  stroke-width: 1.5;
+}
+
+.erp-chart-tick {
+  fill: var(--erp-muted);
+  font-size: 11px;
+  text-anchor: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.erp-chart-rule-label {
+  fill: var(--erp-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: start;
+}
+
+.erp-chart-line {
+  fill: none;
+  stroke: var(--erp-primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* A wash, never a saturated block. */
+.erp-chart-area {
+  fill: var(--erp-primary);
+  opacity: .10;
+  stroke: none;
+}
+
+.erp-chart-dot {
+  fill: var(--erp-primary);
+  stroke: var(--erp-surface);
+  stroke-width: 2;
+}
+
+.erp-chart-endlabel {
+  fill: var(--erp-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* The line takes the severity of where it ended up. */
+.erp-chart-risk .erp-chart-line,
+.erp-chart-risk .erp-chart-dot { stroke: var(--erp-warning); }
+.erp-chart-risk .erp-chart-dot { fill: var(--erp-warning); stroke: var(--erp-surface); }
+.erp-chart-risk .erp-chart-area { fill: var(--erp-warning); }
+
+.erp-chart-critical .erp-chart-line { stroke: var(--erp-danger); }
+.erp-chart-critical .erp-chart-dot { fill: var(--erp-danger); stroke: var(--erp-surface); }
+.erp-chart-critical .erp-chart-area { fill: var(--erp-danger); }
+
+/* Invisible, but wide enough to hover without aiming. */
+.erp-chart-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.erp-chart-hit:hover { fill: var(--erp-primary); fill-opacity: .06; }
+
+/* ---------- Meter ---------- */
+
+.erp-meter { min-width: 190px; }
+
+.erp-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-bottom: .3rem;
+}
+
+/* Values wear ink, never the mark colour - the fill beside them carries the
+   state, and a light hue is illegible as small text. */
+.erp-meter-value {
+  color: var(--erp-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.erp-meter-state { font-size: .78rem; font-weight: 600; }
+
+.erp-meter-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.erp-meter-fill {
+  height: 100%;
+  border-radius: 0 4px 4px 0;  /* square at the baseline, rounded data-end */
+}
+
+.erp-meter-threshold {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--erp-ink);
+  opacity: .45;
+}
+
+.erp-meter-safe     .erp-meter-track { background: var(--erp-success-tint); }
+.erp-meter-safe     .erp-meter-fill  { background: var(--erp-success); }
+.erp-meter-safe     .erp-meter-state { color: var(--erp-success-ink); }
+
+.erp-meter-risk     .erp-meter-track { background: var(--erp-warning-tint); }
+.erp-meter-risk     .erp-meter-fill  { background: var(--erp-warning); }
+.erp-meter-risk     .erp-meter-state { color: var(--erp-warning-ink); }
+
+.erp-meter-critical .erp-meter-track { background: var(--erp-danger-tint); }
+.erp-meter-critical .erp-meter-fill  { background: var(--erp-danger); }
+.erp-meter-critical .erp-meter-state { color: var(--erp-danger-ink); }
+
+@media print {
+  .erp-chart-hit { display: none; }
+  .erp-meter-fill, .erp-meter-track { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }

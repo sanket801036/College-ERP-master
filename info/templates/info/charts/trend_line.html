@@ -1,0 +1,61 @@
+{% load l10n %}
+{% comment %}
+One series over time, so no legend box - the caption says what is plotted.
+Only the endpoint is labelled; every other value is in the table below and in
+the per-point tooltip, so the tooltip enhances rather than gates.
+
+The SVG is rendered at its design size rather than stretched to the container:
+a scaled viewBox scales the axis text with it, which goes unreadable in a
+narrow card and oversized in a wide one. .erp-chart-scroll handles narrow
+screens instead.
+{% endcomment %}
+{% if points %}
+<figure class="erp-chart mb-0">
+  <figcaption class="erp-chart-caption">
+    Attendance after each session, running total. The rule marks the
+    {{ threshold }}% needed to sit the exam.
+  </figcaption>
+  <div class="erp-chart-scroll">
+  {% comment %}
+  Coordinates must not be localised. With a LANGUAGE_CODE that uses a comma as
+  the decimal separator, a rendered "38,5" silently corrupts every SVG
+  attribute it lands in.
+  {% endcomment %}
+  {% localize off %}
+  <svg class="erp-chart-svg erp-chart-{{ zone }}" viewBox="0 0 {{ width }} {{ height }}"
+       width="{{ width }}" height="{{ height }}"
+       role="img" preserveAspectRatio="xMidYMid meet"
+       aria-label="Running attendance percentage across {{ points|length }} sessions, ending at {{ last.percent }} percent.">
+
+    {% for g in gridlines %}
+      <line class="erp-chart-grid" x1="{{ left }}" y1="{{ g.y }}" x2="{{ plot_right }}" y2="{{ g.y }}"/>
+      <text class="erp-chart-tick" x="{{ left }}" y="{{ g.y }}" dx="-8" dy="4">{{ g.percent }}%</text>
+    {% endfor %}
+
+    {% comment %}
+    The rule's label sits at its left end, above the line. Parked at the right
+    edge it collided with the endpoint value whenever the line finished near
+    75% - which is exactly when this page matters most.
+    {% endcomment %}
+    <line class="erp-chart-threshold" x1="{{ left }}" y1="{{ threshold_y }}"
+          x2="{{ plot_right }}" y2="{{ threshold_y }}"/>
+    <text class="erp-chart-rule-label" x="{{ left }}" y="{{ threshold_y }}" dx="4" dy="-5">{{ threshold }}% required</text>
+
+    <path class="erp-chart-area" d="{{ area }}"/>
+    <polyline class="erp-chart-line" points="{{ line }}"/>
+
+    {# Ring in the surface colour so the dot stays legible over the line. #}
+    <circle class="erp-chart-dot" cx="{{ last.x }}" cy="{{ last.y }}" r="4.5"/>
+    <text class="erp-chart-endlabel" x="{{ last.x }}" y="{{ last.y }}" dx="10" dy="4">{{ last.percent }}%</text>
+
+    {% for p in points %}
+      <rect class="erp-chart-hit" x="{{ p.hit_x }}" y="{{ top }}"
+            width="{{ p.hit_w }}" height="{{ plot_h }}">
+        <title>{{ p.date|date:"j M Y" }} — {% if p.present %}Present{% else %}Absent{% endif %} — running {{ p.percent }}%</title>
+      </rect>
+    {% endfor %}
+  </svg>
+  {% endlocalize %}
+  </div>
+</figure>
+{% endif %}
