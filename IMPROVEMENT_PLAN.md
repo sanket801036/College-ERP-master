@@ -31,8 +31,9 @@ was found, so anything listed here as closed has already changed in the code.
 | 18 | Charts: an inline-SVG/CSS toolkit, attendance meters and the trend line | E3, B3, B2, AT12, part of AT4, part of QA1 | 27 |
 | 19 | Marks page rebuilt on VTU's 10-point scale | MK1, MK2, MK3, MK4, MK5, MK6, MK7, MK9, MK14 | 30 |
 | 20 | Class report: summary header, at-risk flagging, sort, export, print | RP1, RP2, RP3, RP4, RP8 | 14 |
+| 21 | Attendance entry made usable daily; real session states | TA1, TA2, TA3, TA4, TA5, TA7, TA8, TA-C4, TA-C6 | 20 |
 
-**258 tests**, from zero.
+**278 tests**, from zero.
 
 ### The grading rules, decided
 
@@ -79,7 +80,7 @@ their **features**.
 | **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
 | **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA all landed in pass 19 on VTU's 10-point scale. Still open: class rank (MK8), PDF report card (MK10), the charts (MK11/MK12/MK16), semester history (MK15, needs semester tagging), and the Phase C workflows (MK18 re-evaluation, MK20 publication control) |
 | **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
-| **Attendance - teacher** (§7.3) | 🟢 secured, queue on dashboard | Entry UX untouched: no mark-all-present default, live counter, keyboard entry, roster search, unsaved-changes guard, or bulk import. TA-C4 (magic status numbers) and TA-C6 (past sessions only) stand |
+| **Attendance - teacher** (§7.3) | 🟢 secured, entry rebuilt | Pass 21 landed one-click marking from the dashboard, mark-all-present, a live counter, keyboard entry, roster search, the unsaved-changes guard, and real session states; TA-C4 and TA-C6 are closed. Still open: TA6 (photos, blocked on CF1), TA9/TA10 (bulk import, offline drafts), TA12-TA17 (class analytics and export), TA19-TA21 (cancel reason, reschedule, substitutes) |
 | **Marks entry - teacher** (§7.7) | 🟢 secured and validated | No keyboard entry, live statistics, absent-vs-zero marker, draft save, bulk import, post-entry statistics, or publication control |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
 | **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
@@ -116,9 +117,9 @@ has credentials for yet.
 6. **IN4, IN5** — Docker and linting config. CI exists; these do not
 7. **MD2, MD3, MD4, MD7** — model-layer tidying: string boolean defaults, stale
    hardcoded dates, a default FK to a class that may not exist, no `updated_at`
-8. **TA-C4** — `AttendanceClass.status` still has no `choices`. `CLASS_CANCELLED`
-   in `views.py` names the one value read outside `cancel_class`; the field
-   itself is still a bare integer
+8. **TA9, TA16, TA12–TA14** — bulk attendance import, class export, and the
+   teacher-side attendance analytics. The entry flow is done; the reporting
+   around it is not
 
 ---
 
@@ -924,14 +925,14 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
-| TA1 | **"Take attendance for today" one-click** | Today's session is derivable from `AssignTime.day` + `AttendanceClass.date`. Right now the teacher navigates Classes → class → ClassDates → pick date → form: four clicks, every day, for something that is unambiguous. Put one button on the dashboard | ✅ |
-| TA2 | **Mark-all-present default, then uncheck absentees** | Typical attendance is 80–95% present, so defaulting everyone to present and unchecking the few absentees is far less work than ticking 45 boxes | ✅ |
-| TA3 | **Live present/absent counter** | "38 / 45 present" updating as boxes toggle, so the teacher can sanity-check against a head count before submitting | ✅ |
-| TA4 | **Keyboard-first entry** | Arrow keys to move down the roster, space to toggle, `A` = all present, `N` = all absent. A teacher marking 45 students daily will use this every time | ✅ |
-| TA5 | **Search / filter within the roster** | Jump to a student by name or USN in a large class | ✅ |
+| ~~TA1~~ | **"Take attendance for today" one-click** ✅ (pass 21), on the dashboard and at the top of the session list | Today's session is derivable from `AssignTime.day` + `AttendanceClass.date`. Right now the teacher navigates Classes → class → ClassDates → pick date → form: four clicks, every day, for something that is unambiguous. Put one button on the dashboard | ✅ |
+| ~~TA2~~ | **Mark-all-present default** ✅ (pass 21), plus explicit all-present / all-absent buttons | Typical attendance is 80–95% present, so defaulting everyone to present and unchecking the few absentees is far less work than ticking 45 boxes | ✅ |
+| ~~TA3~~ | **Live present/absent counter** ✅ (pass 21) | "38 / 45 present" updating as boxes toggle, so the teacher can sanity-check against a head count before submitting | ✅ |
+| ~~TA4~~ | **Keyboard-first entry** ✅ (pass 21). Arrow keys move the cursor, P and A set the row and advance | Arrow keys to move down the roster, space to toggle, `A` = all present, `N` = all absent. A teacher marking 45 students daily will use this every time | ✅ |
+| ~~TA5~~ | **Search / filter within the roster** ✅ (pass 21), by name or USN | Jump to a student by name or USN in a large class | ✅ |
 | TA6 | **Student photos on the roster** | Makes marking far faster and less error-prone for a teacher who doesn't know every name | ❌ needs a photo field (Tier 2 #13) |
-| TA7 | **Explicit session states** | `AttendanceClass.status` uses bare integers — `0` not taken, `1` taken, `2` cancelled — with no `choices` and no constants. Surface these as real labels: ⏳ Pending · ✅ Submitted · 🚫 Cancelled · 🔒 Future | ✅ |
-| TA8 | **Unsaved-changes guard** | Warn before navigating away mid-marking — losing a 45-student roster to a stray click is an easy and infuriating failure | ✅ |
+| ~~TA7~~ | **Explicit session states** ✅ (pass 21). Pending / Submitted / Cancelled / Scheduled, with Scheduled derived from the date since the stored status cannot tell a session nobody could have marked yet from one the teacher owes | `AttendanceClass.status` uses bare integers — `0` not taken, `1` taken, `2` cancelled — with no `choices` and no constants. Surface these as real labels: ⏳ Pending · ✅ Submitted · 🚫 Cancelled · 🔒 Future | ✅ |
+| ~~TA8~~ | **Unsaved-changes guard** ✅ (pass 21) | Warn before navigating away mid-marking — losing a 45-student roster to a stray click is an easy and infuriating failure | ✅ |
 | TA9 | **Bulk-import attendance** | Upload a CSV/XLSX roster for a session; `openpyxl` is already a dependency | ✅ |
 | TA10 | **Offline-tolerant entry** | Draft state in `localStorage` so a dropped connection mid-marking doesn't lose the work | ✅ |
 
@@ -990,9 +991,9 @@ So a student can already read every classmate's marks and attendance. The write 
 | TA-C1 | **No transaction around `confirm()`** | The view loops over students saving `Attendance` rows one at a time. If it raises partway — and `request.POST[s.USN]` raises `KeyError` whenever a checkbox is missing — half the class is saved, `assc.status` may already be flipped to `1`, and the session looks submitted when it isn't. Wrap in `@transaction.atomic` |
 | TA-C2 | **`assc.status = 1` is set inside the loop** | It's assigned while processing the *first* student, so every student after that takes the `if assc.status == 1` branch and runs an `Attendance.objects.get()` that always misses before falling back to create. Wasted query per student, and it entangles loop state with session state. Set it once, after the loop |
 | TA-C3 | **Unvalidated POST access throughout** | `request.POST[s.USN]` (KeyError → 500) and `request.POST['date']` in `e_confirm` (arbitrary/invalid date accepted). Same root cause as MK25 — no forms anywhere |
-| TA-C4 | **Magic numbers for session status** | `0/1/2` with no `choices` and no named constants; `2` (cancelled) is documented nowhere |
+| ~~TA-C4~~ | **Magic numbers for session status** ✅ **Fixed (pass 21).** CLASS_PENDING / CLASS_TAKEN / CLASS_CANCELLED, with choices on the field | `0/1/2` with no `choices` and no named constants; `2` (cancelled) is documented nowhere |
 | TA-C5 | **Severe N+1 — measured** | `/teacher/<id>/Students/attendance/` fired **28 queries for a class containing a single student**. The per-student cost is the same expensive `AttendanceTotal` property chain described in AT26 (~19–24 queries each), so a realistic 45-student class is on the order of **900+ queries for one page load**. This is the worst hot spot found anywhere in the project. Fixing AT26 and AT27 fixes this page too — they share the root cause |
-| TA-C6 | **`t_class_date` shows only past sessions** | Filtered `date__lte=now`, so a teacher cannot see or prepare for upcoming sessions. TA1 depends on changing this |
+| ~~TA-C6~~ | **`t_class_date` shows only past sessions** ✅ **Fixed (pass 21).** Upcoming sessions render as locked rather than being hidden | Filtered `date__lte=now`, so a teacher cannot see or prepare for upcoming sessions. TA1 depends on changing this |
 
 #### Recommended order for this module
 
@@ -1798,9 +1799,10 @@ charts reuse the same geometry-in-Python, SVG-in-template shape.
 3. **MK8, MK10** — class rank and a PDF report card. `reportlab` has been an
    installed, unused dependency since the beginning; the report card is now
    just a rendering of numbers the model already computes
-4. **TA1–TA4** — the attendance entry UX. A teacher ticks forty-five boxes a
-   day; mark-all-present, a live counter and keyboard entry are the highest
-   daily-value work left anywhere in this document
+4. **TM1–TM4** — the marks entry UX. The attendance roster got this treatment
+   in pass 21 and the marks entry form is the same shape: no max-marks hint, no
+   inline validation, no keyboard entry, no running statistics. The JS pattern
+   in `t_attendance.html` transfers almost directly
 
 **One thing to know before adding charts:** Django's `{# #}` comment is
 single-line only. A multi-line one is not a comment — the text renders into the

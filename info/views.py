@@ -2,7 +2,8 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponseRedirect, HttpResponse
 from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
     DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest, NoticeRead, notice_category_choice, \
-    CIE_MAX, SEE_MAX, SEE_ELIGIBILITY_CIE, sgpa_for
+    CIE_MAX, SEE_MAX, SEE_ELIGIBILITY_CIE, sgpa_for, \
+    CLASS_PENDING, CLASS_TAKEN, CLASS_CANCELLED
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.db import transaction
@@ -33,11 +34,6 @@ logger = logging.getLogger(__name__)
 # Two weeks - long enough to be useful on a personal device, short enough that
 # a shared machine does not stay signed in indefinitely.
 REMEMBER_ME_SECONDS = 60 * 60 * 24 * 14
-
-# AttendanceClass.status is a bare integer with no choices on the field.
-# Naming the one value read outside cancel_class at least stops it being a
-# magic 2 in two places.
-CLASS_CANCELLED = 2
 
 WEEKDAY_INDEX = {name: index for index, (name, _) in enumerate(DAYS_OF_WEEK)}
 
@@ -131,11 +127,20 @@ def _teacher_dashboard(teacher):
     assigns = list(Assign.objects.filter(teacher=teacher)
                    .select_related('course', 'class_id'))
 
-    # status 0 means the session happened but nobody submitted it.
+    # A past session still at CLASS_PENDING is attendance the teacher owes.
     pending_sessions = (AttendanceClass.objects
-                        .filter(assign__in=assigns, status=0, date__lte=today)
+                        .filter(assign__in=assigns, status=CLASS_PENDING,
+                                date__lte=today)
                         .select_related('assign__course', 'assign__class_id')
                         .order_by('-date')[:10])
+
+    # Today's unmarked sessions, so the dashboard can offer the one thing a
+    # teacher opens this app to do. Four clicks - Classes, class, ClassDates,
+    # pick the date - for something that is unambiguous.
+    todays_sessions = (AttendanceClass.objects
+                       .filter(assign__in=assigns, status=CLASS_PENDING,
+                               date=today)
+                       .select_related('assign__course', 'assign__class_id'))
     pending_marks = (MarksClass.objects
                      .filter(assign__in=assigns, status=False)
                      .select_related('assign__course', 'assign__class_id'))
@@ -156,8 +161,9 @@ def _teacher_dashboard(teacher):
         'class_count': len(assigns),
         'student_count': student_count,
         'pending_sessions': pending_sessions,
+        'todays_sessions': todays_sessions,
         'pending_sessions_count': AttendanceClass.objects.filter(
-            assign__in=assigns, status=0, date__lte=today).count(),
+            assign__in=assigns, status=CLASS_PENDING, date__lte=today).count(),
         'pending_marks': pending_marks,
         'at_risk': sorted(at_risk, key=lambda t: t.attendance)[:10],
         'at_risk_count': len(at_risk),
@@ -244,15 +250,28 @@ def t_student(request, assign_id):
 @teacher_required
 @owns_assign('assign_id')
 def t_class_date(request, assign_id):
-    now = timezone.now()
+    """Every session for this class, upcoming ones included.
+
+    This was filtered to date__lte=now, so a teacher could not see what was
+    coming - and today's session only appeared once the day was already under
+    way. Upcoming rows render as locked rather than markable.
+    """
     ass = get_object_or_404(Assign, id=assign_id)
-    att_list = ass.attendanceclass_set.filter(date__lte=now).order_by('-date')
-    return render(request, 'info/t_class_date.html', {'att_list': att_list})
+    att_list = ass.attendanceclass_set.order_by('-date')
+    today = timezone.localdate()
+    return render(request, 'info/t_class_date.html', {
+        'att_list': att_list,
+        'assign': ass,
+        'today_session': next(
+            (a for a in att_list if a.date == today
+             and a.status == CLASS_PENDING), None),
+    })
 
 
 @login_required()
 @teacher_required
 @owns_attendance_class('ass_c_id')
+@require_POST
 def cancel_class(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
     assc.status = CLASS_CANCELLED
@@ -267,15 +286,23 @@ def cancel_class(request, ass_c_id):
 @teacher_required
 @owns_attendance_class('ass_c_id')
 def t_attendance(request, ass_c_id):
-    assc = get_object_or_404(AttendanceClass, id=ass_c_id)
+    assc = get_object_or_404(
+        AttendanceClass.objects.select_related('assign__course',
+                                               'assign__class_id'),
+        id=ass_c_id)
+    if not assc.is_markable:
+        messages.error(request, 'That session cannot be marked: it is %s.'
+                       % assc.state)
+        return redirect('t_class_date', assign_id=assc.assign_id)
+
     ass = assc.assign
     c = ass.class_id
-    context = {
+    return render(request, 'info/t_attendance.html', {
         'ass': ass,
         'c': c,
         'assc': assc,
-    }
-    return render(request, 'info/t_attendance.html', context)
+        'students': c.student_set.order_by('name'),
+    })
 
 
 @login_required()
@@ -298,6 +325,13 @@ def edit_att(request, ass_c_id):
 @require_POST
 def confirm(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
+    # The form is only reachable for a markable session, but the POST endpoint
+    # has to say so itself - nothing stops a hand-built request.
+    if not assc.is_markable:
+        messages.error(request, 'That session cannot be marked: it is %s.'
+                       % assc.state)
+        return redirect('t_class_date', assign_id=assc.assign_id)
+
     ass = assc.assign
     cr = ass.course
     cl = ass.class_id
@@ -306,7 +340,7 @@ def confirm(request, ass_c_id):
     # 500 the request half way through the class. Treat a missing value as
     # absent - the form always submits one, so this only catches malformed
     # posts - and record which ones were missing rather than failing silently.
-    resubmission = assc.status == 1
+    resubmission = assc.status == CLASS_TAKEN
     with transaction.atomic():
         previous = {a.student_id: a.status for a in
                     Attendance.objects.filter(attendanceclass=assc)}
@@ -341,7 +375,7 @@ def confirm(request, ass_c_id):
         # Set once, after every student is written. This used to be assigned
         # while handling the first student, which sent everyone after them down
         # the "already submitted" branch.
-        assc.status = 1
+        assc.status = CLASS_TAKEN
         assc.save(update_fields=['status'])
 
     return HttpResponseRedirect(reverse('t_class_date', args=(ass.id,)))

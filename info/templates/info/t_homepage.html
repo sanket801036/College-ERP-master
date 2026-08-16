@@ -39,6 +39,29 @@
   </div>
 </div>
 
+{% comment %}
+Today's session, one click from the dashboard. It was four - Classes, the
+class, ClassDates, then pick the date - every single day, for something that
+is unambiguous.
+{% endcomment %}
+{% if todays_sessions %}
+<div class="card mb-4 border-primary">
+  <div class="card-header"><i class="fas fa-calendar-day text-primary"></i><b>Today</b></div>
+  <div class="card-body">
+    {% for s in todays_sessions %}
+    <div class="d-flex align-items-center flex-wrap {% if not forloop.last %}mb-2{% endif %}">
+      <span class="mr-auto">
+        <b>{{ s.assign.class_id }}</b> &middot; {{ s.assign.course.name }}
+      </span>
+      <a class="btn btn-primary btn-sm" href="{% url 't_attendance' s.id %}">
+        <i class="fas fa-calendar-check" aria-hidden="true"></i> Take attendance
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if pending_sessions %}
 <div class="card mb-4 border-danger">
   <div class="card-header"><i class="fas fa-clipboard-list text-danger"></i><b>Attendance still to take</b></div>

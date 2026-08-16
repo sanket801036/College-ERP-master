@@ -257,14 +257,55 @@ class AssignTime(models.Model):
                 % (self.assign.teacher, clash.assign.class_id))
 
 
+# These were bare integers with no choices and no names: 0 not taken, 1 taken,
+# 2 cancelled, with 2 documented nowhere at all.
+CLASS_PENDING = 0
+CLASS_TAKEN = 1
+CLASS_CANCELLED = 2
+
+class_status_choice = (
+    (CLASS_PENDING, 'Not taken'),
+    (CLASS_TAKEN, 'Submitted'),
+    (CLASS_CANCELLED, 'Cancelled'),
+)
+
+
 class AttendanceClass(models.Model):
     assign = models.ForeignKey(Assign, on_delete=models.CASCADE)
     date = models.DateField()
-    status = models.IntegerField(default=0)
+    status = models.IntegerField(default=CLASS_PENDING,
+                                 choices=class_status_choice)
 
     class Meta:
         verbose_name = 'Attendance'
         verbose_name_plural = 'Attendance'
+
+    @property
+    def is_future(self):
+        return self.date > timezone.localdate()
+
+    @property
+    def is_today(self):
+        return self.date == timezone.localdate()
+
+    @property
+    def state(self):
+        """One label covering the stored status and where the date sits.
+
+        A scheduled session nobody could have marked yet is not the same thing
+        as one the teacher still owes, but the stored status cannot tell them
+        apart - both are 0.
+        """
+        if self.status == CLASS_CANCELLED:
+            return 'cancelled'
+        if self.status == CLASS_TAKEN:
+            return 'submitted'
+        return 'future' if self.is_future else 'pending'
+
+    @property
+    def is_markable(self):
+        """Cancelled sessions and ones that have not happened cannot be marked."""
+        return self.status != CLASS_CANCELLED and not self.is_future
 
 
 class Attendance(models.Model):

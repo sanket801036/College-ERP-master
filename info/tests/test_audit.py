@@ -63,7 +63,8 @@ class AttendanceAuditTests(AuditBase):
         self.assertEqual(entry.changes['status'], {'from': True, 'to': False})
 
     def test_cancelling_a_class_is_logged(self):
-        self.client.get(reverse('cancel_class', args=(self.session.id,)))
+        # POST since pass 21 - it used to change state on a GET.
+        self.client.post(reverse('cancel_class', args=(self.session.id,)))
 
         entry = AuditLog.objects.get(action='attendance.cancelled')
         self.assertIn('Class cancelled', entry.summary)

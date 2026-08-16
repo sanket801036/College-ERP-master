@@ -171,7 +171,7 @@ class WriteEndpointTests(TestCase):
     def test_student_cannot_cancel_a_class(self):
         self.client.force_login(self.student.user)
 
-        response = self.client.get(reverse('cancel_class', args=(self.session.id,)))
+        response = self.client.post(reverse('cancel_class', args=(self.session.id,)))
 
         self.assertEqual(response.status_code, 403)
         self.session.refresh_from_db()

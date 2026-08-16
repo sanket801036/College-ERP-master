@@ -1,53 +1,170 @@
 {% extends 'info/base.html' %}
+
+{% block title %}Take attendance{% endblock %}
+
 {% block content %}
-{% if c.student_set.all %}
 
-<form action="{% url 'confirm' assc.id %}" method="post">
-            {% csrf_token %}
-    <div class="card mb-3">
-        <div class="card-header">
-          <i class="fas fa-table"></i>
-         <b>{{ dept1.name }}</b></div>
-        <div class="card-body">
-          <div class="table-responsive">
-            <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
-              <thead>
-                <tr>
-                    <th>Student name</th>
-                    <th></th>
-                </tr>
-              </thead>
-                <tbody>
-                {% for s in c.student_set.all %}
-                    <tr>
-                    <td>{{s.name}}</td>
-                    <td>
-                        <div class="btn-group btn-group-toggle" data-toggle="buttons">
+{% comment %}
+A teacher marks this roster every working day, so the cost of each interaction
+is multiplied by the size of the class. Everyone defaults to present (typical
+attendance is 80-95%, so unchecking the few absentees is far less work than
+ticking forty-five boxes), the counter updates as they go so it can be checked
+against a head count before submitting, and the whole thing is keyboard
+driveable.
+{% endcomment %}
 
-                                <label class="btn btn-outline-success active">
-                                    <input type="radio" name="{{ s.USN }}" id="option1" autocomplete="off" value="present" checked> Present
-                                </label>
+{% if students %}
+<form action="{% url 'confirm' assc.id %}" method="post" id="attendanceForm">
+  {% csrf_token %}
 
-                                <label class="btn btn-outline-danger">
-                                    <input type="radio" name="{{ s.USN }}" id="option2" autocomplete="off" value="absent"> Absent
-                                </label>
-                        </div>
-                    </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-          </div>
+  <div class="card mb-3">
+    <div class="card-header d-flex align-items-center flex-wrap">
+      <span class="mr-auto">
+        <i class="fas fa-calendar-check"></i>
+        <b>{{ ass.class_id }} &mdash; {{ ass.course.name }}</b>
+        <span class="text-muted small">{{ assc.date|date:"l, j F Y" }}</span>
+      </span>
+      <span class="erp-badge erp-badge-info" id="counter" aria-live="polite"></span>
+    </div>
+
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center mb-3">
+        <div class="btn-group btn-group-sm mr-3 mb-2">
+          <button type="button" class="btn btn-outline-success" data-mark="present">
+            All present
+          </button>
+          <button type="button" class="btn btn-outline-danger" data-mark="absent">
+            All absent
+          </button>
         </div>
+        <input type="search" id="rosterSearch" class="form-control form-control-sm mb-2"
+               style="max-width: 260px" placeholder="Find a student by name or USN"
+               aria-label="Filter the roster">
       </div>
 
+      <p class="text-muted small">
+        Everyone starts present &mdash; mark the absentees. Arrow keys move down
+        the roster; <kbd>P</kbd> and <kbd>A</kbd> set the highlighted row.
+      </p>
 
-    <input class="btn btn-success" type="submit" value="Submit">
+      <div class="table-responsive">
+        <table class="table table-bordered" width="100%" cellspacing="0">
+          <thead class="thead-light">
+            <tr>
+              <th>USN</th>
+              <th>Student name</th>
+              <th style="width: 210px">Attendance</th>
+            </tr>
+          </thead>
+          <tbody id="roster">
+            {% for s in students %}
+            <tr data-search="{{ s.name|lower }} {{ s.USN|lower }}">
+              <td>{{ s.USN }}</td>
+              <td>{{ s.name }}</td>
+              <td>
+                <div class="btn-group btn-group-toggle" data-toggle="buttons">
+                  <label class="btn btn-outline-success btn-sm active">
+                    <input type="radio" name="{{ s.USN }}" autocomplete="off"
+                           value="present" checked> Present
+                  </label>
+                  <label class="btn btn-outline-danger btn-sm">
+                    <input type="radio" name="{{ s.USN }}" autocomplete="off"
+                           value="absent"> Absent
+                  </label>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-success" type="submit" id="submitButton">
+    Submit attendance
+  </button>
 </form>
 
+<script>
+(function () {
+  var form = document.getElementById('attendanceForm');
+  var roster = document.getElementById('roster');
+  var counter = document.getElementById('counter');
+  var rows = Array.prototype.slice.call(roster.querySelectorAll('tr'));
+  var focused = 0;
+  var dirty = false;
+
+  function setRow(row, value) {
+    row.querySelectorAll('input[type=radio]').forEach(function (input) {
+      var checked = input.value === value;
+      input.checked = checked;
+      // Bootstrap's button-toggle plugin tracks state on the label, so the
+      // class has to move with the radio or the buttons stop matching.
+      input.parentNode.classList.toggle('active', checked);
+    });
+    dirty = true;
+    render();
+  }
+
+  function render() {
+    var present = rows.filter(function (row) {
+      return row.querySelector('input[value=present]').checked;
+    }).length;
+    counter.textContent = present + ' / ' + rows.length + ' present';
+  }
+
+  function highlight(index) {
+    if (index < 0 || index >= rows.length) { return; }
+    rows[focused].classList.remove('erp-row-focus');
+    focused = index;
+    rows[focused].classList.add('erp-row-focus');
+    rows[focused].scrollIntoView({block: 'nearest'});
+  }
+
+  form.querySelectorAll('[data-mark]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      rows.forEach(function (row) { setRow(row, button.dataset.mark); });
+    });
+  });
+
+  roster.addEventListener('change', function () { dirty = true; render(); });
+
+  document.getElementById('rosterSearch').addEventListener('input', function () {
+    var term = this.value.trim().toLowerCase();
+    rows.forEach(function (row) {
+      row.hidden = term && row.dataset.search.indexOf(term) === -1;
+    });
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)
+        && event.target.type !== 'radio') { return; }
+    var key = event.key.toLowerCase();
+    if (event.key === 'ArrowDown') { highlight(focused + 1); event.preventDefault(); }
+    else if (event.key === 'ArrowUp') { highlight(focused - 1); event.preventDefault(); }
+    else if (key === 'p') { setRow(rows[focused], 'present'); highlight(focused + 1); }
+    else if (key === 'a') { setRow(rows[focused], 'absent'); highlight(focused + 1); }
+  });
+
+  // Losing a marked roster to a stray click is an infuriating way to lose ten
+  // minutes, and there is no draft state to fall back on.
+  window.addEventListener('beforeunload', function (event) {
+    if (!dirty) { return; }
+    event.preventDefault();
+    event.returnValue = '';
+  });
+  form.addEventListener('submit', function () { dirty = false; });
+
+  highlight(0);
+  render();
+})();
+</script>
 
 {% else %}
-    <p>No students in Class</p>
+  <div class="card"><div class="card-body text-muted">
+    No students in this class yet.
+  </div></div>
 {% endif %}
 
 {% endblock %}

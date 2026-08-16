@@ -650,3 +650,11 @@ body {
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
 }
+
+/* ---------- Attendance entry ----------
+   The keyboard cursor. A teacher driving a forty-five row roster with the
+   arrow keys needs to see which row P and A will act on. */
+.erp-row-focus > td {
+  background: var(--erp-primary-light);
+  box-shadow: inset 3px 0 0 var(--erp-primary);
+}
