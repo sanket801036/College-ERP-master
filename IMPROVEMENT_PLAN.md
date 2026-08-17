@@ -84,13 +84,13 @@ their **features**.
 | **Login** (§5) | 🟢 rebuilt | §5.1 (OTP reset) is the only part unbuilt, and it is blocked on CF3 (no SMTP host). "Forgot password?" currently opens a modal pointing at the admin rather than a real reset flow |
 | **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB17 (email on publish, blocked on CF3), NB22 (should a teacher be able to address the whole institution?) |
 | **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
-| **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA all landed in pass 19 on VTU's 10-point scale. Still open: class rank (MK8), PDF report card (MK10), the charts (MK11/MK12/MK16), semester history (MK15, needs semester tagging), and the Phase C workflows (MK18 re-evaluation, MK20 publication control) |
+| **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA landed in pass 19 on VTU's 10-point scale; class rank (MK8) and the PDF marks card (MK10) in pass 24; publication control (MK20) in pass 23. Still open: the charts (MK11/MK12/MK16), semester history (MK15, needs semester tagging) and MK18 (re-evaluation workflow) |
 | **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
 | **Attendance - teacher** (§7.3) | 🟢 secured, entry rebuilt | Pass 21 landed one-click marking from the dashboard, mark-all-present, a live counter, keyboard entry, roster search, the unsaved-changes guard, and real session states; TA-C4 and TA-C6 are closed. Still open: TA6 (photos, blocked on CF1), TA9/TA10 (bulk import, offline drafts), TA12-TA17 (class analytics and export), TA19-TA21 (cancel reason, reschedule, substitutes) |
 | **Marks entry - teacher** (§7.7) | 🟢 secured, validated, entry rebuilt | Pass 22 landed the max-marks hint, live inline validation, keyboard entry, running statistics, the previous component alongside, sorting and the unsaved-changes guard, and folded the separate edit template into this one. Still open: TM5 (absent-vs-zero, needs a flag on `Marks`), TM6 (draft save), TM7 (bulk import), TM11-TM14 (post-entry statistics and export), TM15 (publication control), TM16 (re-evaluation queue), TM24 (confirmation screen) |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
 | **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
-| **Fees** (§7.6) | 🟢 ledger rebuilt, receipts and bulk assignment added | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class. Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE17 (pagination and filters), FE19-FE23 (waivers, instalments, late fees, reminders, year tagging). **FE31 still stands and needs a decision** - see below |
+| **Fees** (§7.6) | 🟢 ledger, receipts, bulk assignment, list rebuilt | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class; pass 26 made the staff list usable at volume (FE17). Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE19-FE23 (waivers, instalments, late fees, reminders, year tagging). **FE31 still stands and needs a decision** - see below |
 | **Dashboards** (§6) | 🟢 rebuilt | No charts anywhere, no today's-schedule strip, dark mode, global search, notification badge or breadcrumbs |
 | **Accounts** (§7.9) | 🟢 creation and passwords fixed | No profile editing, photo upload, student directory, bulk import, edit/deactivate, or soft delete |
 | **API** (§7.10) | 🟢 working | No OpenAPI docs, pagination, teacher/admin endpoints, write endpoints, throttling or versioning |
@@ -109,16 +109,16 @@ has credentials for yet.
    a settings change. AC4 is done — accounts now collect an email address — so
    CF3 is purely a credentials decision
 2. **API13, API14–API20** — no OpenAPI/Swagger docs, and the API is still
-   student-only and read-only. API4 (a GET handler that writes), API11
-   (pagination) and API12 (tests) are also open
+   student-only and read-only. API11 (pagination), API18 (throttling) and API19
+   (versioning) are open with it. API4 and API12 are done - the GET handler no
+   longer writes, and `test_api.py` covers all four endpoints
 3. **§6.5 Phase 2, the rest of the charts** — E3 is done (pass 18): an inline
-   SVG/CSS toolkit in `info/templatetags/charts.py`, no chart library and no CDN,
-   with B3 (per-course meters) and B2 (attendance trend) built on it. Still to
-   draw, all now cheap: C4/C6 (class performance, marks distribution),
-   D1/D2/D7 (admin analytics), MK11/MK12 (marks trend and cross-subject)
-4. **FE3, FE10, FE14** — receipts as PDF, and bulk fee assignment to a whole
-   class instead of one student at a time
-5. **AC15, AC20** — profile editing and the student directory (there is still a
+   SVG/CSS toolkit in `info/templatetags/charts.py`, no chart library and no CDN.
+   Built on it so far: B3 (per-course meters), B2 (attendance trend) and, in
+   pass 27, C6 (marks distribution) on the class marks page. Still to draw:
+   C4 (class performance comparison), D1/D2/D7 (admin analytics), MK11/MK12
+   (marks trend and cross-subject)
+4. **AC15, AC20** — profile editing and the student directory (there is still a
    commented-out `student_search` URL in `info/urls.py`)
 6. **IN4, IN5** — Docker and linting config. CI exists; these do not
 7. **MD3, MD4, MD7** — model-layer tidying: stale hardcoded dates

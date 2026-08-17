@@ -12,8 +12,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from info.models import (AssignTime, Attendance, AttendanceTotal, Course,
-                         Student, StudentCourse)
+from drf_spectacular.utils import extend_schema
+
+from info.models import (ATTENDANCE_THRESHOLD, Assign, AssignTime, Attendance,
+                         AttendanceTotal, Course, Student, StudentCourse,
+                         Teacher)
 
 import apis.serializers as api_ser
 
@@ -102,4 +105,76 @@ class TimetableView(StudentAPIView):
             slots, many=True, context={'request': request})
         # This returned its payload under the key "user_marks", copied from the
         # marks view. Every endpoint uses "data" now.
+        return Response({'data': serializer.data})
+
+
+class TeacherAPIView(APIView):
+    """Base for the endpoints scoped to the caller's own teaching load.
+
+    The web views got role and ownership guards; the API was still
+    student-only, so there was nothing here to guard.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_teacher(self, request):
+        if request.user.is_superuser:
+            return None  # sees everything
+        return get_object_or_404(Teacher, user=request.user)
+
+    def assignments(self, request):
+        teacher = self.get_teacher(request)
+        qs = Assign.objects.select_related('course', 'class_id')
+        return qs if teacher is None else qs.filter(teacher=teacher)
+
+
+@extend_schema(
+    summary="The caller's classes",
+    description='Assignments the signed-in teacher takes, with student counts. '
+                'Superusers see every assignment.',
+    responses=api_ser.ClassSerializer,
+)
+class TeacherClassesView(TeacherAPIView):
+    def get(self, request):
+        assigns = self.assignments(request).annotate(
+            student_count=Count('class_id__student', distinct=True))
+        serializer = api_ser.ClassSerializer(assigns, many=True,
+                                             context={'request': request})
+        return Response({'data': serializer.data})
+
+
+@extend_schema(
+    summary='Students in one class, with attendance standing',
+    description='Restricted to an assignment the caller teaches.',
+    responses=api_ser.ClassStudentSerializer,
+)
+class ClassStudentsView(TeacherAPIView):
+    def get(self, request, assign_id):
+        assign = get_object_or_404(self.assignments(request), id=assign_id)
+
+        students = list(assign.class_id.student_set.all().order_by('USN'))
+        counts = (Attendance.objects
+                  .filter(course=assign.course, student__in=students)
+                  .values('student')
+                  .annotate(held=Count('pk'),
+                            attended=Count('pk', filter=Q(status=True))))
+        by_student = {row['student']: row for row in counts}
+
+        rows = []
+        for student in students:
+            row = by_student.get(student.USN, {})
+            held = row.get('held', 0)
+            attended = row.get('attended', 0)
+            percentage = round(attended / held * 100, 2) if held else 0
+            rows.append({
+                'usn': student.USN,
+                'name': student.name,
+                'attended': attended,
+                'held': held,
+                'percentage': percentage,
+                # Below the exam-eligibility line, and only meaningful once the
+                # course has actually met.
+                'at_risk': held > 0 and percentage < ATTENDANCE_THRESHOLD * 100,
+            })
+
+        serializer = api_ser.ClassStudentSerializer(rows, many=True)
         return Response({'data': serializer.data})

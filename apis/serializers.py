@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from info.models import AssignTime, AttendanceTotal, Student, StudentCourse
+from info.models import (Assign, AssignTime, AttendanceTotal, Student,
+                         StudentCourse)
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -67,3 +68,33 @@ class TimetableSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssignTime
         fields = ['day', 'period', 'course_id', 'course', 'teacher']
+
+
+class ClassSerializer(serializers.ModelSerializer):
+    """One of a teacher's assignments."""
+    assign_id = serializers.IntegerField(source='id', read_only=True)
+    course_id = serializers.CharField(source='course.id', read_only=True)
+    course = serializers.CharField(source='course.name', read_only=True)
+    class_id = serializers.CharField(source='class_id.id', read_only=True)
+    semester = serializers.IntegerField(source='class_id.sem', read_only=True)
+    section = serializers.CharField(source='class_id.section', read_only=True)
+    student_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Assign
+        fields = ['assign_id', 'course_id', 'course', 'class_id', 'semester',
+                  'section', 'student_count']
+
+
+class ClassStudentSerializer(serializers.Serializer):
+    """A student in a class, with their standing in that course.
+
+    Not a ModelSerializer: the values come from an aggregate over Attendance
+    rather than from columns on any one model.
+    """
+    usn = serializers.CharField()
+    name = serializers.CharField()
+    attended = serializers.IntegerField()
+    held = serializers.IntegerField()
+    percentage = serializers.FloatField()
+    at_risk = serializers.BooleanField()

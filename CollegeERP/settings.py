@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'djoser',
     'rest_framework.authtoken',
+    'drf_spectacular',
     'apis',
 
 ]
@@ -171,6 +172,29 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_PAGINATION_CLASS':
+        'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 50,
+    # PageNumberPagination was imported and never used; every endpoint returned
+    # a complete list.
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'user': config('API_THROTTLE_USER', default='1000/day'),
+        'anon': config('API_THROTTLE_ANON', default='60/day'),
+    },
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'College ERP API',
+    'DESCRIPTION': "Read-only endpoints for a student's own records, plus "
+                   "class listings for the teacher who takes them.",
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
 }
 
 # Logging
