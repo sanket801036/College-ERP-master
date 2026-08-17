@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import AuthenticationForm
@@ -431,3 +433,52 @@ class NoticeForm(forms.ModelForm):
         if expires_at and expires_at < timezone.localdate():
             raise forms.ValidationError('That date has already passed.')
         return expires_at
+
+
+class ProfileForm(forms.Form):
+    """The contact details a person maintains about themselves.
+
+    Deliberately not a ModelForm over Student/Teacher: those two share no base
+    class, and the fields worth exposing are the same handful either way. USN,
+    class, department and date of birth stay out - changing those is an
+    administrative act, not a profile edit.
+    """
+    email = forms.EmailField(
+        required=True,
+        help_text='Where password resets and notifications are sent.')
+    phone = forms.CharField(required=False, max_length=20)
+    address = forms.CharField(required=False, max_length=255,
+                              widget=forms.Textarea(attrs={'rows': 2}))
+
+    def __init__(self, *args, profile=None, user=None, **kwargs):
+        self.profile = profile
+        self.user = user
+        if profile is not None and 'initial' not in kwargs:
+            kwargs['initial'] = {'email': user.email,
+                                 'phone': profile.phone,
+                                 'address': profile.address}
+        super().__init__(*args, **kwargs)
+
+    def clean_phone(self):
+        phone = self.cleaned_data['phone'].strip()
+        if phone and not re.fullmatch(r'[0-9+()\s-]{6,20}', phone):
+            raise forms.ValidationError(
+                'Use digits, spaces and + ( ) - only.')
+        return phone
+
+    def clean_email(self):
+        email = self.cleaned_data['email'].strip().lower()
+        clash = User.objects.filter(email__iexact=email)
+        if self.user is not None:
+            clash = clash.exclude(pk=self.user.pk)
+        if clash.exists():
+            raise forms.ValidationError('Another account already uses that address.')
+        return email
+
+    def save(self):
+        self.profile.phone = self.cleaned_data['phone']
+        self.profile.address = self.cleaned_data['address'].strip()
+        self.profile.save(update_fields=['phone', 'address'])
+        self.user.email = self.cleaned_data['email']
+        self.user.save(update_fields=['email'])
+        return self.profile

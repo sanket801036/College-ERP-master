@@ -1,0 +1,88 @@
+{% extends 'info/base.html' %}
+
+{% block title %}My profile{% endblock %}
+
+{% block content %}
+
+{% for message in messages %}
+  <div class="alert alert-success">{{ message }}</div>
+{% endfor %}
+
+<div class="row">
+  <div class="col-lg-5 mb-3">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-id-card"></i><b>Your record</b></div>
+      <div class="card-body">
+        {% comment %}
+        Read-only on purpose. Changing a USN, a class or a department is an
+        administrative act with consequences for attendance and marks - not
+        something to slip into a profile edit.
+        {% endcomment %}
+        <table class="table table-sm mb-2">
+          <tr><th style="width: 40%;">Name</th><td>{{ person.name }}</td></tr>
+          {% if is_student %}
+            <tr><th>USN</th><td><code>{{ person.USN }}</code></td></tr>
+            <tr><th>Class</th><td>{{ person.class_id }}</td></tr>
+          {% else %}
+            <tr><th>Staff ID</th><td><code>{{ person.id }}</code></td></tr>
+            <tr><th>Department</th><td>{{ person.dept.name }}</td></tr>
+          {% endif %}
+          <tr><th>Date of birth</th><td>{{ person.DOB }}</td></tr>
+          <tr><th>Username</th><td><code>{{ request.user.username }}</code></td></tr>
+        </table>
+        <p class="text-muted small mb-0">
+          These are set by the administration. Ask them if something is wrong.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7 mb-3">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-address-book"></i><b>Contact details</b></div>
+      <div class="card-body">
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <form method="POST">
+          {% csrf_token %}
+          {% for field in form %}
+            <div class="form-group">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}
+                <small class="form-text text-muted">{{ field.help_text }}</small>
+              {% endif %}
+              {% for error in field.errors %}
+                <div class="text-danger small mt-1">{{ error }}</div>
+              {% endfor %}
+            </div>
+          {% endfor %}
+          <button class="btn btn-primary" type="submit">Save changes</button>
+          <a class="btn btn-outline-secondary" href="{% url 'password_change' %}">
+            Change password
+          </a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block css %}
+<style>
+  form input[type="text"], form input[type="email"], form textarea {
+    display: block;
+    width: 100%;
+    padding: .375rem .75rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 10px;
+  }
+</style>
+{% endblock %}

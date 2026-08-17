@@ -191,6 +191,11 @@ class Student(models.Model):
     name = models.CharField(max_length=200)
     sex = models.CharField(max_length=50, choices=sex_choice, default='Male')
     DOB = models.DateField(default='1998-01-01')
+    # Contact details the person maintains themselves. Kept off the
+    # add-student/add-teacher forms deliberately - an admin enrolling somebody
+    # has their USN and class, not their phone number.
+    phone = models.CharField(max_length=20, blank=True)
+    address = models.CharField(max_length=255, blank=True)
 
     def __str__(self):
         return self.name
@@ -203,6 +208,11 @@ class Teacher(models.Model):
     name = models.CharField(max_length=100)
     sex = models.CharField(max_length=50, choices=sex_choice, default='Male')
     DOB = models.DateField(default='1980-01-01')
+    # Contact details the person maintains themselves. Kept off the
+    # add-student/add-teacher forms deliberately - an admin enrolling somebody
+    # has their USN and class, not their phone number.
+    phone = models.CharField(max_length=20, blank=True)
+    address = models.CharField(max_length=255, blank=True)
 
     def __str__(self):
         return self.name

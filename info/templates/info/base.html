@@ -63,6 +63,11 @@
                 {% endif %}
               </a>
               <div class="dropdown-menu dropdown-menu-right shadow-sm" aria-labelledby="userMenu">
+                {% if request.user.is_student or request.user.is_teacher %}
+                  <a class="dropdown-item" href="{% url 'profile' %}">
+                    <i class="fas fa-id-card mr-2 text-muted"></i>My profile
+                  </a>
+                {% endif %}
                 <a class="dropdown-item" href="{% url 'password_change' %}">
                   <i class="fas fa-key mr-2 text-muted"></i>Change password
                 </a>
@@ -145,6 +150,12 @@
               </a>
             </li>
             <li class="nav-item">
+              <a class="nav-link" href="{% url 'directory' %}">
+                <i class="fas fa-address-book"></i>
+                <span>Directory</span>
+              </a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" href="{% url 't_fees' %}">
                 <i class="fas fa-wallet"></i>
                 <span>Fees</span>
@@ -167,6 +178,12 @@
               <a class="nav-link" href="{% url 'add_teacher' %}">
                 <i class="fas fa-chalkboard-teacher"></i>
                 <span>Add Teacher</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'directory' %}">
+                <i class="fas fa-address-book"></i>
+                <span>Directory</span>
               </a>
             </li>
             <li class="nav-item">

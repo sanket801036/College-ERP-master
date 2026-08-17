@@ -1,0 +1,99 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Directory{% endblock %}
+
+{% block content %}
+
+<div class="mb-3">
+  <h2 class="mb-0">Directory</h2>
+  <p class="text-muted mb-0">{{ total }} {{ kind }} listed</p>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" class="form-row align-items-end">
+      <div class="col-md-6 mb-2">
+        <label class="small text-muted">Search</label>
+        <input type="text" name="q" class="form-control" value="{{ q }}"
+               placeholder="{% if kind == 'teachers' %}Name, staff ID or department{% else %}Name, USN or class{% endif %}">
+      </div>
+      <div class="col-md-3 mb-2">
+        <label class="small text-muted">Show</label>
+        <select name="kind" class="form-control">
+          <option value="students" {% if kind == 'students' %}selected{% endif %}>Students</option>
+          <option value="teachers" {% if kind == 'teachers' %}selected{% endif %}>Teachers</option>
+        </select>
+      </div>
+      <div class="col-md-3 mb-2">
+        <button class="btn btn-outline-primary btn-block" type="submit">Search</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-bordered mb-0">
+        <thead class="thead-light">
+          <tr>
+            {% if kind == 'teachers' %}
+              <th>Staff ID</th><th>Name</th><th>Department</th><th>Email</th>
+            {% else %}
+              <th>USN</th><th>Name</th><th>Class</th><th>Email</th><th></th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in page %}
+          <tr>
+            {% if kind == 'teachers' %}
+              <td><code>{{ person.id }}</code></td>
+              <td>{{ person.name }}</td>
+              <td>{{ person.dept.name }}</td>
+              <td class="text-muted">{{ person.user.email|default:"&mdash;" }}</td>
+            {% else %}
+              <td><code>{{ person.USN }}</code></td>
+              <td>{{ person.name }}</td>
+              <td>{{ person.class_id }}</td>
+              <td class="text-muted">{{ person.user.email|default:"&mdash;" }}</td>
+              <td class="text-right">
+                <a class="btn btn-sm btn-outline-primary"
+                   href="{% url 'fees' person.USN %}">Fees</a>
+              </td>
+            {% endif %}
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-muted text-center py-4">
+              {% if q %}Nobody matches that search.{% else %}Nobody listed yet.{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if page.has_other_pages %}
+<nav>
+  <ul class="pagination">
+    {% if page.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?q={{ q }}&amp;kind={{ kind }}&amp;page={{ page.previous_page_number }}">Previous</a>
+      </li>
+    {% endif %}
+    <li class="page-item disabled">
+      <span class="page-link">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    </li>
+    {% if page.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?q={{ q }}&amp;kind={{ kind }}&amp;page={{ page.next_page_number }}">Next</a>
+      </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+
+{% endblock %}

@@ -92,7 +92,7 @@ their **features**.
 | **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
 | **Fees** (§7.6) | 🟢 ledger, receipts, bulk assignment, list rebuilt | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class; pass 26 made the staff list usable at volume (FE17). Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE19-FE23 (waivers, instalments, late fees, reminders, year tagging). **FE31 still stands and needs a decision** - see below |
 | **Dashboards** (§6) | 🟢 rebuilt, charts landed | Pass 29 added attendance-by-class, fee collection and students-by-department for admins, and a class comparison for teachers. Still open: today's-schedule strip (A1), dark mode (A3), global search (A2), breadcrumbs (A5). A4 is done - the topbar carries an unread count |
-| **Accounts** (§7.9) | 🟢 creation and passwords fixed | No profile editing, photo upload, student directory, bulk import, edit/deactivate, or soft delete |
+| **Accounts** (§7.9) | 🟢 creation, passwords, profile and directory | Pass 31 added self-service contact details (AC15) and a searchable student/teacher directory (AC20). Still open: photo upload (AC16, blocked on CF1), bulk import (AC8), edit/deactivate (AC21) and soft delete (AC22) |
 | **API** (§7.10) | 🟢 working, documented | Pass 28 added Swagger/ReDoc, `/api/v1/` versioning, pagination, throttling, and two teacher endpoints. Still open: write endpoints (API15) and a token-issuing login (API16) |
 
 **What stands out now:** every module has had its correctness pass. What is
@@ -120,8 +120,10 @@ has credentials for yet.
    fee collection and outstanding by type, students by department), and in pass
    30 MK11/MK12 (per-course internals sparkline, subjects compared). **The
    chart work is done** - every chart the roadmap called for is drawn
-4. **AC15, AC20** — profile editing and the student directory (there is still a
-   commented-out `student_search` URL in `info/urls.py`)
+4. **AC16, AC21, AC22** — profile photo (blocked on CF1), edit/deactivate an
+   account, and soft delete. AC15 and AC20 are done - pass 31 added a profile
+   page and a searchable directory, and the commented-out `student_search` URL
+   is gone
 6. **IN4, IN5** — Docker and linting config. CI exists; these do not
 7. **MD3, MD4, MD7** — model-layer tidying: stale hardcoded dates
    (`Attendance.date` still defaults to 2018-10-23), a default FK to a class

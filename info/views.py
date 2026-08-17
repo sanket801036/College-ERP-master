@@ -21,7 +21,7 @@ from django.contrib.auth import get_user_model
 from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
                         ExtraClassForm, FeeForm, FeeTransactionForm,
                         ErpLoginForm, SupportRequestForm, NoticeForm,
-                        BulkFeeForm)
+                        BulkFeeForm, ProfileForm)
 from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
                              owns_marks_class, owns_teacher_id, assert_teaches)
 from info.reports import payment_receipt, report_card
@@ -1627,3 +1627,68 @@ def _support_rate_limited(request, limit=3, window=900):
         return True
     cache.set(key, seen + 1, window)
     return False
+
+
+@login_required
+def profile(request):
+    """Your own details, and the contact fields you may change.
+
+    Nobody could see or edit any of this; the only self-service the app had was
+    the password form.
+    """
+    person = (request.user.student if request.user.is_student
+              else request.user.teacher if request.user.is_teacher
+              else None)
+    if person is None:
+        # Superusers have no Student or Teacher record to show.
+        return redirect('password_change')
+
+    if request.method == 'POST':
+        form = ProfileForm(request.POST, profile=person, user=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Your details have been updated.')
+            return redirect('profile')
+    else:
+        form = ProfileForm(profile=person, user=request.user)
+
+    return render(request, 'info/profile.html', {
+        'person': person,
+        'form': form,
+        'is_student': request.user.is_student,
+    })
+
+
+@login_required
+@teacher_required
+def directory(request):
+    """Look somebody up by name, USN or staff id.
+
+    There was no directory at all - the only way to find a student was the
+    search box on the fees page, and teachers were not listed anywhere.
+    """
+    query = request.GET.get('q', '').strip()
+    kind = request.GET.get('kind', 'students')
+
+    if kind == 'teachers':
+        people = Teacher.objects.select_related('dept', 'user').order_by('name')
+        if query:
+            people = people.filter(Q(name__icontains=query) |
+                                   Q(id__icontains=query) |
+                                   Q(dept__name__icontains=query))
+    else:
+        kind = 'students'
+        people = (Student.objects
+                  .select_related('class_id', 'class_id__dept', 'user')
+                  .order_by('class_id_id', 'name'))
+        if query:
+            people = people.filter(Q(name__icontains=query) |
+                                   Q(USN__icontains=query) |
+                                   Q(class_id__id__icontains=query))
+
+    return render(request, 'info/directory.html', {
+        'page': Paginator(people, 25).get_page(request.GET.get('page')),
+        'q': query,
+        'kind': kind,
+        'total': people.count(),
+    })

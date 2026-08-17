@@ -11,7 +11,8 @@ urlpatterns = [
          views.attendance_detail, name='attendance_detail'),
     path('student/<slug:class_id>/timetable/',
          views.timetable, name='timetable'),
-    # path('student/<slug:class_id>/search/', views.student_search, name='student_search'),
+    path('profile/', views.profile, name='profile'),
+    path('directory/', views.directory, name='directory'),
 
     path('student/<slug:stud_id>/marks_list/',
          views.marks_list, name='marks_list'),
