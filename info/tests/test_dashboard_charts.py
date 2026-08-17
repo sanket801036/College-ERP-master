@@ -3,7 +3,7 @@
 "Average attendance 85%" does not say which classes drag it down, and
 "outstanding 107,000" does not say what it is owed against.
 """
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from django.test import TestCase

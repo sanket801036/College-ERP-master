@@ -10,7 +10,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from info.models import (Attendance, AttendanceClass, Fee, MarksClass)
+from info.models import Attendance, AttendanceClass, Fee, MarksClass
 from info.tests import factories as f
 from info.tests.test_attendance_totals import mark
 

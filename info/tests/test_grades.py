@@ -1,9 +1,17 @@
 from django.test import TestCase
 from django.urls import reverse
 
-from info.models import (CIE_MAX, Marks, MarksClass, SEE_ELIGIBILITY_CIE,
-                         SEE_NAME, StudentCourse, grade_for, required_see_for,
-                         sgpa_for)
+from info.models import (
+    CIE_MAX,
+    SEE_ELIGIBILITY_CIE,
+    SEE_NAME,
+    Marks,
+    MarksClass,
+    StudentCourse,
+    grade_for,
+    required_see_for,
+    sgpa_for,
+)
 from info.tests import factories as f
 
 

@@ -124,7 +124,9 @@ has credentials for yet.
    account, and soft delete. AC15 and AC20 are done - pass 31 added a profile
    page and a searchable directory, and the commented-out `student_search` URL
    is gone
-6. **IN4, IN5** — Docker and linting config. CI exists; these do not
+6. **IN6, IN8** — dependency scanning in CI, and database backups. IN4 and IN5
+   are done - pass 32 added a Dockerfile, docker-compose and ruff, with linting
+   wired into CI
 7. **MD3, MD4, MD7** — model-layer tidying: stale hardcoded dates
    (`Attendance.date` still defaults to 2018-10-23), a default FK to a class
    that may not exist, and no `updated_at` anywhere. MD2 is done

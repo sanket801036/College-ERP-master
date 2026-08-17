@@ -1,0 +1,9 @@
+.git
+.github
+venv/
+**/__pycache__/
+*.pyc
+staticfiles/
+.env
+*.sqlite3
+IMPROVEMENT_PLAN.md

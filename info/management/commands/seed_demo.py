@@ -16,9 +16,20 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils.crypto import get_random_string
 
-from info.models import (Assign, AssignTime, Attendance, AttendanceClass,
-                         AttendanceRange, Class, Course, Dept, Fee, Notice,
-                         Student, Teacher)
+from info.models import (
+    Assign,
+    AssignTime,
+    Attendance,
+    AttendanceClass,
+    AttendanceRange,
+    Class,
+    Course,
+    Dept,
+    Fee,
+    Notice,
+    Student,
+    Teacher,
+)
 
 User = get_user_model()
 

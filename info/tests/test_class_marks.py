@@ -2,11 +2,10 @@ from django.template import Context, Template
 from django.test import TestCase
 from django.urls import reverse
 
-from info.models import (Attendance, AttendanceClass, Marks, MarksClass,
-                         StudentCourse)
+from info.models import Attendance, AttendanceClass, Marks, MarksClass, StudentCourse
 from info.templatetags.charts import bar_chart
-from info.views import _cie_bands, _median
 from info.tests import factories as f
+from info.views import _cie_bands, _median
 
 
 class MedianTests(TestCase):

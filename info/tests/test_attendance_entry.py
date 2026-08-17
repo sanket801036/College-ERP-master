@@ -4,8 +4,14 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from info.models import (Attendance, AttendanceClass, AssignTime,
-                         CLASS_CANCELLED, CLASS_PENDING, CLASS_TAKEN)
+from info.models import (
+    CLASS_CANCELLED,
+    CLASS_PENDING,
+    CLASS_TAKEN,
+    AssignTime,
+    Attendance,
+    AttendanceClass,
+)
 from info.tests import factories as f
 
 

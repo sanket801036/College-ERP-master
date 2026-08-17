@@ -1,35 +1,80 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponseRedirect, HttpResponse
-from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AttendanceTotal, time_slots, \
-    DAYS_OF_WEEK, AssignTime, AttendanceClass, StudentCourse, Marks, MarksClass, Fee, Notice, fee_type_choice, AuditLog, SupportRequest, NoticeRead, notice_category_choice, FeeTransaction, \
-    CIE_MAX, SEE_MAX, SEE_ELIGIBILITY_CIE, sgpa_for, \
-    CLASS_PENDING, CLASS_TAKEN, CLASS_CANCELLED, test_name
-from django.urls import reverse, reverse_lazy
-from django.utils import timezone
-from django.db import transaction
-from django.db.models import Count, Q
-from django.core.paginator import Paginator
-from urllib.parse import urlencode
-from django.core.exceptions import PermissionDenied
+import logging
 from datetime import timedelta
+from urllib.parse import urlencode
+
+from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, PasswordChangeView
-from django.contrib import messages
 from django.core.cache import cache
+from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Count, Q
+from django.http import HttpResponse, HttpResponseRedirect
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.decorators.http import require_POST
-from django.contrib.auth import get_user_model
-from info.forms import (StudentForm, TeacherForm, MarksEntryForm,
-                        ExtraClassForm, FeeForm, FeeTransactionForm,
-                        ErpLoginForm, SupportRequestForm, NoticeForm,
-                        BulkFeeForm, ProfileForm)
-from info.decorators import (teacher_required, owns_assign, owns_attendance_class,
-                             owns_marks_class, owns_teacher_id, assert_teaches)
-from info.reports import payment_receipt, report_card
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
+from info.decorators import (
+    assert_teaches,
+    owns_assign,
+    owns_attendance_class,
+    owns_marks_class,
+    owns_teacher_id,
+    teacher_required,
+)
+from info.forms import (
+    BulkFeeForm,
+    ErpLoginForm,
+    ExtraClassForm,
+    FeeForm,
+    FeeTransactionForm,
+    MarksEntryForm,
+    NoticeForm,
+    ProfileForm,
+    StudentForm,
+    SupportRequestForm,
+    TeacherForm,
+)
+from info.reports import payment_receipt, report_card
 
-import logging
+from .models import (
+    CIE_MAX,
+    CLASS_CANCELLED,
+    CLASS_PENDING,
+    CLASS_TAKEN,
+    DAYS_OF_WEEK,
+    SEE_ELIGIBILITY_CIE,
+    SEE_MAX,
+    Assign,
+    AssignTime,
+    Attendance,
+    AttendanceClass,
+    AttendanceTotal,
+    AuditLog,
+    Class,
+    Course,
+    Dept,
+    Fee,
+    FeeTransaction,
+    Marks,
+    MarksClass,
+    Notice,
+    NoticeRead,
+    Student,
+    StudentCourse,
+    SupportRequest,
+    Teacher,
+    fee_type_choice,
+    notice_category_choice,
+    sgpa_for,
+    test_name,
+    time_slots,
+)
 
 User = get_user_model()
 logger = logging.getLogger(__name__)

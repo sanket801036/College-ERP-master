@@ -60,7 +60,10 @@ COLUMNS = (
 def _row(pdf, y, cells, bold=False, colour=INK):
     pdf.setFont('Helvetica-Bold' if bold else 'Helvetica', 9)
     pdf.setFillColor(colour)
-    for cell, (offset, align) in zip(cells, COLUMNS):
+    # strict: a row with the wrong number of cells is a programming error, and
+    # zip's default would quietly drop a column - a marks card missing its grade
+    # would go out looking perfectly well-formed.
+    for cell, (offset, align) in zip(cells, COLUMNS, strict=True):
         x = MARGIN + offset * mm
         if align == 'right':
             pdf.drawRightString(x, y, str(cell))

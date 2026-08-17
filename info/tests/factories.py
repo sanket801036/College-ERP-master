@@ -6,7 +6,7 @@ by hand in every test is noisy. These keep the tests about behaviour.
 """
 from django.contrib.auth import get_user_model
 
-from info.models import (Assign, Class, Course, Dept, Student, Teacher)
+from info.models import Assign, Class, Course, Dept, Student, Teacher
 
 User = get_user_model()
 

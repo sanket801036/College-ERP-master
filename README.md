@@ -47,7 +47,20 @@ gunicorn + WhiteNoise on Render
 
 ## Running it locally
 
-Requires Python 3.10+ and PostgreSQL.
+### With Docker
+
+```bash
+git clone https://github.com/sanket801036/College-ERP-master.git
+cd College-ERP-master
+docker compose up
+```
+
+That brings up Postgres, migrates, seeds a demo database and serves the app on
+http://localhost:8000 - the seed step prints the logins it creates.
+
+### Without Docker
+
+Requires Python 3.10+ and a local PostgreSQL.
 
 ```bash
 git clone https://github.com/sanket801036/College-ERP-master.git
@@ -76,10 +89,11 @@ Configuration comes from environment variables (see `.env.example`):
 `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, or a single
 `DATABASE_URL`; plus `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` and `LOG_LEVEL`.
 
-## Tests
+## Tests and linting
 
 ```bash
 python manage.py test info.tests
+ruff check .
 ```
 
 130 tests covering the attendance, CIE and fee calculations, role and ownership

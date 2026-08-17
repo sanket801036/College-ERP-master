@@ -3,13 +3,21 @@ import re
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import AuthenticationForm
+from django.utils import timezone
 from django.utils.crypto import get_random_string
 
-from django.utils import timezone
-
-from info.models import (AttendanceRange, Class, Fee, FeeTransaction, Notice,
-                         SupportRequest, Student, Teacher,
-                         fee_type_choice, notice_audience_choice)
+from info.models import (
+    AttendanceRange,
+    Class,
+    Fee,
+    FeeTransaction,
+    Notice,
+    Student,
+    SupportRequest,
+    Teacher,
+    fee_type_choice,
+    notice_audience_choice,
+)
 
 User = get_user_model()
 

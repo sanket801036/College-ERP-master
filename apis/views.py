@@ -8,17 +8,23 @@ this; request.user is populated by the time the view runs.
 """
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from drf_spectacular.utils import extend_schema
-
-from info.models import (ATTENDANCE_THRESHOLD, Assign, AssignTime, Attendance,
-                         AttendanceTotal, Course, Student, StudentCourse,
-                         Teacher)
-
 import apis.serializers as api_ser
+from info.models import (
+    ATTENDANCE_THRESHOLD,
+    Assign,
+    AssignTime,
+    Attendance,
+    AttendanceTotal,
+    Course,
+    Student,
+    StudentCourse,
+    Teacher,
+)
 
 
 class StudentAPIView(APIView):

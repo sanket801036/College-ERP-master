@@ -1,7 +1,6 @@
 from rest_framework import serializers
 
-from info.models import (Assign, AssignTime, AttendanceTotal, Student,
-                         StudentCourse)
+from info.models import Assign, AssignTime, AttendanceTotal, Student, StudentCourse
 
 
 class StudentSerializer(serializers.ModelSerializer):

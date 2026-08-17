@@ -6,7 +6,6 @@ short of reading the source.
 from datetime import date, timedelta
 
 from django.test import TestCase
-from django.urls import reverse
 
 from info.models import Attendance, AttendanceClass
 from info.tests import factories as f

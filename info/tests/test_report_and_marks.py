@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 
 from django.db import connection
 from django.test import TestCase

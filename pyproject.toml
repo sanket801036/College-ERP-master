@@ -1,0 +1,28 @@
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+exclude = ["venv", "staticfiles", "info/migrations"]
+
+[tool.ruff.lint]
+# Deliberately not the whole rule set. These catch real mistakes - unused
+# imports and names, undefined references, mutable default arguments, bare
+# zip() - rather than restyling code that reads fine.
+#
+# UP is left out on purpose: its main finding here is 61 sites using percent
+# formatting, which is the codebase's consistent idiom and Django's own. That
+# is a rewrite, not a fix, and it would bury the rules that do catch bugs.
+select = ["E", "F", "W", "I", "B", "C4"]
+ignore = [
+    # Long lines exist where splitting them reads worse - notably the model
+    # imports and a few template-facing strings.
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Settings legitimately defines names the linter cannot see used.
+"CollegeERP/settings.py" = ["F405", "F403"]
+# Test files repeat long literal payloads; splitting them hurts readability.
+"info/tests/*" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["info", "apis", "CollegeERP"]

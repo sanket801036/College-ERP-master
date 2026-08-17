@@ -4,8 +4,14 @@ from datetime import date
 from django.test import TestCase
 from django.urls import reverse
 
-from info.models import (Attendance, AttendanceClass, AttendanceRange, Marks,
-                         MarksClass, StudentCourse)
+from info.models import (
+    Attendance,
+    AttendanceClass,
+    AttendanceRange,
+    Marks,
+    MarksClass,
+    StudentCourse,
+)
 from info.tests import factories as f
 
 

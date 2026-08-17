@@ -7,10 +7,9 @@ and nothing in the application ever issued a token.
 from datetime import date, timedelta
 
 from django.test import TestCase
-from django.urls import reverse
 from rest_framework.authtoken.models import Token
 
-from info.models import Attendance, AttendanceClass, AssignTime, StudentCourse
+from info.models import AssignTime, Attendance, AttendanceClass, StudentCourse
 from info.tests import factories as f
 
 

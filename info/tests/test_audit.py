@@ -6,8 +6,13 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 
-from info.models import (Attendance, AttendanceClass, AuditLog, Fee,
-                         MarksClass, StudentCourse)
+from info.models import (
+    Attendance,
+    AttendanceClass,
+    AuditLog,
+    Fee,
+    MarksClass,
+)
 from info.tests import factories as f
 
 

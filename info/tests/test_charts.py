@@ -4,7 +4,7 @@ from django.template import Context, Template
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from info.models import Attendance, AttendanceClass, AssignTime
+from info.models import AssignTime, Attendance, AttendanceClass
 from info.templatetags.charts import attendance_trend, meter, zone_for
 from info.tests import factories as f
 
@@ -131,7 +131,8 @@ class TrendTests(TestCase):
 
         points = attendance_trend(rows)['points']
 
-        for earlier, later in zip(points, points[1:]):
+        # Ragged on purpose: pairing each point with its successor.
+        for earlier, later in zip(points, points[1:], strict=False):
             self.assertAlmostEqual(earlier['hit_x'] + earlier['hit_w'],
                                    later['hit_x'], places=1)
 

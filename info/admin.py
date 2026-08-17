@@ -1,12 +1,30 @@
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.http import HttpResponseRedirect
 from django.urls import path
 
-from .models import Dept, Class, Student, Attendance, Course, Teacher, Assign, AssignTime, AttendanceClass, FeeTransaction, AuditLog, SupportRequest
-from .models import StudentCourse, Marks, User, AttendanceRange, Fee, Notice
+from .models import (
+    Assign,
+    AssignTime,
+    Attendance,
+    AttendanceClass,
+    AttendanceRange,
+    AuditLog,
+    Class,
+    Course,
+    Dept,
+    Fee,
+    FeeTransaction,
+    Marks,
+    Notice,
+    Student,
+    StudentCourse,
+    SupportRequest,
+    Teacher,
+    User,
+)
 
 # Register your models here.
 

@@ -1,14 +1,15 @@
-from django.db import models
 import math
-from decimal import Decimal
-from django.db.models.functions import Coalesce
-from django.utils.functional import cached_property
-from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, MaxValueValidator
-from django.utils import timezone
-from django.contrib.auth.models import AbstractUser
-from django.db.models.signals import post_save, post_delete
 from datetime import timedelta
+from decimal import Decimal
+
+from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import models
+from django.db.models.functions import Coalesce
+from django.db.models.signals import post_delete, post_save
+from django.utils import timezone
+from django.utils.functional import cached_property
 
 # Create your models here.
 sex_choice = (

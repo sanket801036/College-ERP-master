@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.urls import reverse
 
-from info.models import (AuditLog, Marks, MarksClass, StudentCourse)
+from info.models import AuditLog, Marks, MarksClass, StudentCourse
 from info.tests import factories as f
 
 
