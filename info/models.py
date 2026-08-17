@@ -187,16 +187,19 @@ class Class(models.Model):
 
 class Student(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, null=True)
-    class_id = models.ForeignKey(Class, on_delete=models.CASCADE, default=1)
+    class_id = models.ForeignKey(Class, on_delete=models.CASCADE)
     USN = models.CharField(primary_key='True', max_length=100)
     name = models.CharField(max_length=200)
     sex = models.CharField(max_length=50, choices=sex_choice, default='Male')
-    DOB = models.DateField(default='1998-01-01')
+    DOB = models.DateField()
     # Contact details the person maintains themselves. Kept off the
     # add-student/add-teacher forms deliberately - an admin enrolling somebody
     # has their USN and class, not their phone number.
     phone = models.CharField(max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)
+    # Null on rows that predate this column - a backfilled timestamp would
+    # claim every record changed the day the field was added.
+    updated_at = models.DateTimeField(auto_now=True, null=True)
 
     def __str__(self):
         return self.name
@@ -205,15 +208,18 @@ class Student(models.Model):
 class Teacher(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, null=True)
     id = models.CharField(primary_key=True, max_length=100)
-    dept = models.ForeignKey(Dept, on_delete=models.CASCADE, default=1)
+    dept = models.ForeignKey(Dept, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
     sex = models.CharField(max_length=50, choices=sex_choice, default='Male')
-    DOB = models.DateField(default='1980-01-01')
+    DOB = models.DateField()
     # Contact details the person maintains themselves. Kept off the
     # add-student/add-teacher forms deliberately - an admin enrolling somebody
     # has their USN and class, not their phone number.
     phone = models.CharField(max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)
+    # Null on rows that predate this column - a backfilled timestamp would
+    # claim every record changed the day the field was added.
+    updated_at = models.DateTimeField(auto_now=True, null=True)
 
     def __str__(self):
         return self.name
@@ -331,13 +337,17 @@ class AttendanceClass(models.Model):
 class Attendance(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
-    attendanceclass = models.ForeignKey(AttendanceClass, on_delete=models.CASCADE, default=1)
-    date = models.DateField(default='2018-10-23')
+    attendanceclass = models.ForeignKey(AttendanceClass, on_delete=models.CASCADE)
+    date = models.DateField()
     # Was the string 'True'. It round-trips through the database correctly, so
     # this was never data corruption - but an unsaved instance held the literal
     # string, and bool('False') is True, so any check on a fresh object read
     # the opposite of what it said.
     status = models.BooleanField(default=True)
+    # Null on rows that predate this column. Note queryset.update() does not
+    # touch auto_now - only .save() does - so this records edits made through
+    # the views, which is where attendance actually gets changed.
+    updated_at = models.DateTimeField(auto_now=True, null=True)
 
     def __str__(self):
         return '%s : %s' % (self.student.name, self.course.shortname)
@@ -749,6 +759,10 @@ class Marks(models.Model):
     # still counts as zero towards the CIE - that is how the scheme works - but
     # the record says which of the two it was, and the pages say so too.
     is_absent = models.BooleanField(default=False)
+    # Null on rows that predate this column. Grades are the records most worth
+    # knowing the age of; the audit log says who changed one and to what, this
+    # says when it last moved at all.
+    updated_at = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         unique_together = (('studentcourse', 'name'),)
