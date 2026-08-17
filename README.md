@@ -96,9 +96,10 @@ python manage.py test info.tests
 ruff check .
 ```
 
-130 tests covering the attendance, CIE and fee calculations, role and ownership
-checks on every teacher view, form validation, timetable clash detection, the
-audit trail, the API, and query counts on the list pages.
+438 tests covering the attendance, CIE, grade and fee calculations, role and
+ownership checks on every teacher view, form validation, timetable clash
+detection, the audit trail, the charts, the API, and query counts on the list
+pages. Both run in CI on every push.
 
 ## Deployment
 
@@ -121,10 +122,13 @@ info/             the application
                   fees and payments
   decorators.py   role and ownership guards
   middleware.py   forces a password change on accounts issued by an admin
+  reports.py      PDF marks cards and fee receipts
+  templatetags/   inline SVG chart tags - no chart library, no CDN
   management/     seed_demo, which builds a usable demo database
   tests/          test suite
-apis/             read-only REST endpoints for the student's own records
+apis/             REST endpoints, documented at /api/docs/
 templates/        error pages (400/403/404/500)
+Dockerfile        image; docker-compose.yml brings it up with Postgres
 ```
 
 Roles are derived rather than stored: `User.is_student` and `User.is_teacher`
