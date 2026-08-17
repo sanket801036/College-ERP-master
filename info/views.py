@@ -179,7 +179,34 @@ def _teacher_dashboard(teacher):
         'pending_marks': pending_marks,
         'at_risk': sorted(at_risk, key=lambda t: t.attendance)[:10],
         'at_risk_count': len(at_risk),
+        # Which of their own classes is doing worse - a comparison the teacher
+        # could previously only make by opening each report in turn.
+        'attendance_by_class': _teacher_class_attendance(assigns),
     }
+
+
+def _teacher_class_attendance(assigns):
+    """Average attendance per class this teacher takes, weakest first.
+
+    Keyed by assignment rather than class, since the same class can appear twice
+    under two courses and they are separate attendance registers.
+    """
+    counts = (Attendance.objects
+              .filter(course__in=[a.course_id for a in assigns],
+                      student__class_id__in={a.class_id_id for a in assigns})
+              .values('course', 'student__class_id')
+              .annotate(held=Count('pk'),
+                        attended=Count('pk', filter=Q(status=True))))
+    by_pair = {(row['course'], row['student__class_id']): row for row in counts}
+
+    out = []
+    for assign in assigns:
+        row = by_pair.get((assign.course_id, assign.class_id_id))
+        if not row or not row['held']:
+            continue
+        label = '%s %s' % (assign.class_id_id, assign.course.shortname)
+        out.append((label, round(row['attended'] / row['held'] * 100, 1)))
+    return sorted(out, key=lambda pair: pair[1])
 
 
 def _admin_dashboard():
@@ -188,7 +215,9 @@ def _admin_dashboard():
     attended = sum(t.att_class for t in with_classes)
 
     fees = Fee.objects.all()
-    outstanding = sum(f.balance for f in fees)
+    billed = sum(f.amount for f in fees)
+    collected = sum(f.paid_amount for f in fees)
+    outstanding = billed - collected
 
     return {
         'latest_notices': Notice.objects.all()[:3],
@@ -202,7 +231,53 @@ def _admin_dashboard():
         'overdue_count': sum(1 for f in fees if f.is_overdue),
         'open_support': SupportRequest.objects.exclude(status='Resolved').count(),
         'recent_activity': AuditLog.objects.all()[:10],
+        # The dashboard reported these as bare numbers; which classes are
+        # struggling and where the money is owed both need a comparison to read.
+        'attendance_by_class': _attendance_by_class(with_classes),
+        'collection_rate': (float(collected / billed * 100) if billed else None),
+        'outstanding_by_type': _outstanding_by_fee_type(fees),
+        'students_by_dept': _students_by_dept(),
     }
+
+
+def _attendance_by_class(rows):
+    """Average attendance per class, weakest first."""
+    classes = {s.USN: s.class_id_id for s in Student.objects.only('USN', 'class_id')}
+    totals = {}
+    for row in rows:
+        key = classes.get(row.student.USN)
+        if key is None:
+            continue
+        held, attended = totals.setdefault(key, [0, 0])
+        totals[key] = [held + row.total_class, attended + row.att_class]
+
+    out = [(name, round(attended / held * 100, 1))
+           for name, (held, attended) in totals.items() if held]
+    return sorted(out, key=lambda pair: pair[1])
+
+
+def _outstanding_by_fee_type(fees):
+    """What is owed, by fee type - largest first, in thousands of rupees.
+
+    Full rupee amounts run past the chart's value column and read as a wall of
+    digits; the reader of a ranked comparison wants the relative sizes, and the
+    exact figures are on the fees page.
+    """
+    totals = {}
+    for fee in fees:
+        if fee.balance > 0:
+            totals[fee.fee_type] = totals.get(fee.fee_type, 0) + float(fee.balance)
+    return sorted(((name, round(amount / 1000, 1)) for name, amount in totals.items()),
+                  key=lambda pair: -pair[1])
+
+
+def _students_by_dept():
+    rows = (Student.objects
+            .values('class_id__dept__name')
+            .annotate(total=Count('USN'))
+            .order_by('-total'))
+    return [(row['class_id__dept__name'] or 'Unassigned', row['total'])
+            for row in rows]
 
 
 @login_required()

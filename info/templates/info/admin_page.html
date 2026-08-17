@@ -1,5 +1,5 @@
 {% extends 'info/base.html' %}
-{% load static %}
+{% load static charts %}
 
 {% block title %}Admin{% endblock %}
 
@@ -154,6 +154,55 @@
       <p class="text-muted mb-2">No notices yet.</p>
     {% endfor %}
     <a href="{% url 'notices' %}" class="btn btn-outline-primary btn-sm">Go to Notice Board</a>
+  </div>
+</div>
+
+{% comment %}
+The dashboard reported these as bare totals. "Average attendance 85%" does not
+say which classes are dragging it down, and "outstanding 107,000" does not say
+what it is owed against - both need a comparison to be actionable.
+{% endcomment %}
+<div class="row">
+  <div class="col-lg-6 mb-3">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-chart-bar"></i><b>Attendance by class</b></div>
+      <div class="card-body">
+        {% if attendance_by_class %}
+          {% bar_chart attendance_by_class max_value=100 unit="%" caption="Weakest first. The 75% rule is the exam-eligibility line." %}
+        {% else %}
+          <p class="text-muted mb-0">No attendance recorded yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6 mb-3">
+    <div class="card h-100">
+      <div class="card-header"><i class="fas fa-hand-holding-dollar"></i><b>Fee collection</b></div>
+      <div class="card-body">
+        {% if collection_rate is not None %}
+          {% meter collection_rate threshold=90 subject="Collected" %}
+        {% else %}
+          <p class="text-muted mb-2">No fees raised yet.</p>
+        {% endif %}
+        {% if outstanding_by_type %}
+          <div class="mt-3">
+            {% bar_chart outstanding_by_type unit="k" caption="Outstanding by fee type, in thousands of rupees" %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><i class="fas fa-users"></i><b>Students by department</b></div>
+  <div class="card-body">
+    {% if students_by_dept %}
+      {% bar_chart students_by_dept caption="Enrolled students" %}
+    {% else %}
+      <p class="text-muted mb-0">No students enrolled yet.</p>
+    {% endif %}
   </div>
 </div>
 

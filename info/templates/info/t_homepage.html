@@ -1,5 +1,5 @@
 {% extends 'info/base.html' %}
-{% load static %}
+{% load static charts %}
 
 {% block title %}Home{% endblock %}
 
@@ -101,6 +101,15 @@ is unambiguous.
         </li>
       {% endfor %}
     </ul>
+  </div>
+</div>
+{% endif %}
+
+{% if attendance_by_class %}
+<div class="card mb-4">
+  <div class="card-header"><i class="fas fa-chart-bar"></i><b>How your classes compare</b></div>
+  <div class="card-body">
+    {% bar_chart attendance_by_class max_value=100 unit="%" caption="Average attendance per class, weakest first." %}
   </div>
 </div>
 {% endif %}
