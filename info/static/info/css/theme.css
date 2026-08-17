@@ -699,3 +699,41 @@ body {
 }
 
 .erp-chart-bar:hover { fill: var(--erp-primary-dark); }
+
+/* ---------- Sparkline (one course's internals) ----------
+   Sits inline beside the CIE it qualifies, so it takes its size from the row
+   rather than the chart grid. Direction is stated in the label too - the
+   colour is a reinforcement, not the message. */
+.erp-sparkline {
+  display: block;
+  overflow: visible;
+}
+
+.erp-sparkline-line {
+  fill: none;
+  stroke: var(--erp-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.erp-sparkline-dot {
+  fill: var(--erp-muted);
+}
+
+.erp-sparkline-dot-last {
+  /* A surface ring so the end point stays legible where it sits on the line. */
+  stroke: var(--erp-surface);
+  stroke-width: 1.5;
+}
+
+.erp-sparkline-up .erp-sparkline-line,
+.erp-sparkline-up .erp-sparkline-dot { stroke: var(--erp-success); fill: var(--erp-success); }
+.erp-sparkline-up .erp-sparkline-line { fill: none; }
+
+.erp-sparkline-down .erp-sparkline-line,
+.erp-sparkline-down .erp-sparkline-dot { stroke: var(--erp-danger); fill: var(--erp-danger); }
+.erp-sparkline-down .erp-sparkline-line { fill: none; }
+
+.erp-sparkline-up .erp-sparkline-dot-last,
+.erp-sparkline-down .erp-sparkline-dot-last { stroke: var(--erp-surface); }

@@ -845,6 +845,12 @@ def marks_list(request, stud_id):
                         if with_cie else None),
         'best': max(with_cie, key=lambda sc: sc.get_cie(), default=None),
         'weakest': min(with_cie, key=lambda sc: sc.get_cie(), default=None),
+        # Where the subjects sit relative to each other. The accordion below
+        # answers one course at a time; ranking them is a different question.
+        'cie_by_course': sorted(
+            ((sc.course.shortname or sc.course.name, sc.get_cie())
+             for sc in with_cie),
+            key=lambda pair: -pair[1]),
     })
 
 

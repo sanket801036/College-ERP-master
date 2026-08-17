@@ -37,6 +37,15 @@ DAYS_OF_WEEK = (
     ('Saturday', 'Saturday'),
 )
 
+# The three internals in order. A comparison across these is fair - same kind
+# of assessment, same ceiling, sequential through the term - which the events
+# are not, so a trend is drawn over these alone.
+INTERNAL_COMPONENTS = (
+    'Internal test 1',
+    'Internal test 2',
+    'Internal test 3',
+)
+
 CIE_COMPONENTS = (
     'Internal test 1',
     'Internal test 2',
@@ -535,6 +544,23 @@ class StudentCourse(models.Model):
                 # of the two it was rather than showing a bare 0.
                 'absent': bool(mark and mark.is_absent),
             })
+        return rows
+
+    def internal_trend(self):
+        """Submitted internals in order, as (label, mark, total).
+
+        Only what has been released - an unsat test plotted at zero reads as a
+        collapse in performance rather than a test that has not happened.
+        """
+        scored = {m.name: m for m in self.marks_set.all()}
+        rows = []
+        for index, name in enumerate(INTERNAL_COMPONENTS, start=1):
+            mark = scored.get(name)
+            if mark is None or not self.is_submitted(name):
+                continue
+            rows.append({'label': 'I%d' % index,
+                         'marks': mark.marks1,
+                         'total': mark.total_marks})
         return rows
 
     def get_see(self):

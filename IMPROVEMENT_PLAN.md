@@ -84,7 +84,7 @@ their **features**.
 | **Login** (§5) | 🟢 rebuilt | §5.1 (OTP reset) is the only part unbuilt, and it is blocked on CF3 (no SMTP host). "Forgot password?" currently opens a modal pointing at the admin rather than a real reset flow |
 | **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB17 (email on publish, blocked on CF3), NB22 (should a teacher be able to address the whole institution?) |
 | **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
-| **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA landed in pass 19 on VTU's 10-point scale; class rank (MK8) and the PDF marks card (MK10) in pass 24; publication control (MK20) in pass 23. Still open: the charts (MK11/MK12/MK16), semester history (MK15, needs semester tagging) and MK18 (re-evaluation workflow) |
+| **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA landed in pass 19 on VTU's 10-point scale; class rank (MK8) and the PDF marks card (MK10) in pass 24; publication control (MK20) in pass 23. Pass 30 added the cross-subject comparison (MK12) and a per-course internals sparkline (MK11). Still open: MK16 (attendance/marks correlation), semester history (MK15, needs semester tagging) and MK18 (re-evaluation workflow) |
 | **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
 | **Attendance - teacher** (§7.3) | 🟢 secured, entry rebuilt | Pass 21 landed one-click marking from the dashboard, mark-all-present, a live counter, keyboard entry, roster search, the unsaved-changes guard, and real session states; TA-C4 and TA-C6 are closed. Still open: TA6 (photos, blocked on CF1), TA9/TA10 (bulk import, offline drafts), TA12-TA17 (class analytics and export), TA19-TA21 (cancel reason, reschedule, substitutes) |
 | **Marks entry - teacher** (§7.7) | 🟢 secured, validated, entry rebuilt | Pass 22 landed the max-marks hint, live inline validation, keyboard entry, running statistics, the previous component alongside, sorting and the unsaved-changes guard, and folded the separate edit template into this one. Still open: TM5 (absent-vs-zero, needs a flag on `Marks`), TM6 (draft save), TM7 (bulk import), TM11-TM14 (post-entry statistics and export), TM15 (publication control), TM16 (re-evaluation queue), TM24 (confirmation screen) |
@@ -117,8 +117,9 @@ has credentials for yet.
    Built on it so far: B3 (per-course meters), B2 (attendance trend) and, in
    pass 27, C6 (marks distribution) on the class marks page, and in pass 29
    C4 (the teacher's own classes compared) and D1/D2/D7 (attendance by class,
-   fee collection and outstanding by type, students by department). Still to
-   draw: MK11/MK12 (marks trend and cross-subject)
+   fee collection and outstanding by type, students by department), and in pass
+   30 MK11/MK12 (per-course internals sparkline, subjects compared). **The
+   chart work is done** - every chart the roadmap called for is drawn
 4. **AC15, AC20** — profile editing and the student directory (there is still a
    commented-out `student_search` URL in `info/urls.py`)
 6. **IN4, IN5** — Docker and linting config. CI exists; these do not

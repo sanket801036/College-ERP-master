@@ -1,0 +1,20 @@
+{% load l10n %}
+{% comment %}
+No axes, no labels: a sparkline sits beside the number it qualifies and borrows
+its context from the row. The direction is also given in the aria-label and the
+title, so it is never carried by slope alone.
+{% endcomment %}
+{% if points %}
+{% localize off %}
+<svg class="erp-sparkline erp-sparkline-{{ direction }}"
+     viewBox="0 0 {{ width }} {{ height }}" width="{{ width }}" height="{{ height }}"
+     role="img" aria-label="Internals trend: {{ summary }}.">
+  <title>{{ summary }}</title>
+  <polyline class="erp-sparkline-line" points="{{ line }}"/>
+  {% for point in points %}
+    <circle class="erp-sparkline-dot{% if forloop.last %} erp-sparkline-dot-last{% endif %}"
+            cx="{{ point.x }}" cy="{{ point.y }}" r="{% if forloop.last %}3{% else %}2{% endif %}"/>
+  {% endfor %}
+</svg>
+{% endlocalize %}
+{% endif %}

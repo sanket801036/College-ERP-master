@@ -231,3 +231,56 @@ def attendance_trend(sessions, threshold=SAFE_FLOOR):
         # so it is not mistaken for one of these.
         'gridlines': [{'percent': p, 'y': round(y_at(p), 2)} for p in (0, 50, 100)],
     }
+
+
+@register.inclusion_tag('info/charts/sparkline.html')
+def sparkline(points, max_value, caption=''):
+    """A small multiple: one course's internals, in order.
+
+    Deliberately not one multi-series line across every subject. Five courses on
+    one plot needs a categorical palette, a legend and a colour-vision pass to
+    say something each subject answers on its own - and the reader's question
+    here is "am I climbing or slipping in this one", which a single line beside
+    its own row answers directly.
+
+    `points` is the (label, marks, total) run from
+    StudentCourse.internal_trend().
+    """
+    rows = list(points)
+    # Two points make a direction; one is just the mark, which the row already
+    # shows.
+    if len(rows) < 2:
+        return {'points': []}
+
+    width, height = 132, 34
+    pad_x, pad_y = 4, 6
+    plot_w = width - pad_x * 2
+    plot_h = height - pad_y * 2
+    scale = max_value or 1
+
+    coords = []
+    for index, row in enumerate(rows):
+        x = pad_x + plot_w * index / (len(rows) - 1)
+        y = pad_y + plot_h * (1 - min(1.0, row['marks'] / scale))
+        coords.append({'x': round(x, 2), 'y': round(y, 2),
+                       'label': row['label'], 'marks': row['marks'],
+                       'total': row['total']})
+
+    first, last = coords[0], coords[-1]
+    direction = ('up' if last['marks'] > first['marks']
+                 else 'down' if last['marks'] < first['marks']
+                 else 'flat')
+
+    return {
+        'points': coords,
+        'line': ' '.join('%s,%s' % (c['x'], c['y']) for c in coords),
+        'last': last,
+        'direction': direction,
+        # Stated in words as well as slope, so the direction is not carried by
+        # the shape alone.
+        'summary': '%s to %s out of %s across %d internals'
+                   % (first['marks'], last['marks'], last['total'], len(coords)),
+        'width': width,
+        'height': height,
+        'caption': caption,
+    }

@@ -58,6 +58,20 @@ had not happened yet from one scored zero.
   </div>
 </div>
 
+{% if cie_by_course|length > 1 %}
+<div class="card mb-3">
+  <div class="card-header"><i class="fas fa-chart-bar"></i><b>How your subjects compare</b></div>
+  <div class="card-body">
+    {% comment %}
+    The accordion answers one course at a time; where they sit relative to each
+    other is a different question and needs them side by side. Only drawn for
+    more than one course - a chart of a single bar is a number.
+    {% endcomment %}
+    {% bar_chart cie_by_course max_value=cie_max caption="CIE out of 50, strongest first" %}
+  </div>
+</div>
+{% endif %}
+
 <div class="accordion" id="marksAccordion">
   {% for sc in sc_list %}
   <div class="card mb-2">
@@ -96,6 +110,17 @@ had not happened yet from one scored zero.
         marks that do not exist yet.
         {% endcomment %}
         {% meter sc.cie_percent 40 "CIE" sc.cie_is_final %}
+
+        {% with trend=sc.internal_trend %}
+          {% if trend|length > 1 %}
+            <div class="d-flex align-items-center mt-3">
+              {% sparkline trend 20 %}
+              <span class="text-muted small ml-3">
+                Internals 1&ndash;{{ trend|length }}, out of 20 each
+              </span>
+            </div>
+          {% endif %}
+        {% endwith %}
 
         <table class="table table-sm mt-3 mb-2">
           <thead class="thead-light">
