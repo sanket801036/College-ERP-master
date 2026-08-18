@@ -9,7 +9,10 @@ this; request.user is populated by the time the view runs.
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from rest_framework.authtoken.models import Token
+from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -19,12 +22,14 @@ from info.models import (
     Assign,
     AssignTime,
     Attendance,
+    AttendanceClass,
     AttendanceTotal,
     Course,
     Student,
     StudentCourse,
     Teacher,
 )
+from info.services import SessionNotMarkable, submit_attendance
 
 
 class StudentAPIView(APIView):
@@ -184,3 +189,72 @@ class ClassStudentsView(TeacherAPIView):
 
         serializer = api_ser.ClassStudentSerializer(rows, many=True)
         return Response({'data': serializer.data})
+
+
+@extend_schema(
+    summary='Exchange a username and password for a token',
+    description='Nothing in the application issued tokens, so the only way to '
+                'authenticate was a session cookie or a token created by hand '
+                'in the shell.',
+    request=None,
+    responses=api_ser.TokenSerializer,
+)
+class ObtainTokenView(ObtainAuthToken):
+    # The one endpoint that must be reachable while signed out.
+    permission_classes = [AllowAny]
+    throttle_scope = 'login'
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data,
+                                           context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        token, _ = Token.objects.get_or_create(user=user)
+
+        role = ('admin' if user.is_superuser
+                else 'teacher' if user.is_teacher
+                else 'student' if user.is_student
+                else 'none')
+        return Response({'data': {'token': token.key,
+                                  'username': user.username,
+                                  'role': role}})
+
+
+@extend_schema(
+    summary='Submit attendance for a session',
+    description='Marks every student in the class: those listed present, the '
+                'rest absent. Re-submitting a session updates it and records '
+                'what changed.',
+    request=api_ser.AttendanceSubmitSerializer,
+    responses=api_ser.AttendanceSubmitResultSerializer,
+)
+class SubmitAttendanceView(TeacherAPIView):
+    def post(self, request, session_id):
+        # Scoped through assignments(), so a teacher can only mark a session of
+        # their own class - the same rule the web view enforces.
+        session = get_object_or_404(
+            AttendanceClass.objects.filter(assign__in=self.assignments(request)),
+            id=session_id)
+
+        roll = [s.USN for s in session.assign.class_id.student_set.all()]
+        serializer = api_ser.AttendanceSubmitSerializer(data=request.data,
+                                                        roll=roll)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            # Shared with the web view rather than reimplemented: an API with
+            # its own copy of these rules is a way around them.
+            created, changed = submit_attendance(
+                session, serializer.validated_data['present'], request.user)
+        except SessionNotMarkable as exc:
+            return Response({'detail': str(exc)},
+                            status=status.HTTP_409_CONFLICT)
+
+        return Response({'data': {
+            'session_id': session.id,
+            'date': session.date,
+            'first_submission': created,
+            'changed': changed,
+            'present': len(serializer.validated_data['present']),
+            'total': len(roll),
+        }})

@@ -108,10 +108,10 @@ has credentials for yet.
    notice attachments (NB8) and roster photos (TA6) need S3/Cloudinary, not just
    a settings change. AC4 is done — accounts now collect an email address — so
    CF3 is purely a credentials decision
-2. **API13, API14–API20** — no OpenAPI/Swagger docs, and the API is still
-   student-only and read-only. API11 (pagination), API18 (throttling) and API19
-   (versioning) are open with it. API4 and API12 are done - the GET handler no
-   longer writes, and `test_api.py` covers all four endpoints
+2. **API15 (the rest of the writes)** — attendance can be submitted over the
+   API; marks entry cannot. API13, API14, API16-API20 are done: Swagger/ReDoc,
+   teacher endpoints, a token-issuing sign-in, a consistent envelope, throttling
+   and `/api/v1/` versioning
 3. **§6.5 Phase 2, the rest of the charts** — E3 is done (pass 18): an inline
    SVG/CSS toolkit in `info/templatetags/charts.py`, no chart library and no CDN.
    Built on it so far: B3 (per-course meters), B2 (attendance trend) and, in

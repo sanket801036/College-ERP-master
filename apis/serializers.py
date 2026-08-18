@@ -97,3 +97,46 @@ class ClassStudentSerializer(serializers.Serializer):
     held = serializers.IntegerField()
     percentage = serializers.FloatField()
     at_risk = serializers.BooleanField()
+
+
+class AttendanceSubmitSerializer(serializers.Serializer):
+    """A submission for one session.
+
+    `present` is the USNs marked present; anybody in the class and not listed
+    is recorded absent, which is what the web form does with an unticked box.
+    """
+    present = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        allow_empty=True,
+        help_text='USNs of the students present.')
+
+    def __init__(self, *args, roll=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.roll = set(roll or ())
+
+    def validate_present(self, present):
+        # A USN from another class is a caller mistake, not somebody to quietly
+        # ignore - saying so beats silently recording their whole class absent.
+        strangers = sorted(set(present) - self.roll)
+        if strangers:
+            raise serializers.ValidationError(
+                'Not in this class: %s' % ', '.join(strangers))
+        return present
+
+
+class TokenSerializer(serializers.Serializer):
+    """What a successful sign-in returns."""
+    token = serializers.CharField()
+    username = serializers.CharField()
+    role = serializers.CharField()
+
+
+class AttendanceSubmitResultSerializer(serializers.Serializer):
+    """What a submission reports back."""
+    session_id = serializers.IntegerField()
+    date = serializers.DateField()
+    first_submission = serializers.BooleanField()
+    changed = serializers.IntegerField(
+        help_text='Students whose status moved. Zero on a first submission.')
+    present = serializers.IntegerField()
+    total = serializers.IntegerField()

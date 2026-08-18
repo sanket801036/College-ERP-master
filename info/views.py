@@ -41,12 +41,12 @@ from info.forms import (
     TeacherForm,
 )
 from info.reports import payment_receipt, report_card
+from info.services import SessionNotMarkable, submit_attendance
 
 from .models import (
     CIE_MAX,
     CLASS_CANCELLED,
     CLASS_PENDING,
-    CLASS_TAKEN,
     DAYS_OF_WEEK,
     SEE_ELIGIBILITY_CIE,
     SEE_MAX,
@@ -457,60 +457,19 @@ def edit_att(request, ass_c_id):
 @require_POST
 def confirm(request, ass_c_id):
     assc = get_object_or_404(AttendanceClass, id=ass_c_id)
-    # The form is only reachable for a markable session, but the POST endpoint
-    # has to say so itself - nothing stops a hand-built request.
-    if not assc.is_markable:
-        messages.error(request, 'That session cannot be marked: it is %s.'
-                       % assc.state)
+
+    # The rules live in info.services because the API submits attendance too,
+    # and two copies of them would drift.
+    present = {usn for usn, value in request.POST.items() if value == 'present'}
+    try:
+        submit_attendance(assc, present, request.user)
+    except SessionNotMarkable as exc:
+        # The form is only reachable for a markable session, but the POST
+        # endpoint has to say so itself - nothing stops a hand-built request.
+        messages.error(request, str(exc))
         return redirect('t_class_date', assign_id=assc.assign_id)
 
-    ass = assc.assign
-    cr = ass.course
-    cl = ass.class_id
-
-    # A student with no radio button in the payload used to raise KeyError and
-    # 500 the request half way through the class. Treat a missing value as
-    # absent - the form always submits one, so this only catches malformed
-    # posts - and record which ones were missing rather than failing silently.
-    resubmission = assc.status == CLASS_TAKEN
-    with transaction.atomic():
-        previous = {a.student_id: a.status for a in
-                    Attendance.objects.filter(attendanceclass=assc)}
-        entries = []
-        for s in cl.student_set.all():
-            present = request.POST.get(s.USN) == 'present'
-            Attendance.objects.update_or_create(
-                course=cr, student=s, attendanceclass=assc,
-                defaults={'status': present, 'date': assc.date},
-            )
-            was = previous.get(s.USN)
-            # On a first submission there is nothing to compare against, so log
-            # the batch rather than a change per student.
-            if resubmission and was is not None and was != present:
-                entries.append(AuditLog(
-                    actor=request.user, actor_name=request.user.username,
-                    action='attendance.changed', target_type='Attendance',
-                    student=s, student_name=s.name,
-                    summary='%s on %s for %s' % (
-                        'Marked present' if present else 'Marked absent',
-                        assc.date, cr.id),
-                    changes={'status': {'from': was, 'to': present}},
-                ))
-        AuditLog.record_many(entries)
-
-        if not resubmission:
-            AuditLog.record(
-                actor=request.user, action='attendance.marked', target=assc,
-                summary='Attendance submitted for %s on %s'
-                        % (cl, assc.date))
-
-        # Set once, after every student is written. This used to be assigned
-        # while handling the first student, which sent everyone after them down
-        # the "already submitted" branch.
-        assc.status = CLASS_TAKEN
-        assc.save(update_fields=['status'])
-
-    return HttpResponseRedirect(reverse('t_class_date', args=(ass.id,)))
+    return HttpResponseRedirect(reverse('t_class_date', args=(assc.assign_id,)))
 
 
 @login_required()

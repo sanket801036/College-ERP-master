@@ -182,10 +182,14 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_CLASSES': (
         'rest_framework.throttling.UserRateThrottle',
         'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.ScopedRateThrottle',
     ),
     'DEFAULT_THROTTLE_RATES': {
         'user': config('API_THROTTLE_USER', default='1000/day'),
         'anon': config('API_THROTTLE_ANON', default='60/day'),
+        # Sign-in is reachable while signed out, so it gets its own tighter
+        # bucket rather than sharing the anonymous browse allowance.
+        'login': config('API_THROTTLE_LOGIN', default='20/hour'),
     },
 }
 

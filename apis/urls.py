@@ -15,6 +15,9 @@ endpoints = [
     path('classes/', api_view.TeacherClassesView.as_view(), name='api-classes'),
     path('classes/<int:assign_id>/students/',
          api_view.ClassStudentsView.as_view(), name='api-class-students'),
+    path('sessions/<int:session_id>/attendance/',
+         api_view.SubmitAttendanceView.as_view(), name='api-submit-attendance'),
+    path('auth/token/', api_view.ObtainTokenView.as_view(), name='api-token'),
 ]
 
 urlpatterns = [
