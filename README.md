@@ -111,10 +111,35 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-566 tests covering the attendance, CIE, grade and fee calculations, role and
+605 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.
+
+## Scheduled email
+
+Four kinds of message go out without anybody pressing anything: fee reminders,
+low-attendance warnings, marks-release alerts and newly published notices.
+
+```bash
+python manage.py send_notifications             # all four
+python manage.py send_notifications fee notice  # only these
+python manage.py send_notifications --dry-run   # say what would go, send nothing
+```
+
+It is a management command rather than Celery or a background thread because
+the free tier this deploys on has no worker and no cron: anything that can run
+one shell line a day can run this, and moving to a real scheduler later changes
+the crontab, not the code. Daily is the intended cadence.
+
+Running it twice is safe. Every message carries a key naming exactly what it
+reports, and `Notification` has a unique constraint on (recipient, key), so a
+retry, an overlapping run or a second machine cannot send the same thing twice.
+Fee and attendance messages are weekly digests keyed by ISO week - one email
+listing five overdue fees, not five emails - so they nag once a week rather
+than once a run. Marks and notices only look a week back, so switching this on
+against an existing database does not email the whole archive; widen it with
+`--window-days` if that is what you want.
 
 ## Deployment
 
@@ -131,15 +156,18 @@ CollegeERP/       settings, root URLs, WSGI
 info/             the application
   models.py       Dept, Course, Class, Student, Teacher, Assign, AssignTime,
                   Attendance, AttendanceTotal, StudentCourse, Marks, Fee,
-                  FeeTransaction, Notice, AuditLog
+                  FeeTransaction, Notice, AuditLog, Notification
   views.py        all page views
+  services.py     rules shared by the views, the API and the scheduled jobs
+  notifications.py
+                  what the scheduled emails say and who gets them
   forms.py        validation for account creation, marks entry, extra classes,
                   fees and payments
   decorators.py   role and ownership guards
   middleware.py   forces a password change on accounts issued by an admin
   reports.py      PDF marks cards and fee receipts
   templatetags/   inline SVG chart tags - no chart library, no CDN
-  management/     seed_demo, which builds a usable demo database
+  management/     seed_demo, backup_db, send_notifications
   tests/          test suite
 apis/             REST endpoints, documented at /api/docs/
 templates/        error pages (400/403/404/500)

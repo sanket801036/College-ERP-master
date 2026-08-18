@@ -82,15 +82,15 @@ their **features**.
 | Page | State | What is left |
 |---|---|---|
 | **Login** (§5) | 🟢 rebuilt, reset built | §5.1 landed once SMTP credentials arrived: "Forgot password?" now goes to a three-screen OTP reset (identify → verify → choose), and every security rule the spec listed is enforced and tested. Not built: the visible countdown and the "Resend code" button, and the optional admin two-factor the spec floats at the end |
-| **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB17 (email on publish, blocked on CF3), NB22 (should a teacher be able to address the whole institution?) |
+| **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB22 (should a teacher be able to address the whole institution?) |
 | **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
 | **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA landed in pass 19 on VTU's 10-point scale; class rank (MK8) and the PDF marks card (MK10) in pass 24; publication control (MK20) in pass 23. Pass 30 added the cross-subject comparison (MK12) and a per-course internals sparkline (MK11). Still open: MK16 (attendance/marks correlation), semester history (MK15, needs semester tagging) and MK18 (re-evaluation workflow) |
-| **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D workflows (correction requests, leave, exemptions, alerts) all unbuilt |
+| **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D: alerts (AT23) are built and scheduled; correction requests, leave and exemptions are not |
 | **Attendance - teacher** (§7.3) | 🟢 secured, entry rebuilt | Pass 21 landed one-click marking from the dashboard, mark-all-present, a live counter, keyboard entry, roster search, the unsaved-changes guard, and real session states; TA-C4 and TA-C6 are closed. Still open: TA6 (photos, blocked on CF1), TA9/TA10 (bulk import, offline drafts), TA12-TA17 (class analytics and export), TA19-TA21 (cancel reason, reschedule, substitutes) |
 | **Marks entry - teacher** (§7.7) | 🟢 secured, validated, entry rebuilt | Pass 22 landed the max-marks hint, live inline validation, keyboard entry, running statistics, the previous component alongside, sorting and the unsaved-changes guard, and folded the separate edit template into this one. Still open: TM5 (absent-vs-zero, needs a flag on `Marks`), TM6 (draft save), TM7 (bulk import), TM11-TM14 (post-entry statistics and export), TM15 (publication control), TM16 (re-evaluation queue), TM24 (confirmation screen) |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
 | **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
-| **Fees** (§7.6) | 🟢 ledger, receipts, bulk assignment, list rebuilt | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class; pass 26 made the staff list usable at volume (FE17). Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE19-FE23 (waivers, instalments, late fees, reminders, year tagging). **FE31 still stands and needs a decision** - see below |
+| **Fees** (§7.6) | 🟢 ledger, receipts, bulk assignment, list rebuilt | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class; pass 26 made the staff list usable at volume (FE17). Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE19, FE20, FE21, FE23 (waivers, instalments, late fees, year tagging) - FE22, reminders, is done. **FE31 still stands and needs a decision** - see below |
 | **Dashboards** (§6) | 🟢 rebuilt, charts landed | Pass 29 added attendance-by-class, fee collection and students-by-department for admins, and a class comparison for teachers. Still open: today's-schedule strip (A1), dark mode (A3), global search (A2), breadcrumbs (A5). A4 is done - the topbar carries an unread count |
 | **Accounts** (§7.9) | 🟢 creation, passwords, profile and directory | Pass 31 added self-service contact details (AC15) and a searchable student/teacher directory (AC20). Still open: photo upload (AC16, blocked on CF1), bulk import (AC8), edit/deactivate (AC21) and soft delete (AC22) |
 | **API** (§7.10) | 🟢 done | Swagger/ReDoc, `/api/v1/` versioning, pagination, throttling and teacher endpoints in pass 28; a token-issuing sign-in and attendance writes in pass 34; marks entry in pass 37. Both write paths share their rules with the web forms rather than reimplementing them |
@@ -101,12 +101,13 @@ has credentials for yet.
 
 ### Still open, highest value first
 
-1. **CF1** — the remaining config blocker. **CF3 is closed**: SMTP is configured
-   from env vars, falling back to the console backend when `EMAIL_HOST` is
-   unset, and the OTP reset flow (§5.1) is built on it. What email still has to
-   pay for is the *scheduled* sends — fee reminders (FE22), notice notifications
-   (NB17), attendance alerts (AT23) and marks-release alerts (MK21) — which need
-   somewhere to run periodically, not just a mail host. Media storage is
+1. **CF1** — the remaining config blocker. **CF3 is closed** and so are all four
+   scheduled sends: FE22, NB17, AT23 and MK21 are one management command,
+   `send_notifications`, backed by a `Notification` table whose unique key is
+   what stops a re-run from mailing the same thing twice. It is a command
+   rather than Celery because the free tier has no worker and no cron - the
+   scheduler is whatever runs one shell line a day, and swapping it later does
+   not touch the code. Media storage is
    unconfigured *and* Render's disk is ephemeral, so profile photos (AC16),
    notice attachments (NB8) and roster photos (TA6) need S3/Cloudinary, not just
    a settings change. AC4 is done — accounts now collect an email address
@@ -736,7 +737,7 @@ Currently a flat, unpaginated list of every session with a green/red cell. Every
 | AT20 | **Attendance correction request** | Student disputes a wrongly-marked absence → teacher approves/rejects → record updates with a full audit trail. Right now `change_attendance` lets a teacher silently flip any record with no record of who changed what or why. This single feature demonstrates workflow design, state machines, permissions, and auditability all at once — the strongest interview item in this whole module | ❌ `AttendanceCorrectionRequest` |
 | AT21 | **Leave application** | Apply in advance (medical/event), attach a document, teacher approves → sessions marked as excused rather than absent. Requires a third state beyond present/absent | ❌ `LeaveApplication` + a status field on `Attendance` |
 | AT22 | **Medical/OD exemption** | Excused sessions excluded from the 75% denominator — how real colleges actually work | ❌ |
-| AT23 | **Low-attendance alerts** | Email/in-app warning when a course drops below 75%, and a weekly digest. Reuses the SMTP setup from the OTP work in §5.1 | ⚠️ needs an alert-log model to avoid re-sending |
+| AT23 | **Low-attendance alerts** | 🟢 **Done.** A weekly digest listing every course below 75%, with the number of consecutive classes that would fix each one. Computed from `Attendance` rather than `AttendanceTotal`, whose rows only appear when somebody opens the page - the job would otherwise never warn a student nobody had looked at. The alert-log model this row asked for is `Notification` |
 | AT24 | **Parent notification** | Email the guardian on sustained low attendance | ❌ needs guardian contact fields (ties to the parent portal, Tier 3 #17) |
 | AT25 | **Attendance freeze date** | After a cut-off, records lock and only an admin can amend — with the amendment logged | ⚠️ |
 
@@ -866,7 +867,7 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 | MK18 | **Re-evaluation request** | Student disputes a mark → teacher/admin reviews → mark updated with full audit trail. Same shape as the attendance-correction workflow (AT20) and can share its state machine and permission logic | ❌ `MarkRevaluationRequest` |
 | MK19 | **Marks audit log** | Today `marks_confirm` and `edit_marks` overwrite `marks1` in place with no record of the previous value, who changed it, or when. For grades specifically, that is the kind of gap an interviewer will press on | ❌ audit model |
 | ~~MK20~~ | **Result publication control** ✅ **Done (pass 23).** `MarksClass.is_published` + `published_at`. The student page reads the published set, the teacher's class report reads the entered set | Teacher enters marks, but students only see them once results are formally published — colleges never expose marks the instant they're typed | ⚠️ `MarksClass.is_published` |
-| MK21 | **Marks release notification** | Email/in-app alert when a batch is published (reuses the SMTP work from §5.1) | ⚠️ |
+| MK21 | **Marks release notification** | 🟢 **Done.** One email per student per published batch, carrying their own mark, and saying "absent" rather than zero where that is what happened |
 
 #### Phase D — Technical fixes this module needs (all verified against the running app)
 
@@ -1166,7 +1167,7 @@ Next:
 | NB14 | **Narrower targeting** | Audience is only All / Students / Teachers. Real use needs per-class, per-department, per-semester targeting | ⚠️ |
 | NB15 | **Rich text** | Bold, lists, links — a plain `TextField` renders as one undifferentiated block. Must sanitise on output; do not trust stored HTML | ⚠️ |
 | NB16 | **Read receipts for the author** | "Seen by 342 of 450" — falls out of NB4 for free | ❌ (with NB4) |
-| NB17 | **Email/push on publish** | Notify the target audience; reuses the SMTP setup from §5.1 | ⚠️ |
+| NB17 | **Email on publish** | 🟢 **Done.** Sent to the audience the notice names (All / Students / Teachers), skipping expired ones, and only for notices published inside the window so switching it on does not mail the archive |
 
 #### Phase C — Correctness & security
 
@@ -1300,7 +1301,7 @@ Published (15)
 | FE19 | **Waivers, scholarships, discounts** | A concession is not a payment and shouldn't be recorded as one — it needs its own type so reporting can separate "collected" from "waived" | ❌ |
 | FE20 | **Installment plans** | Split a fee into scheduled instalments with their own due dates | ❌ |
 | FE21 | **Late fee / penalty rules** | Auto-add a penalty after the due date, with a configurable rule | ❌ |
-| FE22 | **Payment reminders** | Email N days before due and on overdue; reuses the SMTP work from §5.1 | ⚠️ |
+| FE22 | **Payment reminders** | 🟢 **Done.** A weekly digest per student covering fees due within seven days and anything overdue, with the outstanding balance rather than the full amount. One email listing five fees, not five emails |
 | FE23 | **Academic year / semester tagging** | Fees currently accumulate forever with no period. Without this, "outstanding" grows across a student's whole degree and no year-wise report is possible | ⚠️ `Fee.academic_year` / `semester` |
 
 #### Phase D — Validation & correctness (all verified by running the code)

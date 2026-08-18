@@ -55,7 +55,12 @@ from info.imports import (
     validate,
 )
 from info.reports import payment_receipt, report_card
-from info.services import SessionNotMarkable, submit_attendance, submit_marks
+from info.services import (
+    SessionNotMarkable,
+    attendance_rows,
+    submit_attendance,
+    submit_marks,
+)
 
 from .models import (
     CIE_MAX,
@@ -161,38 +166,6 @@ def _student_dashboard(student):
     }
 
 
-def _attendance_rows(students=None, courses=None):
-    """Per (student, course) attendance, computed straight from Attendance.
-
-    The dashboards must not depend on AttendanceTotal rows existing - those are
-    only backfilled when someone opens the attendance page, so a dashboard would
-    read as empty until then. AttendanceTotal holds no data of its own anyway.
-    """
-    rows = Attendance.objects.all()
-    if students is not None:
-        rows = rows.filter(student__in=students)
-    if courses is not None:
-        rows = rows.filter(course__in=courses)
-
-    summary = (rows.values('student', 'course')
-               .annotate(held=Count('pk'),
-                         attended=Count('pk', filter=Q(status=True))))
-
-    students_by_id = {s.USN: s for s in Student.objects.filter(
-        USN__in={r['student'] for r in summary})}
-    courses_by_id = {c.id: c for c in Course.objects.filter(
-        id__in={r['course'] for r in summary})}
-
-    out = []
-    for row in summary:
-        total = AttendanceTotal(student=students_by_id[row['student']],
-                                course=courses_by_id[row['course']])
-        total._held = row['held']
-        total._attended = row['attended']
-        out.append(total)
-    return out
-
-
 def _teacher_dashboard(teacher):
     """What still needs doing, rather than a menu of sections."""
     today = timezone.localdate()
@@ -220,7 +193,7 @@ def _teacher_dashboard(teacher):
     student_count = Student.objects.filter(
         class_id__in={a.class_id_id for a in assigns}).count()
 
-    at_risk = [t for t in _attendance_rows(
+    at_risk = [t for t in attendance_rows(
         students=Student.objects.filter(
             class_id__in={a.class_id_id for a in assigns}),
         courses=[a.course_id for a in assigns])
@@ -270,7 +243,7 @@ def _teacher_class_attendance(assigns):
 
 
 def _admin_dashboard():
-    with_classes = [t for t in _attendance_rows() if t.has_classes]
+    with_classes = [t for t in attendance_rows() if t.has_classes]
     held = sum(t.total_class for t in with_classes)
     attended = sum(t.att_class for t in with_classes)
 

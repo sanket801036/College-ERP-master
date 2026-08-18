@@ -1496,3 +1496,40 @@ class PasswordResetOTP(models.Model):
             self.used_at = timezone.now()
         self.save(update_fields=['attempts', 'used_at'])
         return matched
+
+
+NOTIFICATION_KINDS = (
+    ('fee', 'Fee reminder'),
+    ('attendance', 'Low attendance'),
+    ('marks', 'Marks released'),
+    ('notice', 'Notice published'),
+)
+
+
+class Notification(models.Model):
+    """One row per message that has actually been sent to somebody.
+
+    The point of this table is not the audit trail, it is the unique
+    constraint. These commands run on a scheduler nobody watches closely; a
+    retry, an overlapping run or a second server means a student gets the same
+    "you are below 75%" email three times, and the third one is what makes
+    people filter the sender out. Claiming the row before sending is what
+    stops that, and it works across processes because the database decides who
+    got there first.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE,
+                             related_name='notifications')
+    kind = models.CharField(max_length=20, choices=NOTIFICATION_KINDS)
+    # Names the exact thing being reported, not just its type: 'fee:41:due'
+    # and 'fee:41:overdue' are two different messages about one fee, and a
+    # student should get both.
+    key = models.CharField(max_length=120)
+    subject = models.CharField(max_length=200)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (('user', 'key'),)
+        ordering = ['-sent_at']
+
+    def __str__(self):
+        return '%s -> %s' % (self.key, self.user)

@@ -6,12 +6,16 @@ reimplemented them would quietly become a way around the checks the web forms
 perform.
 """
 from django.db import transaction
+from django.db.models import Count, Q
 
 from info.models import (  # noqa: F401
     CLASS_TAKEN,
     Attendance,
     AttendanceClass,
+    AttendanceTotal,
     AuditLog,
+    Course,
+    Student,
     StudentCourse,
 )
 
@@ -132,3 +136,40 @@ def submit_marks(marks_class, scores, actor):
     marks_class.save(update_fields=['status'])
 
     return (not revision), len(entries)
+
+
+def attendance_rows(students=None, courses=None):
+    """Per (student, course) attendance, computed straight from Attendance.
+
+    Nothing here may depend on AttendanceTotal rows existing - those are only
+    backfilled when someone opens the attendance page, so a dashboard would
+    read as empty until then, and the nightly alert job would never warn a
+    student whose page nobody has opened. AttendanceTotal holds no data of its
+    own anyway; the instances returned are unsaved carriers for the counts, so
+    that the percentage and "classes needed" arithmetic lives in one place.
+    """
+    rows = Attendance.objects.all()
+    if students is not None:
+        rows = rows.filter(student__in=students)
+    if courses is not None:
+        rows = rows.filter(course__in=courses)
+
+    summary = (rows.values('student', 'course')
+               .annotate(held=Count('pk'),
+                         attended=Count('pk', filter=Q(status=True))))
+
+    # The login comes along because the alert job mails these people; without
+    # it, building one message per student is one query per student.
+    students_by_id = {s.USN: s for s in Student.objects.select_related('user')
+                      .filter(USN__in={r['student'] for r in summary})}
+    courses_by_id = {c.id: c for c in Course.objects.filter(
+        id__in={r['course'] for r in summary})}
+
+    out = []
+    for row in summary:
+        total = AttendanceTotal(student=students_by_id[row['student']],
+                                course=courses_by_id[row['course']])
+        total._held = row['held']
+        total._attended = row['attended']
+        out.append(total)
+    return out
