@@ -93,7 +93,7 @@ their **features**.
 | **Fees** (§7.6) | 🟢 ledger, receipts, bulk assignment, list rebuilt | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class; pass 26 made the staff list usable at volume (FE17). Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE19-FE23 (waivers, instalments, late fees, reminders, year tagging). **FE31 still stands and needs a decision** - see below |
 | **Dashboards** (§6) | 🟢 rebuilt, charts landed | Pass 29 added attendance-by-class, fee collection and students-by-department for admins, and a class comparison for teachers. Still open: today's-schedule strip (A1), dark mode (A3), global search (A2), breadcrumbs (A5). A4 is done - the topbar carries an unread count |
 | **Accounts** (§7.9) | 🟢 creation, passwords, profile and directory | Pass 31 added self-service contact details (AC15) and a searchable student/teacher directory (AC20). Still open: photo upload (AC16, blocked on CF1), bulk import (AC8), edit/deactivate (AC21) and soft delete (AC22) |
-| **API** (§7.10) | 🟢 working, documented | Pass 28 added Swagger/ReDoc, `/api/v1/` versioning, pagination, throttling, and two teacher endpoints. Still open: write endpoints (API15) and a token-issuing login (API16) |
+| **API** (§7.10) | 🟢 done | Swagger/ReDoc, `/api/v1/` versioning, pagination, throttling and teacher endpoints in pass 28; a token-issuing sign-in and attendance writes in pass 34; marks entry in pass 37. Both write paths share their rules with the web forms rather than reimplementing them |
 
 **What stands out now:** every module has had its correctness pass. What is
 left is either a feature build, or blocked on a piece of configuration nobody
@@ -108,10 +108,9 @@ has credentials for yet.
    notice attachments (NB8) and roster photos (TA6) need S3/Cloudinary, not just
    a settings change. AC4 is done — accounts now collect an email address — so
    CF3 is purely a credentials decision
-2. **API15 (the rest of the writes)** — attendance can be submitted over the
-   API; marks entry cannot. API13, API14, API16-API20 are done: Swagger/ReDoc,
-   teacher endpoints, a token-issuing sign-in, a consistent envelope, throttling
-   and `/api/v1/` versioning
+2. **API — nothing outstanding.** API13-API20 are all done: Swagger/ReDoc,
+   teacher endpoints, attendance and marks writes, a token-issuing sign-in, a
+   consistent envelope, pagination, throttling and `/api/v1/` versioning
 3. **§6.5 Phase 2, the rest of the charts** — E3 is done (pass 18): an inline
    SVG/CSS toolkit in `info/templatetags/charts.py`, no chart library and no CDN.
    Built on it so far: B3 (per-course meters), B2 (attendance trend) and, in

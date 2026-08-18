@@ -50,7 +50,7 @@ from info.imports import (
     validate,
 )
 from info.reports import payment_receipt, report_card
-from info.services import SessionNotMarkable, submit_attendance
+from info.services import SessionNotMarkable, submit_attendance, submit_marks
 
 from .models import (
     CIE_MAX,
@@ -1009,8 +1009,6 @@ def _marks_entry_context(mc, students, form=None, existing=None):
 def marks_confirm(request, marks_c_id):
     mc = get_object_or_404(MarksClass, id=marks_c_id)
     ass = mc.assign
-    cr = ass.course
-    cl = ass.class_id
     # Same ordering as the form that posted, so a re-render after a validation
     # error puts the rows back where the teacher left them.
     students = _roster(mc, request)
@@ -1024,40 +1022,9 @@ def marks_confirm(request, marks_c_id):
         return render(request, 'info/t_marks_entry.html',
                       _marks_entry_context(mc, students, form))
 
-    revision = mc.status
-    with transaction.atomic():
-        entries = []
-        for s in students:
-            # get_or_create rather than get: a student without a StudentCourse
-            # row used to raise DoesNotExist and take down the whole batch.
-            sc, _ = StudentCourse.objects.get_or_create(course=cr, student=s)
-            scored, absent = form.marks_for(s)
-            existing = sc.marks_set.filter(name=mc.name).first()
-            was = existing.marks1 if existing else None
-            sc.marks_set.update_or_create(
-                name=mc.name,
-                defaults={'marks1': scored, 'is_absent': absent})
-            # Overwriting a grade with no record of the old value is the gap
-            # people ask about first.
-            if revision and was is not None and was != scored:
-                entries.append(AuditLog(
-                    actor=request.user, actor_name=request.user.username,
-                    action='marks.changed', target_type='Marks',
-                    student=s, student_name=s.name,
-                    summary='%s for %s changed from %s to %s'
-                            % (mc.name, cr.id, was, scored),
-                    changes={'marks1': {'from': was, 'to': scored}},
-                ))
-        AuditLog.record_many(entries)
-
-        if not revision:
-            AuditLog.record(
-                actor=request.user, action='marks.entered', target=mc,
-                summary='%s entered for %s (%d students)'
-                        % (mc.name, cl, len(students)))
-
-        mc.status = True
-        mc.save(update_fields=['status'])
+    # The rules live in info.services because the API enters marks too, and
+    # two copies of them would drift.
+    submit_marks(mc, {s: form.marks_for(s) for s in students}, request.user)
 
     return HttpResponseRedirect(reverse('t_marks_list', args=(ass.id,)))
 

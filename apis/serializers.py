@@ -140,3 +140,69 @@ class AttendanceSubmitResultSerializer(serializers.Serializer):
         help_text='Students whose status moved. Zero on a first submission.')
     present = serializers.IntegerField()
     total = serializers.IntegerField()
+
+
+class MarksSubmitSerializer(serializers.Serializer):
+    """Marks for one component, keyed by USN.
+
+    `marks` maps a USN to a score; `absent` lists the students who did not sit
+    it. An absentee scores zero towards the CIE - that is how the scheme works
+    - but the record says which of the two it was, exactly as the web form does.
+    """
+    marks = serializers.DictField(child=serializers.IntegerField(),
+                                  allow_empty=True)
+    absent = serializers.ListField(child=serializers.CharField(max_length=100),
+                                   allow_empty=True, required=False,
+                                   default=list)
+
+    def __init__(self, *args, roll=None, total_marks=20, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.roll = set(roll or ())
+        self.total_marks = total_marks
+
+    def _check_roll(self, usns, field):
+        strangers = sorted(set(usns) - self.roll)
+        if strangers:
+            raise serializers.ValidationError(
+                'Not in this class: %s' % ', '.join(strangers))
+
+    def validate_absent(self, absent):
+        self._check_roll(absent, 'absent')
+        return absent
+
+    def validate_marks(self, marks):
+        self._check_roll(marks, 'marks')
+        # The ceiling is per component - 20 for an internal, 100 for the
+        # semester-end paper - and nothing else enforces it: model validators
+        # do not run on a plain .save().
+        bad = {usn: score for usn, score in marks.items()
+               if score < 0 or score > self.total_marks}
+        if bad:
+            raise serializers.ValidationError(
+                'Out of range (0-%d): %s'
+                % (self.total_marks,
+                   ', '.join('%s=%s' % pair for pair in sorted(bad.items()))))
+        return marks
+
+    def validate(self, attrs):
+        # Partial entry would leave the batch flagged submitted with holes in
+        # it, which is what the "not yet conducted" state is for.
+        covered = set(attrs['marks']) | set(attrs.get('absent') or ())
+        missing = sorted(self.roll - covered)
+        if missing:
+            raise serializers.ValidationError(
+                'Every student needs a mark or an absence. Missing: %s'
+                % ', '.join(missing))
+        both = sorted(set(attrs['marks']) & set(attrs.get('absent') or ()))
+        if both:
+            raise serializers.ValidationError(
+                'Marked both present and absent: %s' % ', '.join(both))
+        return attrs
+
+
+class MarksSubmitResultSerializer(serializers.Serializer):
+    marks_class_id = serializers.IntegerField()
+    component = serializers.CharField()
+    first_entry = serializers.BooleanField()
+    changed = serializers.IntegerField()
+    students = serializers.IntegerField()

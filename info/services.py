@@ -1,12 +1,19 @@
 """Application logic shared by the web views and the API.
 
-Attendance can now be submitted from two places. Keeping the rules here rather
-than in either caller stops the two from drifting - an API that reimplemented
-this would quietly become a way around the checks the web form performs.
+Attendance and marks can each be submitted from two places. Keeping the rules
+here rather than in either caller stops the two from drifting - an API that
+reimplemented them would quietly become a way around the checks the web forms
+perform.
 """
 from django.db import transaction
 
-from info.models import CLASS_TAKEN, Attendance, AttendanceClass, AuditLog  # noqa: F401
+from info.models import (  # noqa: F401
+    CLASS_TAKEN,
+    Attendance,
+    AttendanceClass,
+    AuditLog,
+    StudentCourse,
+)
 
 
 class SessionNotMarkable(Exception):
@@ -73,3 +80,55 @@ def submit_attendance(session, present_usns, actor):
     session.save(update_fields=['status'])
 
     return (not resubmission), len(entries)
+
+
+@transaction.atomic
+def submit_marks(marks_class, scores, actor):
+    """Record one component's marks for a whole class.
+
+    `scores` maps a Student to (mark, absent). Callers are responsible for
+    validating the marks against the component's ceiling - the web form uses
+    MarksEntryForm and the API its serializer - because the two report failures
+    differently, but everything that touches the database happens here.
+
+    Returns (first_entry, changed).
+    """
+    course = marks_class.assign.course
+    revision = marks_class.status
+
+    entries = []
+    for student, (scored, absent) in scores.items():
+        # get_or_create rather than get: a student without a StudentCourse row
+        # used to raise DoesNotExist and take down the whole batch.
+        sc, _ = StudentCourse.objects.get_or_create(course=course,
+                                                    student=student)
+        existing = sc.marks_set.filter(name=marks_class.name).first()
+        was = existing.marks1 if existing else None
+        sc.marks_set.update_or_create(
+            name=marks_class.name,
+            defaults={'marks1': scored, 'is_absent': absent})
+
+        # Overwriting a grade with no record of the old value is the gap people
+        # ask about first.
+        if revision and was is not None and was != scored:
+            entries.append(AuditLog(
+                actor=actor, actor_name=getattr(actor, 'username', ''),
+                action='marks.changed', target_type='Marks',
+                student=student, student_name=student.name,
+                summary='%s for %s changed from %s to %s'
+                        % (marks_class.name, course.id, was, scored),
+                changes={'marks1': {'from': was, 'to': scored}},
+            ))
+    AuditLog.record_many(entries)
+
+    if not revision:
+        AuditLog.record(
+            actor=actor, action='marks.entered', target=marks_class,
+            summary='%s entered for %s (%d students)'
+                    % (marks_class.name, marks_class.assign.class_id,
+                       len(scores)))
+
+    marks_class.status = True
+    marks_class.save(update_fields=['status'])
+
+    return (not revision), len(entries)

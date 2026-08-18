@@ -25,11 +25,12 @@ from info.models import (
     AttendanceClass,
     AttendanceTotal,
     Course,
+    MarksClass,
     Student,
     StudentCourse,
     Teacher,
 )
-from info.services import SessionNotMarkable, submit_attendance
+from info.services import SessionNotMarkable, submit_attendance, submit_marks
 
 
 class StudentAPIView(APIView):
@@ -257,4 +258,43 @@ class SubmitAttendanceView(TeacherAPIView):
             'changed': changed,
             'present': len(serializer.validated_data['present']),
             'total': len(roll),
+        }})
+
+
+@extend_schema(
+    summary='Enter marks for a component',
+    description='Records one test for a whole class. Re-submitting revises it '
+                'and logs what changed.',
+    request=api_ser.MarksSubmitSerializer,
+    responses=api_ser.MarksSubmitResultSerializer,
+)
+class SubmitMarksView(TeacherAPIView):
+    def post(self, request, marks_class_id):
+        # Scoped through assignments(), so a teacher can only enter marks for
+        # their own class - the same rule the web view enforces.
+        marks_class = get_object_or_404(
+            MarksClass.objects.filter(assign__in=self.assignments(request)),
+            id=marks_class_id)
+
+        students = {s.USN: s
+                    for s in marks_class.assign.class_id.student_set.all()}
+        serializer = api_ser.MarksSubmitSerializer(
+            data=request.data, roll=students,
+            total_marks=marks_class.total_marks)
+        serializer.is_valid(raise_exception=True)
+
+        absent = set(serializer.validated_data.get('absent') or ())
+        scores = {students[usn]: (0, True) for usn in absent}
+        scores.update({students[usn]: (score, False)
+                       for usn, score in serializer.validated_data['marks'].items()})
+
+        # Shared with the web view rather than reimplemented.
+        first_entry, changed = submit_marks(marks_class, scores, request.user)
+
+        return Response({'data': {
+            'marks_class_id': marks_class.id,
+            'component': marks_class.name,
+            'first_entry': first_entry,
+            'changed': changed,
+            'students': len(scores),
         }})
