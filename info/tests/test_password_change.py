@@ -76,7 +76,13 @@ class ForcePasswordChangeTests(TestCase):
                          200)
 
     def test_logout_is_reachable(self):
-        self.assertEqual(self.client.get(reverse('logout')).status_code, 200)
+        """Somebody who has to change their password must still be able to
+        leave. POST because logging out on a GET is CSRF-triggerable, which
+        Django 5 refuses outright."""
+        response = self.client.post(reverse('logout'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('_auth_user_id', self.client.session)
 
     def test_changing_the_password_clears_the_flag(self):
         self.client.post(reverse('password_change'), {

@@ -42,7 +42,7 @@ what the value was before.
 
 ## Stack
 
-Django 4.2 LTS · PostgreSQL · Django REST Framework · Bootstrap 4 ·
+Django 5.2 LTS · PostgreSQL · Django REST Framework · Bootstrap 4 ·
 gunicorn + WhiteNoise on Render
 
 ## Running it locally
@@ -94,12 +94,13 @@ Configuration comes from environment variables (see `.env.example`):
 ```bash
 python manage.py test info.tests
 ruff check .
+pip-audit -r requirements.txt
 ```
 
-438 tests covering the attendance, CIE, grade and fee calculations, role and
+516 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
-pages. Both run in CI on every push.
+pages. All three run in CI on every push.
 
 ## Deployment
 
@@ -149,9 +150,9 @@ written to.
 
 ## Engineering notes
 
-This started as an existing project on Django 2.1 with MySQL. Migrating it to
-Django 4.2 and PostgreSQL and then working through the behaviour turned up a
-number of defects worth writing down, because several were the kind that fail
+This started as an existing project on Django 2.1 with MySQL, and is now on
+Django 5.2 LTS and PostgreSQL. Working through the behaviour turned up a number
+of defects worth writing down, because several were the kind that fail
 silently.
 
 ### Authorization

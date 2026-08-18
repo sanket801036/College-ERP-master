@@ -50,6 +50,12 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      # Fails the build on a known CVE in a pinned dependency. It is what
+      # caught Django 4.2 sitting on a pile of them after that line went
+      # end-of-life.
+      - name: Audit dependencies
+        run: pip-audit -r requirements.txt
+
       - name: Check for missing migrations
         run: python manage.py makemigrations --check --dry-run
 

@@ -123,9 +123,9 @@ has credentials for yet.
    account, and soft delete. AC15 and AC20 are done - pass 31 added a profile
    page and a searchable directory, and the commented-out `student_search` URL
    is gone
-6. **IN6, IN8** — dependency scanning in CI, and database backups. IN4 and IN5
-   are done - pass 32 added a Dockerfile, docker-compose and ruff, with linting
-   wired into CI
+6. **Infrastructure is done.** IN1-IN8 are all closed - pass 39 added
+   `pip-audit` to CI and a `backup_db` command, and upgraded off Django 4.2,
+   which had gone end-of-life carrying two dozen known CVEs
 7. **The model layer is done.** MD1-MD8 are all closed - pass 38 bulk-loaded
    the mark-seeding signals and moved the primary-key guard from the form onto
    the models, so every path is covered rather than the add-student page alone
