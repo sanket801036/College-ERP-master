@@ -17,6 +17,7 @@ from .models import (
     Dept,
     Fee,
     FeeTransaction,
+    LoginEvent,
     Marks,
     Notice,
     Student,
@@ -211,6 +212,22 @@ class SupportRequestAdmin(admin.ModelAdmin):
     ordering = ['-created_at']
 
 
+class LoginEventAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'username', 'successful', 'ip', 'device')
+    list_filter = ('successful', 'created_at')
+    search_fields = ('username', 'ip')
+    date_hierarchy = 'created_at'
+    ordering = ['-created_at']
+
+    # A record of who signed in is only worth having if it cannot be edited
+    # afterwards.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 class AuditLogAdmin(admin.ModelAdmin):
     list_display = ('created_at', 'action', 'actor_name', 'student_name', 'summary')
     list_filter = ('action', 'created_at')
@@ -252,4 +269,5 @@ admin.site.register(Fee, FeeAdmin)
 admin.site.register(FeeTransaction, FeeTransactionAdmin)
 admin.site.register(AuditLog, AuditLogAdmin)
 admin.site.register(SupportRequest, SupportRequestAdmin)
+admin.site.register(LoginEvent, LoginEventAdmin)
 admin.site.register(Notice, NoticeAdmin)

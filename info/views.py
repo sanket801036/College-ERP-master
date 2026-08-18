@@ -1636,6 +1636,10 @@ def profile(request):
         'person': person,
         'form': form,
         'is_student': request.user.is_student,
+        # Successful sign-ins only. A list of failed attempts on your own
+        # account is alarming without being actionable, and the ones worth
+        # investigating are visible to an administrator.
+        'logins': request.user.login_events.filter(successful=True)[:10],
     })
 
 

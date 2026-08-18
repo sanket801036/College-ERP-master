@@ -1329,3 +1329,58 @@ class SupportRequest(models.Model):
         elif self.status != 'Resolved':
             self.resolved_at = None
         super().save(*args, **kwargs)
+
+
+class LoginEvent(models.Model):
+    """A sign-in attempt, successful or not.
+
+    Nothing recorded who signed in or from where, so a user had no way to
+    notice somebody else using their account - which matters more here than it
+    might, because accounts are issued with a password an admin reads off a
+    screen and hands over.
+
+    The username is stored as text as well as the link: a failed attempt often
+    names an account that does not exist, and that is exactly the attempt worth
+    keeping.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True,
+                             blank=True, related_name='login_events')
+    username = models.CharField(max_length=150)
+    successful = models.BooleanField(default=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    # Truncated on the way in; some clients send extremely long strings and the
+    # value is only ever read by a person trying to recognise their own device.
+    user_agent = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', '-created_at'])]
+
+    def __str__(self):
+        return '%s %s at %s' % (self.username,
+                                'signed in' if self.successful else 'failed',
+                                self.created_at)
+
+    @property
+    def device(self):
+        """A short, human description of the client.
+
+        Not parsing the user agent properly - that needs a maintained database
+        and the question here is only "was this me".
+        """
+        agent = self.user_agent
+        if not agent:
+            return 'Unknown'
+        for name in ('Edg', 'Chrome', 'Firefox', 'Safari'):
+            if name in agent:
+                browser = 'Edge' if name == 'Edg' else name
+                break
+        else:
+            browser = 'Unknown browser'
+        for token, platform in (('Android', 'Android'), ('iPhone', 'iPhone'),
+                                ('iPad', 'iPad'), ('Windows', 'Windows'),
+                                ('Mac OS', 'macOS'), ('Linux', 'Linux')):
+            if token in agent:
+                return '%s on %s' % (browser, platform)
+        return browser
