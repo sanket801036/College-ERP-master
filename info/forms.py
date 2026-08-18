@@ -1,10 +1,14 @@
+import io
 import re
 
 from django import forms
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import AuthenticationForm
+from django.core.files.base import ContentFile
 from django.utils import timezone
 from django.utils.crypto import get_random_string
+from PIL import Image, ImageOps
 
 from info.models import (
     AttendanceRange,
@@ -443,6 +447,36 @@ class NoticeForm(forms.ModelForm):
         return expires_at
 
 
+def shrink_photo(uploaded, size=None):
+    """Square-crop and downscale an upload, returning it as JPEG.
+
+    A phone photograph is several megabytes and thousands of pixels wide, and
+    it would be served at that size on every row of a class roster. Cropping to
+    a square is done here rather than with CSS so the stored file is the one
+    that gets used.
+    """
+    size = size or settings.PROFILE_PHOTO_SIZE
+    image = Image.open(uploaded)
+    # Photographs from phones carry an orientation tag that most things honour
+    # and PIL does not, so an upright picture would be stored on its side.
+    image = ImageOps.exif_transpose(image)
+    # Flatten transparency onto white; JPEG has no alpha channel.
+    if image.mode in ('RGBA', 'LA', 'P'):
+        image = image.convert('RGBA')
+        backdrop = Image.new('RGB', image.size, (255, 255, 255))
+        backdrop.paste(image, mask=image.split()[-1])
+        image = backdrop
+    else:
+        image = image.convert('RGB')
+
+    image = ImageOps.fit(image, (size, size), Image.LANCZOS)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format='JPEG', quality=85, optimize=True)
+    buffer.seek(0)
+    return ContentFile(buffer.read(), name='photo.jpg')
+
+
 class ProfileForm(forms.Form):
     """The contact details a person maintains about themselves.
 
@@ -457,6 +491,10 @@ class ProfileForm(forms.Form):
     phone = forms.CharField(required=False, max_length=20)
     address = forms.CharField(required=False, max_length=255,
                               widget=forms.Textarea(attrs={'rows': 2}))
+    photo = forms.ImageField(
+        required=False,
+        help_text='Optional. Cropped to a square and resized on upload.')
+    remove_photo = forms.BooleanField(required=False, label='Remove my photo')
 
     def __init__(self, *args, profile=None, user=None, **kwargs):
         self.profile = profile
@@ -474,6 +512,17 @@ class ProfileForm(forms.Form):
                 'Use digits, spaces and + ( ) - only.')
         return phone
 
+    def clean_photo(self):
+        photo = self.cleaned_data.get('photo')
+        # Checked before opening it: the resize would otherwise have to load an
+        # arbitrarily large file into memory to find out it was too big.
+        if photo and photo.size > settings.PROFILE_PHOTO_MAX_BYTES:
+            raise forms.ValidationError(
+                'That image is %.1f MB; the limit is %.0f MB.'
+                % (photo.size / 1024 / 1024,
+                   settings.PROFILE_PHOTO_MAX_BYTES / 1024 / 1024))
+        return photo
+
     def clean_email(self):
         email = self.cleaned_data['email'].strip().lower()
         clash = User.objects.filter(email__iexact=email)
@@ -486,7 +535,20 @@ class ProfileForm(forms.Form):
     def save(self):
         self.profile.phone = self.cleaned_data['phone']
         self.profile.address = self.cleaned_data['address'].strip()
-        self.profile.save(update_fields=['phone', 'address'])
+
+        fields = ['phone', 'address']
+        if self.cleaned_data.get('remove_photo'):
+            self.profile.photo.delete(save=False)
+            self.profile.photo = None
+            fields.append('photo')
+        elif self.cleaned_data.get('photo'):
+            # Replacing rather than accumulating: the old file is of no use
+            # once a new one is chosen.
+            self.profile.photo.delete(save=False)
+            self.profile.photo = shrink_photo(self.cleaned_data['photo'])
+            fields.append('photo')
+
+        self.profile.save(update_fields=fields)
         self.user.email = self.cleaned_data['email']
         self.user.save(update_fields=['email'])
         return self.profile

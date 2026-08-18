@@ -55,12 +55,17 @@ class ProfileTests(TestCase):
 
     def test_the_form_does_not_expose_usn_or_class(self):
         """Changing those is an administrative act with consequences for
-        attendance and marks, not a profile edit."""
+        attendance and marks, not a profile edit.
+
+        Asserted as an exclusion rather than an exact field list: the form is
+        allowed to grow - it has since gained a photo - but never these.
+        """
         self.client.force_login(self.student.user)
 
-        fields = self.client.get(self.url).context['form'].fields
+        fields = set(self.client.get(self.url).context['form'].fields)
 
-        self.assertEqual(set(fields), {'email', 'phone', 'address'})
+        self.assertFalse(fields & {'USN', 'class_id', 'DOB', 'name', 'sex',
+                                   'is_active', 'dept', 'id'})
 
     def test_a_malformed_phone_number_is_rejected(self):
         self.client.force_login(self.student.user)

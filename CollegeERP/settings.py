@@ -150,11 +150,61 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+# Uploads. MEDIA_ROOT was '' and MEDIA_URL '/', which meant an upload had
+# nowhere to go and would have been served from the site root.
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Render's disk is ephemeral, so a file written to MEDIA_ROOT there is gone on
+# the next deploy. Set the AWS variables and uploads go to S3 instead; leave
+# them unset and it stays on the local disk, which is what local development
+# and docker-compose want.
+AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default='')
+USE_S3 = bool(AWS_STORAGE_BUCKET_NAME)
+
 STORAGES = {
+    'default': {
+        'BACKEND': ('storages.backends.s3.S3Storage' if USE_S3
+                    else 'django.core.files.storage.FileSystemStorage'),
+    },
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
     },
 }
+
+if USE_S3:
+    AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='')
+    AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='')
+    AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='')
+    # Uploads are photographs of people, so they are not world-readable and
+    # links are signed and expire.
+    AWS_DEFAULT_ACL = None
+    AWS_QUERYSTRING_AUTH = True
+    AWS_QUERYSTRING_EXPIRE = 3600
+    AWS_S3_FILE_OVERWRITE = False
+
+# Email. The backend was the SMTP one with no host configured, so anything that
+# tried to send failed at the point of sending. With no host set it falls back
+# to printing to the console, which is what local development wants - nothing
+# is silently dropped, and no real mail goes out during tests.
+EMAIL_HOST = config('EMAIL_HOST', default='')
+EMAIL_BACKEND = config(
+    'EMAIL_BACKEND',
+    default=('django.core.mail.backends.smtp.EmailBackend' if EMAIL_HOST
+             else 'django.core.mail.backends.console.EmailBackend'))
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL',
+                            default=EMAIL_HOST_USER or 'noreply@example.edu')
+# A send that hangs should not hang the request with it.
+EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=10, cast=int)
+
+# The largest a profile photo may be, before it is resized on the way in.
+PROFILE_PHOTO_MAX_BYTES = config('PROFILE_PHOTO_MAX_BYTES', default=5 * 1024 * 1024,
+                                 cast=int)
+PROFILE_PHOTO_SIZE = 400
 
 LOGIN_REDIRECT_URL = '/'
 

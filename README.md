@@ -89,6 +89,15 @@ Configuration comes from environment variables (see `.env.example`):
 `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, or a single
 `DATABASE_URL`; plus `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` and `LOG_LEVEL`.
 
+Two optional groups, both of which degrade rather than break when unset:
+
+- `EMAIL_HOST` and friends. Without them mail is printed to the console, which
+  is what local development wants; with them it is sent.
+- `AWS_STORAGE_BUCKET_NAME` and its credentials. Without them uploads go to
+  `MEDIA_ROOT` on the local disk, which is fine locally and under
+  docker-compose. On Render that disk does not survive a redeploy, so set these
+  to keep profile photos.
+
 ## Tests and linting
 
 ```bash
@@ -97,7 +106,7 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-536 tests covering the attendance, CIE, grade and fee calculations, role and
+548 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.
@@ -266,12 +275,9 @@ are tests that add ten students and assert the query count is unchanged.
 Tracked in [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md), a page-by-page review of
 the whole app with a prioritised backlog. The larger items:
 
-- Email has no SMTP host configured, which blocks password reset by OTP, fee
-  reminders and notice notifications
-- No OpenAPI/Swagger documentation for the API, and no write endpoints
-- The notice board has no search, filtering, draft/publish workflow or read
-  tracking
-- No charts — attendance trend, marks distribution, fee collection
-- No Docker, no linting config, and no media storage for profile photos
-  (Render's filesystem is ephemeral, so that needs S3 or similar rather than
-  just a settings change)
+- Password reset by OTP (the flow is specced in `IMPROVEMENT_PLAN.md` §5.1);
+  the mail configuration it needs now exists
+- Fee reminders, notice-on-publish and low-attendance alerts, all of which are
+  scheduled sends rather than request-time ones
+- Re-evaluation and leave-application workflows — request, approve, audit —
+  which share a shape with each other and with attendance corrections

@@ -118,3 +118,6 @@ staticfiles/
 # **/migrations/**
 # !**/migrations
 # !**/migrations/__init__.py
+
+# Uploaded files
+/media/

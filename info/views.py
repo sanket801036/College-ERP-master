@@ -1624,7 +1624,8 @@ def profile(request):
         return redirect('password_change')
 
     if request.method == 'POST':
-        form = ProfileForm(request.POST, profile=person, user=request.user)
+        form = ProfileForm(request.POST, request.FILES, profile=person,
+                           user=request.user)
         if form.is_valid():
             form.save()
             messages.success(request, 'Your details have been updated.')

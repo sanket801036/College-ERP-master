@@ -10,8 +10,15 @@ python-decouple==3.8
 openpyxl==3.1.5
 pandas==2.2.3
 reportlab==4.2.5
+# Required by ImageField; reportlab pulls it in too, but the profile photo
+# resizing uses it directly.
+Pillow==12.3.0
 gunicorn==23.0.0
 whitenoise==6.7.0
 dj-database-url==2.3.0
 ruff==0.6.9
 pip-audit==2.7.3
+# Only used when AWS_STORAGE_BUCKET_NAME is set; uploads stay on the local
+# disk otherwise.
+django-storages==1.14.4
+boto3==1.35.36

@@ -57,6 +57,11 @@
             {% if kind == 'teachers' %}
               <td><code>{{ person.id }}</code></td>
               <td>
+                {% if person.photo %}
+                  <img src="{{ person.photo.url }}" alt="" class="erp-photo mr-2">
+                {% else %}
+                  <span class="erp-photo erp-photo-empty mr-2">{{ person.name|first|upper }}</span>
+                {% endif %}
                 {{ person.name }}
                 {% if not person.is_active %}
                   <span class="erp-badge erp-badge-warning ml-1">Deactivated</span>
@@ -67,6 +72,11 @@
             {% else %}
               <td><code>{{ person.USN }}</code></td>
               <td>
+                {% if person.photo %}
+                  <img src="{{ person.photo.url }}" alt="" class="erp-photo mr-2">
+                {% else %}
+                  <span class="erp-photo erp-photo-empty mr-2">{{ person.name|first|upper }}</span>
+                {% endif %}
                 {{ person.name }}
                 {% if not person.is_active %}
                   <span class="erp-badge erp-badge-warning ml-1">Deactivated</span>

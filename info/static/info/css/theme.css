@@ -811,3 +811,32 @@ body {
     color: #444;
   }
 }
+
+/* ---------- Profile photos ----------
+   Fixed square so a row's height does not depend on whether somebody has
+   uploaded one; the file is already cropped square on the way in. */
+.erp-photo {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+  background: var(--erp-bg);
+}
+
+.erp-photo-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--erp-primary-light);
+  color: var(--erp-primary-dark);
+  font-weight: 700;
+  font-size: .8rem;
+}
+
+.erp-photo-lg {
+  width: 120px;
+  height: 120px;
+  font-size: 2.5rem;
+  display: inline-flex;
+}

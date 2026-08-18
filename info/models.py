@@ -146,6 +146,16 @@ class User(AbstractUser):
         return False
 
 
+def _photo_path(instance, filename):
+    """Where a profile photo lands.
+
+    Keyed by USN or staff id rather than a random name, so a file in a bucket
+    can be traced back to a person without consulting the database.
+    """
+    suffix = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'jpg'
+    return 'photos/%s/%s.%s' % (instance._meta.model_name, instance.pk, suffix)
+
+
 class UserSuppliedPrimaryKey(models.Model):
     """Refuse to overwrite an existing row when creating a new one.
 
@@ -231,6 +241,10 @@ class Student(UserSuppliedPrimaryKey):
     # has their USN and class, not their phone number.
     phone = models.CharField(max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)
+    # Stored under the person's key so the filename says whose it is, and so a
+    # re-upload does not collide with the previous one.
+    photo = models.ImageField(upload_to=_photo_path, blank=True, null=True,
+                              help_text='Square images work best.')
     # Null on rows that predate this column - a backfilled timestamp would
     # claim every record changed the day the field was added.
     updated_at = models.DateTimeField(auto_now=True, null=True)
@@ -270,6 +284,10 @@ class Teacher(UserSuppliedPrimaryKey):
     # has their USN and class, not their phone number.
     phone = models.CharField(max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)
+    # Stored under the person's key so the filename says whose it is, and so a
+    # re-upload does not collide with the previous one.
+    photo = models.ImageField(upload_to=_photo_path, blank=True, null=True,
+                              help_text='Square images work best.')
     # Null on rows that predate this column - a backfilled timestamp would
     # claim every record changed the day the field was added.
     updated_at = models.DateTimeField(auto_now=True, null=True)
