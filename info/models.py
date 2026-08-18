@@ -186,7 +186,18 @@ class Class(models.Model):
 
 
 class Student(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, null=True)
+    # SET_NULL, not CASCADE. Deleting a login used to delete the person's whole
+    # record with it - attendance, marks, fees and all - which is a startling
+    # amount of destruction to hang off removing a User row in the admin. The
+    # account goes; the history stays.
+    user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True,
+                                blank=True)
+    # Deactivation rather than deletion. Graduating a cohort by deleting it
+    # would take its academic history with it.
+    is_active = models.BooleanField(
+        default=True, help_text='Unticking this blocks sign-in and hides the '
+                                'person from the directory. It keeps their '
+                                'records.')
     class_id = models.ForeignKey(Class, on_delete=models.CASCADE)
     USN = models.CharField(primary_key='True', max_length=100)
     name = models.CharField(max_length=200)
@@ -204,9 +215,28 @@ class Student(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Deactivation has to actually stop them signing in, or it is only a
+        # label. Django already refuses an inactive User at login.
+        if self.user_id and self.user.is_active != self.is_active:
+            self.user.is_active = self.is_active
+            self.user.save(update_fields=['is_active'])
+
 
 class Teacher(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, null=True)
+    # SET_NULL, not CASCADE. Deleting a login used to delete the person's whole
+    # record with it - attendance, marks, fees and all - which is a startling
+    # amount of destruction to hang off removing a User row in the admin. The
+    # account goes; the history stays.
+    user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True,
+                                blank=True)
+    # Deactivation rather than deletion. Graduating a cohort by deleting it
+    # would take its academic history with it.
+    is_active = models.BooleanField(
+        default=True, help_text='Unticking this blocks sign-in and hides the '
+                                'person from the directory. It keeps their '
+                                'records.')
     id = models.CharField(primary_key=True, max_length=100)
     dept = models.ForeignKey(Dept, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
@@ -223,6 +253,14 @@ class Teacher(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Deactivation has to actually stop them signing in, or it is only a
+        # label. Django already refuses an inactive User at login.
+        if self.user_id and self.user.is_active != self.is_active:
+            self.user.is_active = self.is_active
+            self.user.save(update_fields=['is_active'])
 
 
 class Assign(models.Model):

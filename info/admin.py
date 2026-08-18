@@ -99,16 +99,37 @@ class StudentCourseAdmin(admin.ModelAdmin):
     ordering = ('student__class_id__dept__name', 'student__class_id__id', 'student__USN')
 
 
+
+@admin.action(description='Deactivate - blocks sign-in, keeps records')
+def deactivate(modeladmin, request, queryset):
+    # One at a time rather than queryset.update(): the save() override is what
+    # disables the login, and update() bypasses it.
+    for person in queryset:
+        person.is_active = False
+        person.save()
+
+
+@admin.action(description='Reactivate')
+def reactivate(modeladmin, request, queryset):
+    for person in queryset:
+        person.is_active = True
+        person.save()
+
+
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ('USN', 'name', 'class_id')
+    list_display = ('USN', 'name', 'class_id', 'is_active')
+    list_filter = ('is_active', 'class_id')
     search_fields = ('USN', 'name', 'class_id__id', 'class_id__dept__name')
     ordering = ['class_id__dept__name', 'class_id__id', 'USN']
+    actions = [deactivate, reactivate]
 
 
 class TeacherAdmin(admin.ModelAdmin):
-    list_display = ('name', 'dept')
+    list_display = ('name', 'dept', 'is_active')
+    list_filter = ('is_active', 'dept')
     search_fields = ('name', 'dept__name')
     ordering = ['dept__name', 'name']
+    actions = [deactivate, reactivate]
 
 
 class AttendanceClassAdmin(admin.ModelAdmin):

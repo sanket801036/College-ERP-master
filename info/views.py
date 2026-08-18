@@ -1673,6 +1673,9 @@ def directory(request):
     """
     query = request.GET.get('q', '').strip()
     kind = request.GET.get('kind', 'students')
+    # Deactivated people keep their records but drop out of the working list -
+    # a directory of every student who ever enrolled is not a directory.
+    show_inactive = request.GET.get('inactive') == '1'
 
     if kind == 'teachers':
         people = Teacher.objects.select_related('dept', 'user').order_by('name')
@@ -1690,9 +1693,13 @@ def directory(request):
                                    Q(USN__icontains=query) |
                                    Q(class_id__id__icontains=query))
 
+    if not show_inactive:
+        people = people.filter(is_active=True)
+
     return render(request, 'info/directory.html', {
         'page': Paginator(people, 25).get_page(request.GET.get('page')),
         'q': query,
         'kind': kind,
+        'show_inactive': show_inactive,
         'total': people.count(),
     })

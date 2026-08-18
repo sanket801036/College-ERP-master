@@ -27,6 +27,13 @@
       <div class="col-md-3 mb-2">
         <button class="btn btn-outline-primary btn-block" type="submit">Search</button>
       </div>
+      <div class="col-12">
+        <label class="small text-muted mb-0 d-flex align-items-center">
+          <input type="checkbox" name="inactive" value="1" class="mr-2"
+                 {% if show_inactive %}checked{% endif %}>
+          Include deactivated people
+        </label>
+      </div>
     </form>
   </div>
 </div>
@@ -49,12 +56,22 @@
           <tr>
             {% if kind == 'teachers' %}
               <td><code>{{ person.id }}</code></td>
-              <td>{{ person.name }}</td>
+              <td>
+                {{ person.name }}
+                {% if not person.is_active %}
+                  <span class="erp-badge erp-badge-warning ml-1">Deactivated</span>
+                {% endif %}
+              </td>
               <td>{{ person.dept.name }}</td>
               <td class="text-muted">{{ person.user.email|default:"&mdash;" }}</td>
             {% else %}
               <td><code>{{ person.USN }}</code></td>
-              <td>{{ person.name }}</td>
+              <td>
+                {{ person.name }}
+                {% if not person.is_active %}
+                  <span class="erp-badge erp-badge-warning ml-1">Deactivated</span>
+                {% endif %}
+              </td>
               <td>{{ person.class_id }}</td>
               <td class="text-muted">{{ person.user.email|default:"&mdash;" }}</td>
               <td class="text-right">

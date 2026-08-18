@@ -127,11 +127,10 @@ has credentials for yet.
 6. **IN6, IN8** — dependency scanning in CI, and database backups. IN4 and IN5
    are done - pass 32 added a Dockerfile, docker-compose and ruff, with linting
    wired into CI
-7. **MD5, MD6, MD8** — signals still create rows one at a time in places,
-   CASCADE everywhere means deleting a User destroys academic history, and
+7. **MD5, MD8** — signals still create rows one at a time in places, and
    `Dept`/`Course`/`Class` carry the same CharField-primary-key hazard as AC1.
-   MD2, MD3, MD4 and MD7 are done - pass 33 removed the stale defaults and
-   added `updated_at`
+   MD6 is done - pass 35 changed Student.user and Teacher.user to SET_NULL, so
+   deleting a login no longer destroys the academic record
 8. **TA9, TA16, TA12–TA14** — bulk attendance import, class export, and the
    teacher-side attendance analytics. The entry flow is done; the reporting
    around it is not
