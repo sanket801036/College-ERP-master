@@ -126,10 +126,9 @@ has credentials for yet.
 6. **IN6, IN8** — dependency scanning in CI, and database backups. IN4 and IN5
    are done - pass 32 added a Dockerfile, docker-compose and ruff, with linting
    wired into CI
-7. **MD5, MD8** — signals still create rows one at a time in places, and
-   `Dept`/`Course`/`Class` carry the same CharField-primary-key hazard as AC1.
-   MD6 is done - pass 35 changed Student.user and Teacher.user to SET_NULL, so
-   deleting a login no longer destroys the academic record
+7. **The model layer is done.** MD1-MD8 are all closed - pass 38 bulk-loaded
+   the mark-seeding signals and moved the primary-key guard from the form onto
+   the models, so every path is covered rather than the add-student page alone
 8. **TA9, TA16, TA12–TA14** — bulk attendance import, class export, and the
    teacher-side attendance analytics. The entry flow is done; the reporting
    around it is not

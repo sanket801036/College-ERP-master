@@ -146,7 +146,30 @@ class User(AbstractUser):
         return False
 
 
-class Dept(models.Model):
+class UserSuppliedPrimaryKey(models.Model):
+    """Refuse to overwrite an existing row when creating a new one.
+
+    Dept, Course, Class, Student and Teacher all use a primary key somebody
+    types. Django's save() tries an UPDATE first when the key is already set,
+    so `Model(id=existing).save()` silently replaced the existing record rather
+    than failing - which is how a duplicate USN once wiped a student's name,
+    class and date of birth with no error at all.
+
+    Forcing an insert on a new instance turns that into the IntegrityError it
+    always should have been. Saving a row that was loaded from the database is
+    untouched, because _state.adding is False by then.
+    """
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and not kwargs.get('force_update'):
+            kwargs.setdefault('force_insert', True)
+        super().save(*args, **kwargs)
+
+
+class Dept(UserSuppliedPrimaryKey):
     id = models.CharField(primary_key='True', max_length=100)
     name = models.CharField(max_length=200)
 
@@ -154,7 +177,7 @@ class Dept(models.Model):
         return self.name
 
 
-class Course(models.Model):
+class Course(UserSuppliedPrimaryKey):
     dept = models.ForeignKey(Dept, on_delete=models.CASCADE)
     id = models.CharField(primary_key='True', max_length=50)
     name = models.CharField(max_length=50)
@@ -171,7 +194,7 @@ class Course(models.Model):
         return self.name
 
 
-class Class(models.Model):
+class Class(UserSuppliedPrimaryKey):
     # courses = models.ManyToManyField(Course, default=1)
     id = models.CharField(primary_key='True', max_length=100)
     dept = models.ForeignKey(Dept, on_delete=models.CASCADE)
@@ -185,7 +208,7 @@ class Class(models.Model):
         return '%s : %d %s' % (self.dept.name, self.sem, self.section)
 
 
-class Student(models.Model):
+class Student(UserSuppliedPrimaryKey):
     # SET_NULL, not CASCADE. Deleting a login used to delete the person's whole
     # record with it - attendance, marks, fees and all - which is a startling
     # amount of destruction to hang off removing a User row in the admin. The
@@ -224,7 +247,7 @@ class Student(models.Model):
             self.user.save(update_fields=['is_active'])
 
 
-class Teacher(models.Model):
+class Teacher(UserSuppliedPrimaryKey):
     # SET_NULL, not CASCADE. Deleting a login used to delete the person's whole
     # record with it - attendance, marks, fees and all - which is a startling
     # amount of destruction to hang off removing a User row in the admin. The
@@ -1128,47 +1151,59 @@ def create_attendance(sender, instance, **kwargs):
     ])
 
 
-def create_marks(sender, instance, **kwargs):
-    if kwargs['created']:
-        if hasattr(instance, 'name'):
-            ass_list = instance.class_id.assign_set.all()
-            for ass in ass_list:
-                try:
-                    StudentCourse.objects.get(student=instance, course=ass.course)
-                except StudentCourse.DoesNotExist:
-                    sc = StudentCourse(student=instance, course=ass.course)
-                    sc.save()
-                    sc.marks_set.create(name='Internal test 1')
-                    sc.marks_set.create(name='Internal test 2')
-                    sc.marks_set.create(name='Internal test 3')
-                    sc.marks_set.create(name='Event 1')
-                    sc.marks_set.create(name='Event 2')
-                    sc.marks_set.create(name='Semester End Exam')
-        elif hasattr(instance, 'course'):
-            stud_list = instance.class_id.student_set.all()
-            cr = instance.course
-            for s in stud_list:
-                try:
-                    StudentCourse.objects.get(student=s, course=cr)
-                except StudentCourse.DoesNotExist:
-                    sc = StudentCourse(student=s, course=cr)
-                    sc.save()
-                    sc.marks_set.create(name='Internal test 1')
-                    sc.marks_set.create(name='Internal test 2')
-                    sc.marks_set.create(name='Internal test 3')
-                    sc.marks_set.create(name='Event 1')
-                    sc.marks_set.create(name='Event 2')
-                    sc.marks_set.create(name='Semester End Exam')
+def _seed_marks(pairs):
+    """Give each (student, course) pair its six blank mark rows.
+
+    This ran a SELECT and six INSERTs per pair, one statement at a time -
+    adding one Assign to a sixty-student class was over four hundred round
+    trips. ignore_conflicts covers the pairs that already exist, which is what
+    the per-row try/except was doing.
+    """
+    pairs = list(pairs)
+    if not pairs:
+        return
+
+    StudentCourse.objects.bulk_create(
+        [StudentCourse(student=student, course=course)
+         for student, course in pairs],
+        ignore_conflicts=True,
+    )
+
+    # bulk_create with ignore_conflicts does not populate primary keys, so the
+    # rows are read back rather than reused from the objects above.
+    rows = StudentCourse.objects.filter(
+        student__in={student for student, _ in pairs},
+        course__in={course for _, course in pairs})
+    Marks.objects.bulk_create(
+        [Marks(studentcourse=sc, name=name)
+         for sc in rows for name, _ in test_name],
+        ignore_conflicts=True,
+    )
+
+
+def create_marks_for_student(sender, instance, **kwargs):
+    """A new student needs mark rows for every course their class takes."""
+    if not kwargs['created']:
+        return
+    _seed_marks((instance, assign.course)
+                for assign in instance.class_id.assign_set.select_related('course'))
+
+
+def create_marks_for_assign(sender, instance, **kwargs):
+    """A new assignment needs mark rows for every student in that class."""
+    if not kwargs['created']:
+        return
+    _seed_marks((student, instance.course)
+                for student in instance.class_id.student_set.all())
 
 
 def create_marks_class(sender, instance, **kwargs):
-    if kwargs['created']:
-        for name in test_name:
-            try:
-                MarksClass.objects.get(assign=instance, name=name[0])
-            except MarksClass.DoesNotExist:
-                m = MarksClass(assign=instance, name=name[0])
-                m.save()
+    if not kwargs['created']:
+        return
+    MarksClass.objects.bulk_create(
+        [MarksClass(assign=instance, name=name) for name, _ in test_name],
+        ignore_conflicts=True,
+    )
 
 
 def delete_marks(sender, instance, **kwargs):
@@ -1176,8 +1211,8 @@ def delete_marks(sender, instance, **kwargs):
     StudentCourse.objects.filter(course=instance.course, student__in=stud_list).delete()
 
 
-post_save.connect(create_marks, sender=Student)
-post_save.connect(create_marks, sender=Assign)
+post_save.connect(create_marks_for_student, sender=Student)
+post_save.connect(create_marks_for_assign, sender=Assign)
 post_save.connect(create_marks_class, sender=Assign)
 post_save.connect(create_attendance, sender=AssignTime)
 post_delete.connect(delete_marks, sender=Assign)
