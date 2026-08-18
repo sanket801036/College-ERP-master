@@ -737,3 +737,77 @@ body {
 
 .erp-sparkline-up .erp-sparkline-dot-last,
 .erp-sparkline-down .erp-sparkline-dot-last { stroke: var(--erp-surface); }
+
+/* ---------- Credential slips ----------
+   Screen shows the table, which is compact to review; paper gets one slip per
+   person, because a printed table has to be cut into strips and matched back
+   up against the names by hand. */
+.erp-slips { display: none; }
+
+@media print {
+  /* Everything the page is wrapped in - navbar, sidebar, cards, buttons -
+     exists to navigate, and none of it belongs on a handout. */
+  .navbar,
+  .sidebar,
+  .erp-no-print,
+  .card-header { display: none !important; }
+
+  #wrapper, #content-wrapper, .container-fluid, .card, .card-body {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  .erp-slips { display: block; }
+
+  .erp-slip {
+    /* A dashed box because these get cut apart. Two to a row on A4. */
+    display: inline-block;
+    width: 48%;
+    vertical-align: top;
+    margin: 0 .5% 10mm;
+    padding: 6mm;
+    border: 1px dashed #666;
+    /* A slip split over a page break is useless. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+    font-size: 11pt;
+    color: #000;
+  }
+
+  .erp-slip-title {
+    font-size: 8pt;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #444;
+    margin-bottom: 2mm;
+  }
+
+  .erp-slip-name { font-size: 13pt; font-weight: 700; margin-bottom: 3mm; }
+
+  .erp-slip-fields { margin: 0; }
+  .erp-slip-fields dt {
+    float: left;
+    width: 26mm;
+    clear: left;
+    font-weight: 400;
+    color: #444;
+  }
+  .erp-slip-fields dd {
+    margin: 0 0 1.5mm 26mm;
+    font-family: 'Courier New', monospace;
+    font-weight: 700;
+  }
+
+  .erp-slip-note {
+    clear: both;
+    margin-top: 3mm;
+    padding-top: 2mm;
+    border-top: 1px solid #ccc;
+    font-size: 8pt;
+    color: #444;
+  }
+}

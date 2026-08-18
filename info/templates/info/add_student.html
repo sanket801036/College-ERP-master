@@ -9,11 +9,32 @@
 <div class="card mb-3 mx-auto" style="max-width: 640px;">
   <div class="card-header"><i class="fas fa-key"></i><b>Account created for {{ credentials.name }}</b></div>
   <div class="card-body">
-    <p class="text-muted mb-3">
+    <p class="text-muted mb-3 erp-no-print">
       Write these down now &mdash; the password is generated randomly and is not
       shown again anywhere.
     </p>
-    <table class="table table-bordered mb-0">
+    <button class="btn btn-outline-primary btn-sm mb-3 erp-no-print"
+            type="button" onclick="window.print()">
+      <i class="fas fa-print"></i> Print slip
+    </button>
+
+      <div class="erp-slips">
+        <div class="erp-slip">
+          <div class="erp-slip-title">College ERP &mdash; account details</div>
+          <div class="erp-slip-name">{{ credentials.name }}</div>
+          <dl class="erp-slip-fields">
+            <dt>Username</dt><dd>{{ credentials.username }}</dd>
+            <dt>Password</dt><dd>{{ credentials.password }}</dd>
+          </dl>
+          <div class="erp-slip-note">
+            You will be asked to choose your own password the first time you
+            sign in.
+          </div>
+        </div>
+      </div>
+
+
+    <table class="table table-bordered mb-0 erp-no-print">
       <tr>
         <th style="width: 40%;">Username</th>
         <td><code>{{ credentials.username }}</code></td>

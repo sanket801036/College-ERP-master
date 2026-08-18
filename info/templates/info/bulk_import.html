@@ -21,11 +21,34 @@
       The only chance to hand these out: the passwords are random and are not
       stored anywhere readable afterwards.
       {% endcomment %}
-      <div class="alert alert-warning">
+      <div class="alert alert-warning erp-no-print">
         Save or print this now. The passwords are generated randomly and are not
         shown again.
       </div>
-      <div class="table-responsive">
+      <button class="btn btn-outline-primary btn-sm mb-3 erp-no-print"
+              type="button" onclick="window.print()">
+        <i class="fas fa-print"></i> Print slips
+      </button>
+      <div class="erp-slips">
+        {% for person in created %}
+          <div class="erp-slip">
+            <div class="erp-slip-title">College ERP &mdash; account details</div>
+            <div class="erp-slip-name">{{ person.name }}</div>
+            <dl class="erp-slip-fields">
+              <dt>{% if kind == 'students' %}USN{% else %}Staff ID{% endif %}</dt>
+              <dd>{{ person.key }}</dd>
+              <dt>Username</dt><dd>{{ person.username }}</dd>
+              <dt>Password</dt><dd>{{ person.password }}</dd>
+            </dl>
+            <div class="erp-slip-note">
+              You will be asked to choose your own password the first time you
+              sign in.
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="table-responsive erp-no-print">
         <table class="table table-bordered mb-0">
           <thead class="thead-light">
             <tr>
