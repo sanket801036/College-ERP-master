@@ -37,6 +37,11 @@ password shown once), record fee payments, and see average attendance, students
 at risk, outstanding fees and a feed of who changed what. The full Django admin
 covers departments, courses, classes and teaching assignments.
 
+Anyone locked out can reset their own password: a six-digit code goes to
+the address on the account, expires in ten minutes, works once, and locks
+after five wrong guesses. The page answers identically whether or not the
+account exists, so it cannot be used to find out which usernames are real.
+
 Every change to attendance, marks and fees is recorded — who made it, when, and
 what the value was before.
 
@@ -106,7 +111,7 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-548 tests covering the attendance, CIE, grade and fee calculations, role and
+566 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.

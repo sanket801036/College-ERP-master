@@ -2,12 +2,15 @@ import logging
 from datetime import timedelta
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
+from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Q
@@ -35,6 +38,8 @@ from info.forms import (
     FeeTransactionForm,
     MarksEntryForm,
     NoticeForm,
+    PasswordResetRequestForm,
+    PasswordResetVerifyForm,
     ProfileForm,
     StudentForm,
     SupportRequestForm,
@@ -74,6 +79,7 @@ from .models import (
     MarksClass,
     Notice,
     NoticeRead,
+    PasswordResetOTP,
     Student,
     StudentCourse,
     SupportRequest,
@@ -1727,3 +1733,125 @@ def bulk_import(request):
         return render(request, 'info/bulk_import.html', context)
 
     return render(request, 'info/bulk_import.html', context)
+
+
+# Keys the reset flow keeps in the session between its three screens. Only the
+# user id matters, and it is only set once a code has actually been issued.
+RESET_USER_KEY = 'password_reset_user'
+RESET_VERIFIED_KEY = 'password_reset_verified'
+
+
+def _send_reset_code(user, code):
+    subject = 'Your College ERP password reset code'
+    body = (
+        'Hello %s,\n\n'
+        'Your password reset code is %s.\n\n'
+        'It expires in 10 minutes and can be used once. If you did not ask to '
+        'reset your password, you can ignore this - your current password '
+        'still works.\n'
+    ) % (user.get_username(), code)
+    send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [user.email],
+              fail_silently=False)
+
+
+def password_reset_request(request):
+    """Step one: take a username or email and, if it matches, send a code."""
+    if request.method == 'POST':
+        form = PasswordResetRequestForm(request.POST)
+        if form.is_valid():
+            user = form.find_user()
+
+            # The response is the same whether or not the account exists, and
+            # whether or not it is rate limited. Saying "no such user" here
+            # turns this page into a way to find out which usernames are real.
+            if user and user.email and not PasswordResetOTP.rate_limited(user):
+                _, code = PasswordResetOTP.issue(user)
+                try:
+                    _send_reset_code(user, code)
+                except Exception:
+                    # A mail failure must not tell the caller they guessed a
+                    # real account, so it is logged and swallowed.
+                    logger.exception('Could not send a reset code to user %s',
+                                     user.pk)
+                else:
+                    logger.info('Issued a password reset code to user %s', user.pk)
+
+            if user:
+                request.session[RESET_USER_KEY] = user.pk
+            else:
+                # Clearing rather than leaving a stale id behind, so a second
+                # attempt cannot inherit the first one's account.
+                request.session.pop(RESET_USER_KEY, None)
+            request.session.pop(RESET_VERIFIED_KEY, None)
+
+            messages.info(
+                request,
+                'If that account exists, a six-digit code is on its way to the '
+                'email address registered against it.')
+            return redirect('password_reset_verify')
+    else:
+        form = PasswordResetRequestForm()
+
+    return render(request, 'info/password_reset_request.html', {'form': form})
+
+
+def password_reset_verify(request):
+    """Step two: check the code."""
+    user_id = request.session.get(RESET_USER_KEY)
+
+    if request.method == 'POST':
+        form = PasswordResetVerifyForm(request.POST)
+        if form.is_valid():
+            otp = None
+            if user_id:
+                otp = (PasswordResetOTP.objects
+                       .filter(user_id=user_id).live().first())
+
+            if otp and otp.verify(form.cleaned_data['code']):
+                request.session[RESET_VERIFIED_KEY] = otp.pk
+                logger.info('Password reset code verified for user %s', user_id)
+                return redirect('password_reset_set')
+
+            # One message for a wrong code, an expired one, a locked one and an
+            # identifier that never matched anything.
+            form.add_error('code', 'That code is not valid. It may have '
+                                   'expired, or been used already.')
+    else:
+        form = PasswordResetVerifyForm()
+
+    return render(request, 'info/password_reset_verify.html', {'form': form})
+
+
+def password_reset_set(request):
+    """Step three: choose a new password."""
+    otp_id = request.session.get(RESET_VERIFIED_KEY)
+    user_id = request.session.get(RESET_USER_KEY)
+    # Reached only by having verified a code in this session; the check is
+    # repeated here because the URL is guessable.
+    otp = PasswordResetOTP.objects.filter(pk=otp_id, user_id=user_id).first()
+    if otp is None:
+        return redirect('password_reset')
+
+    if request.method == 'POST':
+        form = SetPasswordForm(otp.user, request.POST)
+        if form.is_valid():
+            with transaction.atomic():
+                form.save()
+                # Whatever else was outstanding is void now, and the flag that
+                # forces a change is satisfied by having just made one.
+                PasswordResetOTP.objects.filter(user=otp.user).live().update(
+                    used_at=timezone.now())
+                if otp.user.must_change_password:
+                    otp.user.must_change_password = False
+                    otp.user.save(update_fields=['must_change_password'])
+
+            request.session.pop(RESET_USER_KEY, None)
+            request.session.pop(RESET_VERIFIED_KEY, None)
+            logger.info('Password reset completed for user %s', otp.user_id)
+            messages.success(request,
+                             'Your password has been changed. Sign in with it.')
+            return redirect('login')
+    else:
+        form = SetPasswordForm(otp.user)
+
+    return render(request, 'info/password_reset_set.html', {'form': form})

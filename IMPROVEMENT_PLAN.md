@@ -81,7 +81,7 @@ their **features**.
 
 | Page | State | What is left |
 |---|---|---|
-| **Login** (§5) | 🟢 rebuilt | §5.1 (OTP reset) is the only part unbuilt, and it is blocked on CF3 (no SMTP host). "Forgot password?" currently opens a modal pointing at the admin rather than a real reset flow |
+| **Login** (§5) | 🟢 rebuilt, reset built | §5.1 landed once SMTP credentials arrived: "Forgot password?" now goes to a three-screen OTP reset (identify → verify → choose), and every security rule the spec listed is enforced and tested. Not built: the visible countdown and the "Resend code" button, and the optional admin two-factor the spec floats at the end |
 | **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB17 (email on publish, blocked on CF3), NB22 (should a teacher be able to address the whole institution?) |
 | **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
 | **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA landed in pass 19 on VTU's 10-point scale; class rank (MK8) and the PDF marks card (MK10) in pass 24; publication control (MK20) in pass 23. Pass 30 added the cross-subject comparison (MK12) and a per-course internals sparkline (MK11). Still open: MK16 (attendance/marks correlation), semester history (MK15, needs semester tagging) and MK18 (re-evaluation workflow) |
@@ -101,13 +101,15 @@ has credentials for yet.
 
 ### Still open, highest value first
 
-1. **CF3 + CF1** — the two config blockers. Email has no SMTP host, which blocks
-   the OTP reset flow (§5.1), fee reminders (FE22), notice notifications (NB17),
-   attendance alerts (AT23) and marks-release alerts (MK21). Media storage is
+1. **CF1** — the remaining config blocker. **CF3 is closed**: SMTP is configured
+   from env vars, falling back to the console backend when `EMAIL_HOST` is
+   unset, and the OTP reset flow (§5.1) is built on it. What email still has to
+   pay for is the *scheduled* sends — fee reminders (FE22), notice notifications
+   (NB17), attendance alerts (AT23) and marks-release alerts (MK21) — which need
+   somewhere to run periodically, not just a mail host. Media storage is
    unconfigured *and* Render's disk is ephemeral, so profile photos (AC16),
    notice attachments (NB8) and roster photos (TA6) need S3/Cloudinary, not just
-   a settings change. AC4 is done — accounts now collect an email address — so
-   CF3 is purely a credentials decision
+   a settings change. AC4 is done — accounts now collect an email address
 2. **API — nothing outstanding.** API13-API20 are all done: Swagger/ReDoc,
    teacher endpoints, attendance and marks writes, a token-issuing sign-in, a
    consistent envelope, pagination, throttling and `/api/v1/` versioning
@@ -297,6 +299,18 @@ Working through the login page first, before anything else, since it's the first
 ---
 
 ### 5.1 Email OTP — Forgot Password flow
+
+🟢 **Built.** `PasswordResetOTP` plus `/accounts/reset/`, `/accounts/reset/verify/`
+and `/accounts/reset/set/`, covered by 18 tests in
+`info/tests/test_password_reset.py`. Every rule in the security list below is
+enforced, and the tests are written against the rules rather than the
+implementation: an unknown identifier is checked to produce the same status,
+the same redirect and the same wording as a real one. Two things in this spec
+were deliberately not built — the countdown, because a timer that disagrees
+with the server by a few seconds is worse than none, and "Resend code", which
+is the same thing as asking again and is already rate limited. Mail failures
+are logged and swallowed, since an error page would tell the caller they had
+guessed a real account.
 
 Replaces the "email a reset link" approach with a 6-digit code, which is the pattern most Indian college/banking portals use and reads as more modern in a demo.
 

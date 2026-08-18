@@ -4,7 +4,14 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
-from info.views import ErpLoginView, ErpPasswordChangeView, support_request
+from info.views import (
+    ErpLoginView,
+    ErpPasswordChangeView,
+    password_reset_request,
+    password_reset_set,
+    password_reset_verify,
+    support_request,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -13,6 +20,12 @@ urlpatterns = [
     path('api/', include('apis.urls')),
     path('accounts/login/', ErpLoginView.as_view(), name='login'),
     path('accounts/support/', support_request, name='support_request'),
+
+    # Three screens: identify, verify the emailed code, choose a password.
+    path('accounts/reset/', password_reset_request, name='password_reset'),
+    path('accounts/reset/verify/', password_reset_verify,
+         name='password_reset_verify'),
+    path('accounts/reset/set/', password_reset_set, name='password_reset_set'),
     path('accounts/logout/',
          auth_views.LogoutView.as_view(template_name='info/logout.html'), name='logout'),
     # Nobody could change their own password before this - accounts kept the

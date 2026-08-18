@@ -4,7 +4,7 @@ import re
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm  # noqa: F401
 from django.core.files.base import ContentFile
 from django.utils import timezone
 from django.utils.crypto import get_random_string
@@ -552,3 +552,43 @@ class ProfileForm(forms.Form):
         self.user.email = self.cleaned_data['email']
         self.user.save(update_fields=['email'])
         return self.profile
+
+
+class PasswordResetRequestForm(forms.Form):
+    """Step one: who are you.
+
+    Takes either a username or an email because people remember one or the
+    other, and an ERP username like `asha_001` is not what anybody memorises.
+    """
+    identifier = forms.CharField(
+        label='Username or email',
+        max_length=254,
+        widget=forms.TextInput(attrs={'autofocus': True}))
+
+    def find_user(self):
+        """The matching account, or None.
+
+        Deliberately returns None rather than raising: the view must respond
+        the same way either way, or the form becomes a way to discover which
+        usernames exist.
+        """
+        value = self.cleaned_data['identifier'].strip()
+        return (User.objects.filter(username__iexact=value).first()
+                or User.objects.filter(email__iexact=value).first())
+
+
+class PasswordResetVerifyForm(forms.Form):
+    """Step two: the code from the email."""
+    code = forms.CharField(
+        label='6-digit code',
+        min_length=6, max_length=6,
+        widget=forms.TextInput(attrs={'autofocus': True, 'inputmode': 'numeric',
+                                      'autocomplete': 'one-time-code'}),
+        error_messages={'min_length': 'The code is six digits.',
+                        'max_length': 'The code is six digits.'})
+
+    def clean_code(self):
+        code = self.cleaned_data['code'].strip()
+        if not code.isdigit():
+            raise forms.ValidationError('The code is six digits.')
+        return code

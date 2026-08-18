@@ -2,6 +2,7 @@ import math
 from datetime import timedelta
 from decimal import Decimal
 
+from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -9,6 +10,7 @@ from django.db import models
 from django.db.models.functions import Coalesce
 from django.db.models.signals import post_delete, post_save
 from django.utils import timezone
+from django.utils.crypto import get_random_string
 from django.utils.functional import cached_property
 
 # Create your models here.
@@ -1402,3 +1404,95 @@ class LoginEvent(models.Model):
             if token in agent:
                 return '%s on %s' % (browser, platform)
         return browser
+
+
+# How long a code is good for, how many guesses it allows, and how many may be
+# requested in a window. Short enough to matter, generous enough that a person
+# reading their email on a phone is not caught out.
+OTP_LIFETIME = timedelta(minutes=10)
+OTP_MAX_ATTEMPTS = 5
+OTP_REQUEST_WINDOW = timedelta(minutes=15)
+OTP_MAX_REQUESTS = 3
+
+
+class PasswordResetOTPQuerySet(models.QuerySet):
+    def live(self):
+        """Codes that could still be used."""
+        return self.filter(used_at__isnull=True,
+                           expires_at__gt=timezone.now(),
+                           attempts__lt=OTP_MAX_ATTEMPTS)
+
+
+class PasswordResetOTP(models.Model):
+    """A one-time code emailed to somebody who has forgotten their password.
+
+    The code is stored hashed, for the same reason passwords are: a dump of
+    this table should not be a list of working reset codes. It is only six
+    digits, so the protection comes from the expiry and the attempt limit
+    rather than the hash alone.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE,
+                             related_name='reset_codes')
+    code_hash = models.CharField(max_length=128)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    objects = PasswordResetOTPQuerySet.as_manager()
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', '-created_at'])]
+
+    def __str__(self):
+        return 'reset code for %s (%s)' % (self.user, self.state)
+
+    @property
+    def state(self):
+        if self.used_at:
+            return 'used'
+        if self.attempts >= OTP_MAX_ATTEMPTS:
+            return 'locked'
+        if self.expires_at <= timezone.now():
+            return 'expired'
+        return 'live'
+
+    @classmethod
+    def rate_limited(cls, user):
+        """Has this account already asked for too many codes lately?
+
+        Without this the form is a way to fill somebody else's inbox, and the
+        person being targeted is the one who suffers for it.
+        """
+        since = timezone.now() - OTP_REQUEST_WINDOW
+        return cls.objects.filter(user=user, created_at__gte=since).count() >= OTP_MAX_REQUESTS
+
+    @classmethod
+    def issue(cls, user):
+        """Create a code for `user`, returning (record, plain_code).
+
+        Any code already outstanding is retired first: two live codes means two
+        chances for whoever should not have either.
+        """
+        cls.objects.filter(user=user).live().update(used_at=timezone.now())
+
+        code = get_random_string(6, '0123456789')
+        record = cls.objects.create(
+            user=user,
+            code_hash=make_password(code),
+            expires_at=timezone.now() + OTP_LIFETIME,
+        )
+        return record, code
+
+    def verify(self, code):
+        """Check a submitted code, counting the attempt either way."""
+        if self.state != 'live':
+            return False
+
+        self.attempts += 1
+        matched = check_password(code, self.code_hash)
+        if matched:
+            self.used_at = timezone.now()
+        self.save(update_fields=['attempts', 'used_at'])
+        return matched

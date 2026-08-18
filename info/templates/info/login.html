@@ -76,7 +76,7 @@
                      {% if form.remember_me.value %}checked{% endif %}>
               Remember me
             </label>
-            <a class="small" href="#" data-toggle="modal" data-target="#forgotModal">Forgot password?</a>
+            <a class="small" href="{% url 'password_reset' %}">Forgot password?</a>
           </div>
 
           <button class="btn btn-primary" type="submit">
@@ -136,33 +136,7 @@
       </div>
     </div>
 
-    <!-- Forgot password: the reset flow needs an email backend, which is not
-         configured yet, so this explains rather than pretending to work. -->
-    <div class="modal fade" id="forgotModal" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Forgotten your password?</h5>
-            <button class="close" type="button" data-dismiss="modal" aria-label="Close">
-              <span aria-hidden="true">&times;</span>
-            </button>
-          </div>
-          <div class="modal-body">
-            <p class="mb-0">
-              Self-service reset by email is not switched on yet. Use
-              <b>Contact Administrator</b> below and one will be issued for you.
-            </p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" type="button" data-dismiss="modal">Close</button>
-            <button class="btn btn-primary" type="button" data-dismiss="modal"
-                    data-toggle="modal" data-target="#supportModal">Contact Administrator</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <script src="{% static '/info/bootstrap/vendor/jquery/jquery.min.js' %}"></script>
+<script src="{% static '/info/bootstrap/vendor/jquery/jquery.min.js' %}"></script>
     <script src="{% static '/info/bootstrap/vendor/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
     <script src="{% static '/info/bootstrap/vendor/jquery-easing/jquery.easing.min.js' %}"></script>
 
