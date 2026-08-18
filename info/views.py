@@ -40,6 +40,15 @@ from info.forms import (
     SupportRequestForm,
     TeacherForm,
 )
+from info.imports import (
+    MAX_ROWS,
+    STUDENT_COLUMNS,
+    TEACHER_COLUMNS,
+    ImportError_,
+    commit,
+    read_rows,
+    validate,
+)
 from info.reports import payment_receipt, report_card
 from info.services import SessionNotMarkable, submit_attendance
 
@@ -1703,3 +1712,46 @@ def directory(request):
         'show_inactive': show_inactive,
         'total': people.count(),
     })
+
+
+@login_required
+def bulk_import(request):
+    """Enrol a whole intake from a spreadsheet.
+
+    Two steps on purpose: validate and show what is wrong, then commit. A file
+    that silently imported the rows it liked and dropped the rest would be
+    worse than one that refused.
+    """
+    if not request.user.is_superuser:
+        raise PermissionDenied
+
+    kind = request.GET.get('kind') or request.POST.get('kind') or 'students'
+    if kind not in ('students', 'teachers'):
+        kind = 'students'
+
+    columns = (STUDENT_COLUMNS if kind == 'students' else TEACHER_COLUMNS)
+    context = {'kind': kind, 'columns': columns, 'max_rows': MAX_ROWS}
+
+    if request.method == 'POST' and request.FILES.get('file'):
+        try:
+            rows = read_rows(request.FILES['file'], columns)
+        except ImportError_ as exc:
+            context['file_error'] = str(exc)
+            return render(request, 'info/bulk_import.html', context)
+
+        forms_, errors = validate(rows, kind)
+        context.update({'row_count': len(rows), 'errors': errors})
+
+        if errors:
+            return render(request, 'info/bulk_import.html', context)
+
+        created = commit(forms_, kind)
+        AuditLog.record(
+            actor=request.user, action='accounts.imported', target=None,
+            summary='Imported %d %s from a spreadsheet' % (len(created), kind))
+        # Shown once. The passwords are random and are not recoverable
+        # afterwards, so this page is the only chance to hand them out.
+        context['created'] = created
+        return render(request, 'info/bulk_import.html', context)
+
+    return render(request, 'info/bulk_import.html', context)

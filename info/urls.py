@@ -13,6 +13,7 @@ urlpatterns = [
          views.timetable, name='timetable'),
     path('profile/', views.profile, name='profile'),
     path('directory/', views.directory, name='directory'),
+    path('import/', views.bulk_import, name='bulk_import'),
 
     path('student/<slug:stud_id>/marks_list/',
          views.marks_list, name='marks_list'),

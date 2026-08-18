@@ -1192,6 +1192,7 @@ audit_action_choice = (
     ('marks.published', 'Marks published'),
     ('marks.unpublished', 'Marks withdrawn'),
     ('fee.payment', 'Payment recorded'),
+    ('accounts.imported', 'Accounts imported'),
 )
 
 

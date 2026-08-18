@@ -1,0 +1,154 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Bulk import{% endblock %}
+
+{% block content %}
+
+<div class="mb-3">
+  <h2 class="mb-0">Bulk import</h2>
+  <p class="text-muted mb-0">
+    Enrol a whole intake from a spreadsheet instead of one form at a time.
+  </p>
+</div>
+
+{% if created %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <i class="fas fa-key"></i><b>{{ created|length }} account{{ created|length|pluralize }} created</b>
+    </div>
+    <div class="card-body">
+      {% comment %}
+      The only chance to hand these out: the passwords are random and are not
+      stored anywhere readable afterwards.
+      {% endcomment %}
+      <div class="alert alert-warning">
+        Save or print this now. The passwords are generated randomly and are not
+        shown again.
+      </div>
+      <div class="table-responsive">
+        <table class="table table-bordered mb-0">
+          <thead class="thead-light">
+            <tr>
+              <th>{% if kind == 'students' %}USN{% else %}Staff ID{% endif %}</th>
+              <th>Name</th><th>Username</th><th>Temporary password</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for person in created %}
+              <tr>
+                <td><code>{{ person.key }}</code></td>
+                <td>{{ person.name }}</td>
+                <td><code>{{ person.username }}</code></td>
+                <td><code>{{ person.password }}</code></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% if file_error %}
+  <div class="alert alert-danger">{{ file_error }}</div>
+{% endif %}
+
+{% if errors %}
+  <div class="card mb-3 border-danger">
+    <div class="card-header">
+      <i class="fas fa-triangle-exclamation text-danger"></i>
+      <b>Nothing was imported</b>
+    </div>
+    <div class="card-body">
+      <p class="text-muted">
+        {{ errors|length }} problem{{ errors|length|pluralize }} across
+        {{ row_count }} row{{ row_count|pluralize }}. Row numbers match the
+        spreadsheet, so row 2 is the first one under the header. Fix them and
+        upload again &mdash; a file is imported whole or not at all.
+      </p>
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-0">
+          <thead class="thead-light">
+            <tr><th style="width: 80px;">Row</th><th style="width: 140px;">Column</th><th>Problem</th></tr>
+          </thead>
+          <tbody>
+            {% for row, field, message in errors %}
+              <tr>
+                <td>{{ row }}</td>
+                <td><code>{{ field }}</code></td>
+                <td>{{ message }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-header"><i class="fas fa-file-arrow-up"></i><b>Upload</b></div>
+  <div class="card-body">
+    <form method="POST" enctype="multipart/form-data">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="{{ kind }}">
+
+      <div class="form-group">
+        <label class="small text-muted">Importing</label>
+        <div class="btn-group btn-group-sm d-block mb-2">
+          <a class="btn {% if kind == 'students' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+             href="?kind=students">Students</a>
+          <a class="btn {% if kind == 'teachers' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+             href="?kind=teachers">Teachers</a>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="small text-muted" for="file">Spreadsheet (.xlsx or .csv)</label>
+        <input type="file" name="file" id="file" accept=".xlsx,.csv" required
+               class="form-control-file">
+      </div>
+
+      <button class="btn btn-primary" type="submit">Check and import</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="fas fa-table-columns"></i><b>Expected columns</b></div>
+  <div class="card-body">
+    <p class="text-muted small">
+      The first row is the header, in any order. Up to {{ max_rows }} rows per
+      file. Dates as YYYY-MM-DD.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered mb-2">
+        <thead class="thead-light">
+          <tr>{% for column in columns %}<th><code>{{ column }}</code></th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          <tr>
+            {% if kind == 'students' %}
+              <td>1CS22CS001</td><td>Asha Rao</td><td>CSE-5A</td>
+              <td>Female</td><td>2004-05-14</td><td>asha@example.edu</td>
+            {% else %}
+              <td>t104</td><td>Ravi Shankar</td><td>CSE</td>
+              <td>Male</td><td>1980-01-01</td><td>ravi@example.edu</td>
+            {% endif %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted small mb-0">
+      {% if kind == 'students' %}
+        <b>class</b> is the class ID as it appears in the admin, not its name.
+      {% else %}
+        <b>department</b> is the department ID as it appears in the admin.
+      {% endif %}
+      Each person gets a login with a one-time password, shown once after the
+      import.
+    </p>
+  </div>
+</div>
+
+{% endblock %}
