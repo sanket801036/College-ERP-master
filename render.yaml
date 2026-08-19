@@ -26,3 +26,20 @@ services:
         value: https://*.onrender.com
       - key: PYTHON_VERSION
         value: 3.10.11
+      # Mail. Without these the app falls back to printing messages to the
+      # log, so a deploy without them still works - the password reset just
+      # cannot reach anybody. Host and port are Gmail's and are not secret;
+      # the account and its app password are marked sync:false, which means
+      # Render asks for the value and stores it, and it never enters git.
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: 587
+      - key: EMAIL_USE_TLS
+        value: true
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false

@@ -140,6 +140,100 @@ has credentials for yet.
 
 ---
 
+## Deployment runbook — switching email and the scheduler on
+
+Two things the code cannot do for itself: neither a secret nor a cron entry
+belongs in a git repository, so both are settings on the host. Everything else
+about this app deploys from `render.yaml` without anybody clicking anything.
+
+### Email
+
+`render.yaml` declares six variables. Three carry Gmail's own settings and are
+in the file, because they are not secret:
+
+```yaml
+- key: EMAIL_HOST
+  value: smtp.gmail.com
+- key: EMAIL_PORT
+  value: 587
+- key: EMAIL_USE_TLS
+  value: true
+```
+
+The other three are marked `sync: false`, which is Render's way of saying *ask
+the operator for this value and keep it*. They never appear in git:
+
+```yaml
+- key: EMAIL_HOST_USER
+  sync: false
+- key: EMAIL_HOST_PASSWORD
+  sync: false
+- key: DEFAULT_FROM_EMAIL
+  sync: false
+```
+
+**On a service that already exists** (the demo does), a `sync: false` variable
+is not filled in retrospectively. Add the three values once, by hand:
+
+1. Render dashboard → the **college-erp** web service → **Environment**
+2. **Add Environment Variable**, three times:
+   - `EMAIL_HOST_USER` — the Gmail address that sends
+   - `EMAIL_HOST_PASSWORD` — a Google **App Password**, not the account
+     password. Google Account → Security → 2-Step Verification → App passwords.
+     Sixteen characters; spaces in it do not matter
+   - `DEFAULT_FROM_EMAIL` — normally the same address as `EMAIL_HOST_USER`
+3. **Save, rebuild, and deploy**. Render restarts the service; nothing else
+   needs doing
+
+**On a fresh blueprint deploy**, Render prompts for the three during "Apply"
+and there is no second step.
+
+**Checking it worked** — Render's **Shell** tab on the service:
+
+```bash
+python manage.py shell -c "from django.core.mail import send_mail; \
+  print(send_mail('ERP test', 'It works.', None, ['you@example.com']))"
+```
+
+`1` means the message was accepted by Gmail. An error mentioning
+`SMTPAuthenticationError` means the app password is wrong or 2-Step
+Verification is off; `Connection unexpectedly closed` usually means the port
+or TLS flag is.
+
+**If none of this is set**, the app does not break. `EMAIL_HOST` being empty
+switches `EMAIL_BACKEND` to Django's console backend, so mail is written to
+the service log instead of sent. The password reset flow then works, prints
+its code to the log, and nobody receives it - useful locally, not much use in
+a demo.
+
+### The scheduler
+
+`send_notifications` sends fee reminders, low-attendance warnings, marks
+alerts and notice announcements. Something has to run it, once a day; it does
+not run itself, and nothing in the app calls it.
+
+That is deliberate. The alternatives - Celery with a beat scheduler, or a
+thread inside the web process - both need a worker that stays up, and the free
+tier does not have one. A management command means the scheduler is *whatever
+can run one shell line a day*, and moving between the options below changes a
+line of configuration rather than any code:
+
+| Where | How | Cost |
+|---|---|---|
+| Render **Cron Job** | New → Cron Job, same repo, schedule `0 9 * * *`, command `python manage.py send_notifications` | Paid feature |
+| **cron-job.org** or similar, hitting a small trigger URL | Would need a token-protected view; not built | Free |
+| Your own machine | Windows Task Scheduler, or `0 9 * * *` in crontab, running against the deployed `DATABASE_URL` | Free |
+| Nothing at all | Run it by hand from Render's Shell when demonstrating | Free |
+
+For a portfolio demo the last row is honest and enough: the command exists, it
+is tested, and `--dry-run` shows exactly what it would send without sending
+it. Nothing accumulates while it is not running - the queries look at what is
+true now, not at a backlog.
+
+Whatever runs it, running it twice is safe. See `info/notifications.py`.
+
+---
+
 ## 1. Current State — Page by Page
 
 ### Public / Auth
