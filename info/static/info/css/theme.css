@@ -630,6 +630,182 @@ body {
   background: var(--erp-danger-tint);
 }
 
+/* ---------- Dark mode ----------
+   A palette swap, not a second stylesheet: every rule above reads the tokens
+   at the top of this file, so nearly all of dark mode is the block below.
+   What follows it are the Bootstrap components that hard-code a light colour
+   of their own and never asked us.
+
+   One trigger, not two: a small script in the page head resolves the system
+   setting and any stored choice into a single data-theme on <html> before the
+   first paint. Doing it there rather than with prefers-color-scheme keeps the
+   palette in one place instead of two that drift apart - and it means a
+   deliberate choice survives a system that disagrees with it. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Indigo lifted two steps: #4f46e5 on a dark ground reads as a smudge. */
+  --erp-primary: #818cf8;
+  --erp-primary-dark: #6366f1;
+  --erp-primary-light: #312e81;
+  --erp-accent: #22d3ee;
+
+  /* Marks: the -400 steps, which clear 3:1 on the dark ground the way the
+     -600s do on white. */
+  --erp-success: #4ade80;
+  --erp-danger: #f87171;
+  --erp-warning: #fbbf24;
+
+  /* Status words. On dark, the readable step is lighter than the mark rather
+     than darker, so these are the -300s and they sit on their own deep tints
+     below at better than 4.5:1. */
+  --erp-success-ink: #86efac;
+  --erp-danger-ink: #fca5a5;
+  --erp-warning-ink: #fcd34d;
+
+  --erp-success-tint: #14532d;
+  --erp-danger-tint: #7f1d1d;
+  --erp-warning-tint: #78350f;
+
+  --erp-ink: #e2e8f0;
+  --erp-muted: #94a3b8;
+  --erp-border: #334155;
+  --erp-bg: #0f172a;
+  --erp-surface: #1e293b;
+
+  /* Shadow does almost nothing on a dark ground - depth comes from the
+     surface being lighter than the page - so these mostly stop the cards
+     from carrying a black halo. */
+  --erp-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+  --erp-shadow-hover: 0 4px 10px rgba(0, 0, 0, .35), 0 16px 32px rgba(0, 0, 0, .3);
+}
+
+/* Bootstrap's own light surfaces. Each of these paints itself white or near
+   white in the framework's stylesheet, so a token cannot reach them. */
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .list-group-item,
+:root[data-theme="dark"] .modal-content,
+:root[data-theme="dark"] .dropdown-menu {
+  background-color: var(--erp-surface);
+  color: var(--erp-ink);
+}
+
+:root[data-theme="dark"] .list-group-item {
+  border-color: var(--erp-border);
+}
+
+:root[data-theme="dark"] .list-group-item-action:hover,
+:root[data-theme="dark"] .table-hover tbody tr:hover {
+  background-color: rgba(129, 140, 248, .08);
+  color: var(--erp-ink);
+}
+
+:root[data-theme="dark"] .thead-light th,
+:root[data-theme="dark"] .bg-light {
+  background-color: var(--erp-bg) !important;
+  color: var(--erp-muted) !important;
+  border-color: var(--erp-border) !important;
+}
+
+:root[data-theme="dark"] .table,
+:root[data-theme="dark"] .table td,
+:root[data-theme="dark"] .table th {
+  color: var(--erp-ink);
+  border-color: var(--erp-border);
+}
+
+:root[data-theme="dark"] .form-control,
+:root[data-theme="dark"] .custom-select {
+  background-color: var(--erp-bg);
+  border-color: var(--erp-border);
+  color: var(--erp-ink);
+}
+
+:root[data-theme="dark"] .form-control::placeholder {
+  color: var(--erp-muted);
+}
+
+:root[data-theme="dark"] .form-control:focus {
+  background-color: var(--erp-bg);
+  color: var(--erp-ink);
+}
+
+:root[data-theme="dark"] .modal-header,
+:root[data-theme="dark"] .modal-footer {
+  border-color: var(--erp-border);
+}
+
+:root[data-theme="dark"] .close {
+  color: var(--erp-ink);
+  text-shadow: none;
+}
+
+:root[data-theme="dark"] .text-muted {
+  color: var(--erp-muted) !important;
+}
+
+:root[data-theme="dark"] .erp-badge-info {
+  background: #0c4a6e;
+  color: #7dd3fc;
+}
+
+:root[data-theme="dark"] .btn-outline-secondary {
+  color: var(--erp-ink);
+  border-color: var(--erp-border);
+}
+
+:root[data-theme="dark"] .btn-outline-secondary:hover,
+:root[data-theme="dark"] .btn-outline-secondary.active {
+  background-color: var(--erp-primary-light);
+  border-color: var(--erp-primary);
+  color: #fff;
+}
+
+:root[data-theme="dark"] .erp-login-card,
+:root[data-theme="dark"] .erp-unread {
+  background: var(--erp-surface);
+}
+
+/* The toggle itself, in the topbar next to the bell. */
+.erp-theme-toggle {
+  background: none;
+  border: 0;
+  padding: .5rem .75rem;
+  color: rgba(255, 255, 255, .85);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.erp-theme-toggle:hover {
+  color: #fff;
+}
+
+/* Paper is not dark. Printing a dark page either wastes a cartridge or comes
+   out unreadable, so the palette goes back to the light one for print. */
+@media print {
+  :root[data-theme="dark"] {
+    --erp-ink: #1e293b;
+    --erp-muted: #64748b;
+    --erp-border: #e2e8f0;
+    --erp-bg: #f4f6fb;
+    --erp-surface: #ffffff;
+    --erp-success-ink: #15803d;
+    --erp-danger-ink: #b91c1c;
+    --erp-warning-ink: #b45309;
+    --erp-success-tint: #dcfce7;
+    --erp-danger-tint: #fee2e2;
+    --erp-warning-tint: #fef3c7;
+  }
+
+  :root[data-theme="dark"] body,
+  :root[data-theme="dark"] .card,
+  :root[data-theme="dark"] .table,
+  :root[data-theme="dark"] .list-group-item {
+    background: #fff !important;
+    color: #1e293b !important;
+  }
+}
+
 /* ---------- Print ----------
    This is a page people genuinely print for department records, so the
    controls, chrome and navigation should not come with it. */

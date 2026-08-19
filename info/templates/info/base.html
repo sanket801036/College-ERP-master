@@ -30,6 +30,20 @@
       {% block css %}
       {% endblock %}
 
+    <script>
+      // Runs before the first paint, deliberately inline and un-deferred: any
+      // later and the page shows light for a frame and then blinks dark.
+      // Resolves the stored choice, or the system setting when there is none,
+      // into one data-theme attribute that the stylesheet reads.
+      (function () {
+        var stored = null;
+        try { stored = localStorage.getItem('erp-theme'); } catch (e) {}
+        var dark = stored ? stored === 'dark'
+          : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      })();
+    </script>
+
   </head>
 
   <body id="page-top">
@@ -41,6 +55,13 @@
       <!-- Navbar -->
         <div class="collapse navbar-collapse" id="navbarResponsive">
           <ul class="navbar-nav ml-auto align-items-center">
+            <li class="nav-item">
+              <button class="erp-theme-toggle" type="button" id="themeToggle"
+                      title="Switch between light and dark"
+                      aria-label="Switch between light and dark">
+                <i class="fas fa-moon" id="themeToggleIcon"></i>
+              </button>
+            </li>
             <li class="nav-item">
               <a class="nav-link position-relative" href="{% url 'notifications' %}"
                  title="Notifications">
@@ -327,6 +348,43 @@
 
     <!-- Custom scripts for all pages-->
     <script src="{% static '/info/bootstrap/js/sb-admin.min.js' %}"></script>
+
+    <script>
+      // The toggle. Storing the choice is what makes it a preference rather
+      // than a setting that resets on every page load.
+      (function () {
+        var root = document.documentElement;
+        var button = document.getElementById('themeToggle');
+        var icon = document.getElementById('themeToggleIcon');
+        if (!button) { return; }
+
+        function paint() {
+          var dark = root.getAttribute('data-theme') === 'dark';
+          icon.className = dark ? 'fas fa-sun' : 'fas fa-moon';
+          button.title = dark ? 'Switch to light' : 'Switch to dark';
+        }
+
+        button.addEventListener('click', function () {
+          var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+          root.setAttribute('data-theme', next);
+          try { localStorage.setItem('erp-theme', next); } catch (e) {}
+          paint();
+        });
+
+        // Follow the system while nobody has expressed a preference of their
+        // own; once they have, theirs wins and this stops applying.
+        window.matchMedia('(prefers-color-scheme: dark)')
+          .addEventListener('change', function (event) {
+            var chosen = null;
+            try { chosen = localStorage.getItem('erp-theme'); } catch (e) {}
+            if (chosen) { return; }
+            root.setAttribute('data-theme', event.matches ? 'dark' : 'light');
+            paint();
+          });
+
+        paint();
+      })();
+    </script>
 
    {% block scripts %}
     {% endblock %}

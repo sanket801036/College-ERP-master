@@ -63,6 +63,10 @@ way to change a mark.
 Every change to attendance, marks and fees is recorded — who made it, when, and
 what the value was before.
 
+Dark mode follows the system setting and can be switched from the topbar; the
+choice is remembered. It is one palette block rather than a second stylesheet,
+because the CSS was written against tokens from the start.
+
 ## Stack
 
 Django 5.2 LTS · PostgreSQL · Django REST Framework · Bootstrap 4 ·
@@ -129,7 +133,7 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-720 tests covering the attendance, CIE, grade and fee calculations, role and
+727 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.
