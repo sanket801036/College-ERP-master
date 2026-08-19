@@ -42,6 +42,11 @@ the address on the account, expires in ten minutes, works once, and locks
 after five wrong guesses. The page answers identically whether or not the
 account exists, so it cannot be used to find out which usernames are real.
 
+A student who was marked absent but was there can dispute the register for a
+week afterwards; the teacher who took it either corrects it or says why it
+stands, and an accepted dispute writes the same audit entry the teacher's own
+edit would.
+
 Students apply for leave - medical, official duty or personal, with an
 optional certificate - and any teacher of their class decides. Approving it
 excuses the absences already marked in that range and any session marked later
@@ -124,7 +129,7 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-691 tests covering the attendance, CIE, grade and fee calculations, role and
+720 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.

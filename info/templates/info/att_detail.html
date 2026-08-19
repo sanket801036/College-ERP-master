@@ -31,6 +31,7 @@
                         <th>Day</th>
                         <th>Status</th>
                         <th></th>
+                        <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -47,6 +48,27 @@
                             {% else %}
                             <td class="p-3 mb-2 bg-danger text-white">Absent <span class="glyphicon glyphicon-thumbs-down"></span</td>
                             {% endif %}
+                            <td>
+                              {% if a.dispute %}
+                                {% if a.dispute.is_open %}
+                                  <span class="erp-badge erp-badge-warning">Disputed</span>
+                                  <form method="post" class="d-inline"
+                                        action="{% url 'withdraw_dispute' a.dispute.id %}">
+                                    {% csrf_token %}
+                                    <button class="btn btn-link btn-sm p-0 align-baseline"
+                                            type="submit">Withdraw</button>
+                                  </form>
+                                {% else %}
+                                  <span class="text-muted small">{{ a.dispute.outcome }}</span>
+                                {% endif %}
+                              {% elif a.can_dispute %}
+                                <button class="btn btn-link btn-sm p-0" type="button"
+                                        data-toggle="modal"
+                                        data-target="#disputeModal{{ a.id }}">
+                                  I was present
+                                </button>
+                              {% endif %}
+                            </td>
                         </tr>
                     {% empty %}
                             <p>student has no attendance</p>
@@ -59,5 +81,48 @@
           </div>
 
 
-    {% endblock %}
+    {% if own_page %}
+  {% for a in att_list %}
+    {% if a.can_dispute %}
+      <div class="modal fade" id="disputeModal{{ a.id }}" tabindex="-1"
+           role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+          <div class="modal-content">
+            <form method="post" action="{% url 'dispute_attendance' a.id %}">
+              {% csrf_token %}
+              <div class="modal-header">
+                <h5 class="modal-title">
+                  {{ cr.shortname }} &middot; {{ a.date }}
+                </h5>
+                <button class="close" type="button" data-dismiss="modal"
+                        aria-label="Close"><span aria-hidden="true">&times;</span></button>
+              </div>
+              <div class="modal-body">
+                <p class="text-muted small">
+                  This goes to the teacher who took the register. They will
+                  either correct it or explain why it stands. If you were away
+                  with a reason, apply for leave instead.
+                </p>
+                <div class="form-group">
+                  <label class="small text-muted" for="reason{{ a.id }}">
+                    Why do you think this is wrong?
+                  </label>
+                  <textarea class="form-control" id="reason{{ a.id }}"
+                            name="reason" rows="4" required
+                            placeholder="For example: I signed the sheet in the second hour."></textarea>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" type="button"
+                        data-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" type="submit">Send to teacher</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  {% endfor %}
+{% endif %}
+{% endblock %}
 

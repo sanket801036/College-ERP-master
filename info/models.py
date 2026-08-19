@@ -1593,6 +1593,7 @@ NOTIFICATION_KINDS = (
     ('notice', 'Notice published'),
     ('query', 'Mark query'),
     ('leave', 'Leave application'),
+    ('correction', 'Attendance dispute'),
 )
 
 
@@ -1879,5 +1880,79 @@ class LeaveRequest(models.Model):
         if self.status == LEAVE_REJECTED:
             return 'Rejected'
         if self.status == LEAVE_WITHDRAWN:
+            return 'Withdrawn'
+        return None
+
+
+# How long after a session a student may dispute how they were marked. The
+# same week the marks side allows: long enough to notice, short enough that
+# the register eventually settles.
+CORRECTION_WINDOW = timedelta(days=7)
+
+
+class AttendanceCorrectionQuerySet(models.QuerySet):
+    def open(self):
+        return self.filter(status=QUERY_OPEN)
+
+    def for_teacher(self, teacher):
+        """Disputes about registers this teacher keeps."""
+        taught = Assign.objects.filter(teacher=teacher)
+        return self.filter(
+            attendance__course__in=taught.values('course'),
+            attendance__student__class_id__in=taught.values('class_id'))
+
+
+class AttendanceCorrection(models.Model):
+    """A student saying "I was there", and the teacher's answer.
+
+    A teacher could already flip a record - `change_att` does exactly that,
+    and records who did it and what moved. What was missing was the other
+    direction: a student had no way to raise it except in person, and nothing
+    recorded that a register had ever been disputed.
+
+    Reuses the mark-query statuses rather than inventing a parallel set: the
+    two workflows answer the same shape of question and there is no reason for
+    "open" to mean two different strings in one database.
+    """
+    attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE,
+                                   related_name='corrections')
+    student = models.ForeignKey(Student, on_delete=models.CASCADE,
+                                related_name='attendance_corrections')
+    reason = models.TextField(max_length=1000)
+    status = models.CharField(max_length=20, choices=mark_query_status,
+                              default=QUERY_OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                    blank=True,
+                                    related_name='reviewed_corrections')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    response = models.TextField(max_length=1000, blank=True)
+
+    objects = AttendanceCorrectionQuerySet.as_manager()
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['attendance'], condition=models.Q(status=QUERY_OPEN),
+                name='one_open_correction_per_session'),
+        ]
+
+    def __str__(self):
+        return '%s : %s (%s)' % (self.student_id, self.attendance.date,
+                                 self.status)
+
+    @property
+    def is_open(self):
+        return self.status == QUERY_OPEN
+
+    @property
+    def outcome(self):
+        if self.status == QUERY_ACCEPTED:
+            return 'Marked present'
+        if self.status == QUERY_REJECTED:
+            return 'Record stands'
+        if self.status == QUERY_WITHDRAWN:
             return 'Withdrawn'
         return None

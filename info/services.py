@@ -11,17 +11,20 @@ from django.utils import timezone
 
 from info.models import (  # noqa: F401
     CLASS_TAKEN,
+    CORRECTION_WINDOW,
     LEAVE_APPROVED,
     LEAVE_BACKDATE_LIMIT,
     LEAVE_MAX_DAYS,
     LEAVE_REJECTED,
     LEAVE_WITHDRAWN,
     QUERY_ACCEPTED,
+    QUERY_OPEN,
     QUERY_REJECTED,
     QUERY_WINDOW,
     QUERY_WITHDRAWN,
     Attendance,
     AttendanceClass,
+    AttendanceCorrection,
     AttendanceTotal,
     AuditLog,
     Course,
@@ -425,3 +428,96 @@ def withdraw_leave(leave, actor):
         summary='%s withdrew their leave application for %s to %s'
                 % (leave.student.name, leave.from_date, leave.to_date))
     return leave
+
+
+def can_dispute(record, now=None):
+    """(allowed, reason) for one attendance row, written to be shown."""
+    if record.status:
+        return False, 'You are already marked present for that class.'
+    if record.is_excused:
+        return False, 'That session is already excused by approved leave.'
+    if record.corrections.filter(status=QUERY_OPEN).exists():
+        return False, 'You have already disputed that class.'
+
+    today = (now or timezone.now()).date()
+    if record.date < today - CORRECTION_WINDOW:
+        return False, ('The register for %s has closed for corrections.'
+                       % record.date.strftime('%d %b %Y'))
+    return True, ''
+
+
+@transaction.atomic
+def dispute_attendance(record, student, reason, actor):
+    """Record a student's claim that they were in fact present."""
+    if record.student_id != student.pk:
+        raise QueryNotAllowed('That record belongs to somebody else.')
+
+    allowed, why = can_dispute(record)
+    if not allowed:
+        raise QueryNotAllowed(why)
+
+    correction = AttendanceCorrection.objects.create(
+        attendance=record, student=student, reason=reason.strip())
+    AuditLog.record(
+        actor=actor, action='attendance.disputed', target=correction,
+        student=student,
+        summary='%s disputed being marked absent in %s on %s'
+                % (student.name, record.course_id, record.date))
+    return correction
+
+
+@transaction.atomic
+def resolve_correction(correction, actor, accept, response):
+    """Answer a dispute, marking the student present if the teacher agrees.
+
+    Accepting writes through the same audit action a teacher's own edit uses,
+    so the register's history reads the same whichever way a record moved.
+    """
+    if not correction.is_open:
+        raise QueryNotAllowed('That dispute has already been answered.')
+    if not accept and not (response or '').strip():
+        raise QueryNotAllowed('Say why the record stands.')
+
+    record = correction.attendance
+    correction.response = (response or '').strip()
+    correction.reviewed_by = actor if getattr(actor, 'is_authenticated', False) else None
+    correction.reviewed_at = timezone.now()
+    correction.status = QUERY_ACCEPTED if accept else QUERY_REJECTED
+    correction.save()
+
+    if accept and not record.status:
+        record.status = True
+        # Present beats excused, the same way it does when a register is
+        # submitted: somebody who was there attended.
+        record.is_excused = False
+        record.save(update_fields=['status', 'is_excused', 'updated_at'])
+        AuditLog.record(
+            actor=actor, action='attendance.changed', target=record,
+            student=correction.student,
+            summary='Marked present on %s for %s, after a dispute'
+                    % (record.date, record.course_id),
+            changes={'status': {'from': False, 'to': True}})
+    else:
+        AuditLog.record(
+            actor=actor, action='attendance.dispute_rejected', target=correction,
+            student=correction.student,
+            summary='Dispute about %s on %s refused'
+                    % (record.course_id, record.date))
+
+    return correction
+
+
+@transaction.atomic
+def withdraw_correction(correction, actor):
+    if not correction.is_open:
+        raise QueryNotAllowed('That dispute has already been answered.')
+
+    correction.status = QUERY_WITHDRAWN
+    correction.save(update_fields=['status'])
+    AuditLog.record(
+        actor=actor, action='attendance.dispute_withdrawn', target=correction,
+        student=correction.student,
+        summary='%s withdrew their dispute about %s on %s'
+                % (correction.student.name, correction.attendance.course_id,
+                   correction.attendance.date))
+    return correction

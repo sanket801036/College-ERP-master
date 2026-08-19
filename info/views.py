@@ -28,6 +28,7 @@ from info.decorators import (
     owns_assign,
     owns_attendance_class,
     owns_marks_class,
+    owns_student_record,
     owns_teacher_id,
     teacher_required,
 )
@@ -77,6 +78,7 @@ from .models import (
     AssignTime,
     Attendance,
     AttendanceClass,
+    AttendanceCorrection,
     AttendanceTotal,
     AuditLog,
     Class,
@@ -321,6 +323,7 @@ def _students_by_dept():
 
 
 @login_required()
+@owns_student_record('stud_id')
 def attendance(request, stud_id):
     stud = get_object_or_404(Student, USN=stud_id)
     courses = Course.objects.filter(assign__class_id=stud.class_id_id).distinct()
@@ -338,11 +341,125 @@ def attendance(request, stud_id):
 
 
 @login_required()
+@owns_student_record('stud_id')
 def attendance_detail(request, stud_id, course_id):
     stud = get_object_or_404(Student, USN=stud_id)
     cr = get_object_or_404(Course, id=course_id)
-    att_list = Attendance.objects.filter(course=cr, student=stud).order_by('date')
-    return render(request, 'info/att_detail.html', {'att_list': att_list, 'cr': cr})
+    att_list = list(Attendance.objects
+                    .filter(course=cr, student=stud)
+                    .prefetch_related('corrections')
+                    .order_by('date'))
+
+    # Only the student themselves can dispute a record, so the state is only
+    # worked out when they are the one reading.
+    own_page = request.user.is_student and request.user.student.USN == stud.USN
+    if own_page:
+        for record in att_list:
+            record.can_dispute = services.can_dispute(record)[0]
+            record.dispute = next(iter(record.corrections.all()), None)
+
+    return render(request, 'info/att_detail.html', {
+        'att_list': att_list, 'cr': cr, 'student': stud, 'own_page': own_page})
+
+
+@login_required()
+@require_POST
+def dispute_attendance(request, att_id):
+    """A student saying the register has them wrong."""
+    record = get_object_or_404(
+        Attendance.objects.select_related('student', 'course'), id=att_id)
+    if not (request.user.is_student
+            and request.user.student.USN == record.student_id):
+        raise PermissionDenied
+
+    back = redirect('attendance_detail', stud_id=record.student_id,
+                    course_id=record.course_id)
+
+    reason = (request.POST.get('reason') or '').strip()
+    if len(reason) < 15:
+        messages.error(request, 'Say a little more - the teacher has to be '
+                                'able to check what you mean.')
+        return back
+
+    try:
+        correction = services.dispute_attendance(record, record.student,
+                                                 reason, request.user)
+    except services.QueryNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        notifications.announce(
+            notifications.messages_for_dispute_raised(correction))
+        messages.success(request, 'Sent to the course teacher.')
+    return back
+
+
+@login_required()
+@require_POST
+def withdraw_dispute(request, correction_id):
+    correction = get_object_or_404(AttendanceCorrection, id=correction_id)
+    if not (request.user.is_student
+            and request.user.student.USN == correction.student_id):
+        raise PermissionDenied
+
+    try:
+        services.withdraw_correction(correction, request.user)
+    except services.QueryNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, 'Withdrawn.')
+    return redirect('attendance_detail', stud_id=correction.student_id,
+                    course_id=correction.attendance.course_id)
+
+
+@login_required()
+@teacher_required
+def correction_queue(request):
+    """Disputed registers, for the teacher who keeps them."""
+    if request.user.is_teacher and not request.user.is_superuser:
+        corrections = AttendanceCorrection.objects.for_teacher(
+            request.user.teacher)
+    else:
+        corrections = AttendanceCorrection.objects.all()
+
+    open_count = corrections.open().count()
+    show = request.GET.get('show', 'open')
+    if show == 'open':
+        corrections = corrections.open()
+
+    return render(request, 'info/correction_queue.html', {
+        'corrections': list(corrections.select_related(
+            'student', 'attendance', 'attendance__course', 'reviewed_by')[:100]),
+        'open_count': open_count,
+        'show': show,
+    })
+
+
+@login_required()
+@teacher_required
+def review_correction(request, correction_id):
+    """Answer one dispute: correct the register, or say why it stands."""
+    correction = get_object_or_404(
+        AttendanceCorrection.objects.select_related(
+            'student', 'attendance', 'attendance__course', 'reviewed_by'),
+        id=correction_id)
+    assert_teaches(request, correction.attendance.course_id, correction.student)
+
+    if request.method == 'POST':
+        try:
+            services.resolve_correction(
+                correction, request.user,
+                accept=request.POST.get('decision') == 'accept',
+                response=request.POST.get('response', ''))
+        except services.QueryNotAllowed as exc:
+            messages.error(request, str(exc))
+        else:
+            notifications.announce(
+                notifications.messages_for_dispute_resolved(correction))
+            messages.success(request, 'Answered. The student has been told.')
+            return redirect('correction_queue')
+
+    return render(request, 'info/review_correction.html',
+                  {'correction': correction})
 
 
 # Teacher Views
@@ -824,6 +941,7 @@ def _student_marks_rows(stud):
 
 
 @login_required()
+@owns_student_record('stud_id')
 def marks_list(request, stud_id):
     stud = get_object_or_404(Student, USN=stud_id)
     sc_list = _student_marks_rows(stud)

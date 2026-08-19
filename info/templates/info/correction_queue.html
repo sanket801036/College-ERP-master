@@ -1,0 +1,85 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Attendance disputes{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-0">Attendance disputes</h2>
+    <p class="text-muted mb-0">
+      {% if open_count %}
+        {{ open_count }} waiting for an answer
+      {% else %}
+        Nothing waiting for an answer
+      {% endif %}
+    </p>
+  </div>
+  <div class="btn-group">
+    <a class="btn btn-outline-secondary {% if show == 'open' %}active{% endif %}"
+       href="?show=open">Open</a>
+    <a class="btn btn-outline-secondary {% if show != 'open' %}active{% endif %}"
+       href="?show=all">All</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="thead-light">
+        <tr>
+          <th>Student</th>
+          <th>Course</th>
+          <th>Session</th>
+          <th>Why</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for correction in corrections %}
+          <tr>
+            <td>
+              {{ correction.student.name }}
+              <div class="text-muted small">{{ correction.student.pk }}</div>
+            </td>
+            <td>{{ correction.attendance.course.shortname }}</td>
+            <td class="text-nowrap">
+              {{ correction.attendance.date|date:'d M Y' }}
+              <div class="text-muted small">
+                {{ correction.attendance.date|date:'l' }}
+              </div>
+            </td>
+            <td class="text-muted small">{{ correction.reason|truncatewords:16 }}</td>
+            <td>
+              {% if correction.is_open %}
+                <span class="erp-badge erp-badge-warning">Awaiting review</span>
+              {% else %}
+                <span class="text-muted small">{{ correction.outcome }}</span>
+              {% endif %}
+            </td>
+            <td class="text-right">
+              <a class="btn btn-sm {% if correction.is_open %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                 href="{% url 'review_correction' correction.id %}">
+                {% if correction.is_open %}Review{% else %}Open{% endif %}
+              </a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-5">
+              {% if show == 'open' %}
+                Nothing to answer. Students can dispute a register for a week
+                after the class.
+              {% else %}
+                No register has been disputed yet.
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

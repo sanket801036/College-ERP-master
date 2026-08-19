@@ -376,6 +376,62 @@ def _teacher_for(query):
     return assign.teacher if assign else None
 
 
+# -- attendance corrections ------------------------------------------------
+
+def messages_for_dispute_raised(correction):
+    """Tell the teacher whose register is being disputed."""
+    record = correction.attendance
+    assign = (Assign.objects
+              .filter(class_id=correction.student.class_id_id,
+                      course=record.course_id)
+              .select_related('teacher__user')
+              .first())
+    if assign is None or assign.teacher.user is None:
+        return []
+
+    body = '\n'.join([
+        'Hello %s,' % assign.teacher.name, '',
+        '%s (%s) says they were present in %s on %s, and the register has '
+        'them absent.'
+        % (correction.student.name, correction.student.pk, record.course_id,
+           record.date.strftime('%d %b %Y')), '',
+        'What they said:', correction.reason, '',
+        'Open the ERP to correct the register or explain why it stands.',
+    ])
+    return [Message(user=assign.teacher.user, kind='correction',
+                    key='correction:%d:raised' % correction.pk,
+                    subject='Attendance disputed: %s, %s'
+                            % (record.course_id,
+                               record.date.strftime('%d %b')),
+                    body=body, url=reverse('correction_queue'))]
+
+
+def messages_for_dispute_resolved(correction):
+    """Tell the student what was decided."""
+    if correction.student.user is None:
+        return []
+
+    record = correction.attendance
+    body = '\n'.join([
+        'Hello %s,' % correction.student.name, '',
+        'Your query about %s on %s has been reviewed.'
+        % (record.course_id, record.date.strftime('%d %b %Y')), '',
+        '  Outcome: %s' % correction.outcome, '',
+        ('What the teacher said:' + '\n' + correction.response
+         if correction.response else ''),
+        '',
+        'Your attendance page shows the current figure.',
+    ])
+    return [Message(user=correction.student.user, kind='correction',
+                    key='correction:%d:%s' % (correction.pk, correction.status),
+                    subject='Attendance query %s: %s on %s'
+                            % (correction.status, record.course_id,
+                               record.date.strftime('%d %b')),
+                    body=body,
+                    url=reverse('attendance_detail',
+                                args=[correction.student.pk, record.course_id]))]
+
+
 # -- leave -----------------------------------------------------------------
 
 def messages_for_leave_applied(leave):

@@ -8,9 +8,10 @@ ownership check in one place instead of repeating them per view.
 from functools import wraps
 
 from django.core.exceptions import PermissionDenied
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 
-from info.models import Assign, AttendanceClass, MarksClass
+from info.models import Assign, AttendanceClass, MarksClass, Student
 
 
 def teacher_required(view):
@@ -91,6 +92,46 @@ def owns_teacher_id(arg='teacher_id'):
             if not request.user.is_superuser:
                 if str(kwargs[arg]) != str(request.user.teacher.id):
                     raise PermissionDenied
+            return view(request, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def owns_student_record(arg='stud_id'):
+    """Guard the student-facing pages that name a student in the URL.
+
+    These read as personal pages, but the USN comes from the path, so without
+    this any signed-in account could read a classmate's attendance or marks by
+    editing the address bar. Teachers of that student's class keep access -
+    they are looking at the same numbers from the other side - and superusers
+    see everything.
+
+    Written to compare identifiers rather than fetch the student: the common
+    case is somebody reading their own page, and that must not cost the pages
+    an extra query on top of the one the view already makes.
+    """
+    def decorator(view):
+        @wraps(view)
+        def wrapper(request, *args, **kwargs):
+            usn = kwargs[arg]
+            user = request.user
+
+            if user.is_superuser:
+                pass
+            elif user.is_student:
+                if user.student.USN != usn:
+                    raise PermissionDenied
+            elif user.is_teacher:
+                class_id = (Student.objects.filter(USN=usn)
+                            .values_list('class_id_id', flat=True).first())
+                if class_id is None:
+                    raise Http404('No such student.')
+                if not Assign.objects.filter(teacher=user.teacher,
+                                             class_id=class_id).exists():
+                    raise PermissionDenied
+            else:
+                raise PermissionDenied
+
             return view(request, *args, **kwargs)
         return wrapper
     return decorator
