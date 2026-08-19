@@ -7,14 +7,20 @@ perform.
 """
 from django.db import transaction
 from django.db.models import Count, Q
+from django.utils import timezone
 
 from info.models import (  # noqa: F401
     CLASS_TAKEN,
+    QUERY_ACCEPTED,
+    QUERY_REJECTED,
+    QUERY_WINDOW,
+    QUERY_WITHDRAWN,
     Attendance,
     AttendanceClass,
     AttendanceTotal,
     AuditLog,
     Course,
+    MarkQuery,
     Student,
     StudentCourse,
 )
@@ -173,3 +179,115 @@ def attendance_rows(students=None, courses=None):
         total._attended = row['attended']
         out.append(total)
     return out
+
+
+class QueryNotAllowed(Exception):
+    """Raised when a mark cannot be questioned, with the reason to show."""
+
+
+def query_window_closes(mark):
+    """When the chance to question this mark runs out, or None if it never opened."""
+    batch = mark.batch
+    if batch is None or not batch.is_published or batch.published_at is None:
+        return None
+    return batch.published_at + QUERY_WINDOW
+
+
+def can_query(mark, now=None):
+    """(allowed, reason). The reason is written to be shown to the student."""
+    closes = query_window_closes(mark)
+    if closes is None:
+        # Nothing to argue with yet: an unpublished mark is not a mark the
+        # student has been given.
+        return False, 'These marks have not been released yet.'
+
+    now = now or timezone.now()
+    if now > closes:
+        return False, ('The window for questioning this mark closed on %s.'
+                       % timezone.localtime(closes).strftime('%d %b %Y'))
+
+    if mark.queries.open().exists():
+        return False, 'You have already questioned this mark.'
+
+    return True, ''
+
+
+@transaction.atomic
+def raise_mark_query(mark, student, reason, actor):
+    """Record a student's objection to one mark."""
+    allowed, why = can_query(mark)
+    if not allowed:
+        raise QueryNotAllowed(why)
+    if mark.studentcourse.student_id != student.pk:
+        raise QueryNotAllowed('That mark belongs to somebody else.')
+
+    query = MarkQuery.objects.create(marks=mark, student=student,
+                                     reason=reason.strip())
+    AuditLog.record(
+        actor=actor, action='marks.queried', target=query, student=student,
+        summary='%s questioned their %s in %s'
+                % (student.name, mark.name, mark.studentcourse.course.shortname))
+    return query
+
+
+@transaction.atomic
+def resolve_mark_query(query, actor, accept, response, new_mark=None):
+    """Answer a query, changing the mark if the teacher agrees with it.
+
+    The mark is written through the same ceiling the entry form enforces, so
+    re-evaluation cannot become the way an out-of-range mark gets in.
+    """
+    if not query.is_open:
+        raise QueryNotAllowed('That query has already been answered.')
+
+    mark = query.marks
+    query.mark_before = mark.marks1
+    query.response = (response or '').strip()
+    query.reviewed_by = actor if getattr(actor, 'is_authenticated', False) else None
+    query.reviewed_at = timezone.now()
+
+    if accept:
+        if new_mark is None:
+            raise QueryNotAllowed('Accepting a query needs the corrected mark.')
+        if not 0 <= new_mark <= mark.total_marks:
+            raise QueryNotAllowed('A mark must be between 0 and %d.'
+                                  % mark.total_marks)
+        query.mark_after = new_mark
+        query.status = QUERY_ACCEPTED
+        if new_mark != mark.marks1:
+            mark.marks1 = new_mark
+            # A corrected mark is a mark that was sat, whatever the sheet said
+            # before.
+            mark.is_absent = False
+            mark.save(update_fields=['marks1', 'is_absent', 'updated_at'])
+    else:
+        query.mark_after = mark.marks1
+        query.status = QUERY_REJECTED
+
+    query.save()
+
+    AuditLog.record(
+        actor=actor, action='marks.query_%s' % query.status, target=query,
+        student=query.student,
+        summary='%s in %s: %s' % (mark.name,
+                                  mark.studentcourse.course.shortname,
+                                  query.outcome),
+        changes=({'marks1': [query.mark_before, query.mark_after]}
+                 if query.mark_before != query.mark_after else None))
+    return query
+
+
+@transaction.atomic
+def withdraw_mark_query(query, actor):
+    """The student changing their mind, which is not the same as a rejection."""
+    if not query.is_open:
+        raise QueryNotAllowed('That query has already been answered.')
+
+    query.status = QUERY_WITHDRAWN
+    query.save(update_fields=['status'])
+    AuditLog.record(
+        actor=actor, action='marks.query_withdrawn', target=query,
+        student=query.student,
+        summary='%s withdrew their query about %s'
+                % (query.student.name, query.marks.name))
+    return query

@@ -1,0 +1,86 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Mark queries{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-0">Mark queries</h2>
+    <p class="text-muted mb-0">
+      {% if open_count %}
+        {{ open_count }} waiting for an answer
+      {% else %}
+        Nothing waiting for an answer
+      {% endif %}
+    </p>
+  </div>
+  <div class="btn-group">
+    <a class="btn btn-outline-secondary {% if show == 'open' %}active{% endif %}"
+       href="?show=open">Open</a>
+    <a class="btn btn-outline-secondary {% if show != 'open' %}active{% endif %}"
+       href="?show=all">All</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="thead-light">
+        <tr>
+          <th>Student</th>
+          <th>Course</th>
+          <th>Component</th>
+          <th>Raised</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for query in queries %}
+          <tr>
+            <td>
+              {{ query.student.name }}
+              <div class="text-muted small">{{ query.student.pk }}</div>
+            </td>
+            <td>{{ query.marks.studentcourse.course.shortname }}</td>
+            <td>
+              {{ query.marks.name }}
+              <div class="text-muted small">{{ query.reason|truncatewords:18 }}</div>
+            </td>
+            <td class="text-nowrap">{{ query.created_at|date:'d M Y' }}</td>
+            <td>
+              {% if query.is_open %}
+                <span class="erp-badge erp-badge-warning">Awaiting review</span>
+              {% else %}
+                <span class="text-muted">
+                  {{ query.get_status_display }}
+                  <div class="small">{{ query.outcome }}</div>
+                </span>
+              {% endif %}
+            </td>
+            <td class="text-right">
+              {% if query.is_open %}
+                <a class="btn btn-primary btn-sm"
+                   href="{% url 'review_mark_query' query.id %}">Review</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-5">
+              {% if show == 'open' %}
+                Nothing to answer. Students can question a mark for a week
+                after its batch is published.
+              {% else %}
+                No mark has been questioned yet.
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

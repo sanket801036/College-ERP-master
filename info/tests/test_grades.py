@@ -295,9 +295,11 @@ class MarksPageTests(TestCase):
         self.client.force_login(self.student.user)
 
         # 12 since pass 24 - attach_rank adds one query for the whole class -
-        # then 11 once the topbar badge stopped needing a role lookup: it
-        # counts the reader's own notifications now, not unread notices.
-        with self.assertNumQueries(11):
+        # then 11 once the topbar badge stopped needing a role lookup, then 13
+        # when attach_queries added one for the class's publication dates and
+        # one for this student's own queries. None of them grows with the
+        # number of courses.
+        with self.assertNumQueries(13):
             self.assertEqual(self.client.get(self.url()).status_code, 200)
 
         dept = self.course.dept
@@ -308,7 +310,9 @@ class MarksPageTests(TestCase):
             f.make_assign(self.klass, extra, teacher)
 
         # 12 since pass 24 - attach_rank adds one query for the whole class -
-        # then 11 once the topbar badge stopped needing a role lookup: it
-        # counts the reader's own notifications now, not unread notices.
-        with self.assertNumQueries(11):
+        # then 11 once the topbar badge stopped needing a role lookup, then 13
+        # when attach_queries added one for the class's publication dates and
+        # one for this student's own queries. None of them grows with the
+        # number of courses.
+        with self.assertNumQueries(13):
             self.assertEqual(self.client.get(self.url()).status_code, 200)

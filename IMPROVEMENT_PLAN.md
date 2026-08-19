@@ -84,10 +84,10 @@ their **features**.
 | **Login** (§5) | 🟢 rebuilt, reset built | §5.1 landed once SMTP credentials arrived: "Forgot password?" now goes to a three-screen OTP reset (identify → verify → choose), and every security rule the spec listed is enforced and tested. Not built: the visible countdown and the "Resend code" button, and the optional admin two-factor the spec floats at the end |
 | **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB22 (should a teacher be able to address the whole institution?) |
 | **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
-| **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA landed in pass 19 on VTU's 10-point scale; class rank (MK8) and the PDF marks card (MK10) in pass 24; publication control (MK20) in pass 23. Pass 30 added the cross-subject comparison (MK12) and a per-course internals sparkline (MK11). Still open: MK16 (attendance/marks correlation), semester history (MK15, needs semester tagging) and MK18 (re-evaluation workflow) |
+| **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA landed in pass 19 on VTU's 10-point scale; class rank (MK8) and the PDF marks card (MK10) in pass 24; publication control (MK20) in pass 23. Pass 30 added the cross-subject comparison (MK12) and a per-course internals sparkline (MK11). Pass 45 added re-evaluation (MK18). Still open: MK16 (attendance/marks correlation) and semester history (MK15, needs semester tagging) |
 | **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D: alerts (AT23) are built and scheduled; correction requests, leave and exemptions are not |
 | **Attendance - teacher** (§7.3) | 🟢 secured, entry rebuilt | Pass 21 landed one-click marking from the dashboard, mark-all-present, a live counter, keyboard entry, roster search, the unsaved-changes guard, and real session states; TA-C4 and TA-C6 are closed. Still open: TA6 (photos, blocked on CF1), TA9/TA10 (bulk import, offline drafts), TA12-TA17 (class analytics and export), TA19-TA21 (cancel reason, reschedule, substitutes) |
-| **Marks entry - teacher** (§7.7) | 🟢 secured, validated, entry rebuilt | Pass 22 landed the max-marks hint, live inline validation, keyboard entry, running statistics, the previous component alongside, sorting and the unsaved-changes guard, and folded the separate edit template into this one. Still open: TM5 (absent-vs-zero, needs a flag on `Marks`), TM6 (draft save), TM7 (bulk import), TM11-TM14 (post-entry statistics and export), TM15 (publication control), TM16 (re-evaluation queue), TM24 (confirmation screen) |
+| **Marks entry - teacher** (§7.7) | 🟢 secured, validated, entry rebuilt | Pass 22 landed the max-marks hint, live inline validation, keyboard entry, running statistics, the previous component alongside, sorting and the unsaved-changes guard, and folded the separate edit template into this one. Still open: TM5 (absent-vs-zero, needs a flag on `Marks`), TM6 (draft save), TM7 (bulk import), TM11-TM14 (post-entry statistics and export), TM15 (publication control), TM24 (confirmation screen) |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
 | **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
 | **Fees** (§7.6) | 🟢 ledger, receipts, bulk assignment, list rebuilt | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class; pass 26 made the staff list usable at volume (FE17). Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE19, FE20, FE21, FE23 (waivers, instalments, late fees, year tagging) - FE22, reminders, is done. **FE31 still stands and needs a decision** - see below |
@@ -962,7 +962,7 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
-| MK18 | **Re-evaluation request** | Student disputes a mark → teacher/admin reviews → mark updated with full audit trail. Same shape as the attendance-correction workflow (AT20) and can share its state machine and permission logic | ❌ `MarkRevaluationRequest` |
+| MK18 | **Re-evaluation request** | 🟢 **Done.** A student can question one published component for a week after its batch is released, saying why; the teacher who taught the course either corrects the mark or explains why it stands, and the student is told either way. One live query per mark (a partial unique index, so two clicks cannot make two), corrections go through the same ceiling the entry form enforces, and every step is in the audit log with the before and after |
 | MK19 | **Marks audit log** | Today `marks_confirm` and `edit_marks` overwrite `marks1` in place with no record of the previous value, who changed it, or when. For grades specifically, that is the kind of gap an interviewer will press on | ❌ audit model |
 | ~~MK20~~ | **Result publication control** ✅ **Done (pass 23).** `MarksClass.is_published` + `published_at`. The student page reads the published set, the teacher's class report reads the entered set | Teacher enters marks, but students only see them once results are formally published — colleges never expose marks the instant they're typed | ⚠️ `MarksClass.is_published` |
 | MK21 | **Marks release notification** | 🟢 **Done, in-app and by email.** Recorded the moment the batch is published, so it does not wait for the nightly run; one message per student, carrying their own mark, and saying "absent" rather than zero where that is what happened |
@@ -1462,7 +1462,7 @@ This module shares the marks *data* problems already documented in §7.2.x (MK22
 | ~~TM13~~ | **Highlight at-risk students** ✅ (pass 27), on the same low-marks-*and*-low-attendance rule the class report uses | Low CIE + low attendance together — `StudentCourse` already exposes `get_cie()` and `get_attendance()` side by side | ✅ |
 | TM14 | **Export marks sheet** | Excel/PDF for department records | ✅ |
 | ~~TM15~~ | **Publication control** ✅ (pass 23). Publish / withdraw from the batch list, both audit-logged | Enter now, release to students later (MK20) | ⚠️ `MarksClass.is_published` |
-| TM16 | **Re-evaluation queue** | Teacher-side view of student disputes (MK18) | ❌ |
+| TM16 | **Re-evaluation queue** | 🟢 **Done.** `/teacher/queries/`, scoped to the classes the teacher actually teaches rather than to a class they have to pick, with the answered ones one click away |
 
 #### Phase C — Correctness & security (verified against the running app)
 
@@ -1931,9 +1931,13 @@ geometry-in-Python, SVG-in-template shape.
    that puts two classes side by side
 2. **D1, D2, D7** — the admin analytics strip. `FeeQuerySet.totals()` from
    pass 26 is most of what a collection chart needs
-3. **MK18 / TM16 / AT20** — the request-and-approve workflows (re-evaluation,
-   attendance correction, leave). All the same state machine, so §7.2.x's note
-   applies: build it once and apply it three times, rather than three times
+3. **AT20 / AT21** — the two request-and-approve workflows still open
+   (attendance correction, leave). **MK18/TM16 are built**, and the shape they
+   settled on is the one to copy: a row per request holding the reason, the
+   answer and the before/after values; a partial unique index so one live
+   request per subject; the rules in `services.py` so the state machine has one
+   home; and the same notification call on both sides, so each party hears
+   without anybody refreshing a page
 
 **Two things to know before adding pages.**
 

@@ -1,0 +1,119 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Review query{% endblock %}
+
+{% block content %}
+
+<h2 class="mb-1">Review a mark query</h2>
+<p class="text-muted">
+  <a href="{% url 'mark_queries' %}">&larr; Back to the queue</a>
+</p>
+
+<div class="row">
+  <div class="col-lg-6 mb-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">What was asked</h5>
+
+        <dl class="row mb-3">
+          <dt class="col-5 text-muted small">Student</dt>
+          <dd class="col-7">{{ query.student.name }} ({{ query.student.pk }})</dd>
+
+          <dt class="col-5 text-muted small">Course</dt>
+          <dd class="col-7">{{ query.marks.studentcourse.course.name }}</dd>
+
+          <dt class="col-5 text-muted small">Component</dt>
+          <dd class="col-7">{{ query.marks.name }}</dd>
+
+          <dt class="col-5 text-muted small">Current mark</dt>
+          <dd class="col-7">
+            <b>{{ query.marks.marks1 }}</b> / {{ query.marks.total_marks }}
+            {% if query.marks.is_absent %}
+              <span class="erp-badge erp-badge-warning ml-1">Absent</span>
+            {% endif %}
+          </dd>
+
+          <dt class="col-5 text-muted small">Raised</dt>
+          <dd class="col-7">{{ query.created_at|date:'d M Y, H:i' }}</dd>
+        </dl>
+
+        <p class="mb-1 text-muted small">In their words</p>
+        <p class="mb-0" style="white-space: pre-line;">{{ query.reason }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6 mb-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Your answer</h5>
+
+        {% if query.is_open %}
+          <form method="post">
+            {% csrf_token %}
+
+            {% for error in form.non_field_errors %}
+              <div class="alert alert-danger py-2 small">{{ error }}</div>
+            {% endfor %}
+
+            <div class="form-group">
+              {% for radio in form.decision %}
+                <div class="custom-control custom-radio mb-1">
+                  {{ radio.tag }}
+                  <label class="custom-control-label" for="{{ radio.id_for_label }}">
+                    {{ radio.choice_label }}
+                  </label>
+                </div>
+              {% endfor %}
+              {% for error in form.decision.errors %}
+                <div class="text-danger small">{{ error }}</div>
+              {% endfor %}
+            </div>
+
+            <div class="form-group">
+              <label class="small text-muted" for="{{ form.new_mark.id_for_label }}">
+                {{ form.new_mark.label }}
+              </label>
+              <input type="number" class="form-control" name="new_mark"
+                     id="{{ form.new_mark.id_for_label }}"
+                     min="0" max="{{ query.marks.total_marks }}"
+                     value="{{ form.new_mark.value|default_if_none:'' }}">
+              <small class="form-text text-muted">
+                Out of {{ query.marks.total_marks }}. Only used if you correct the mark.
+              </small>
+              {% for error in form.new_mark.errors %}
+                <div class="text-danger small">{{ error }}</div>
+              {% endfor %}
+            </div>
+
+            <div class="form-group">
+              <label class="small text-muted" for="{{ form.response.id_for_label }}">
+                {{ form.response.label }}
+              </label>
+              <textarea class="form-control" name="response" rows="3"
+                        id="{{ form.response.id_for_label }}">{{ form.response.value|default_if_none:'' }}</textarea>
+              {% for error in form.response.errors %}
+                <div class="text-danger small">{{ error }}</div>
+              {% endfor %}
+            </div>
+
+            <button class="btn btn-primary" type="submit">
+              Answer and tell the student
+            </button>
+          </form>
+        {% else %}
+          <p class="mb-1">
+            <b>{{ query.get_status_display }}</b> &mdash; {{ query.outcome }}
+          </p>
+          <p class="text-muted small mb-2">
+            Answered by {{ query.reviewed_by|default:'somebody since removed' }}
+            on {{ query.reviewed_at|date:'d M Y, H:i' }}
+          </p>
+          <p class="mb-0" style="white-space: pre-line;">{{ query.response }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

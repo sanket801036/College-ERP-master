@@ -22,7 +22,7 @@ from django.views.decorators.http import require_POST
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-from info import notifications
+from info import notifications, services
 from info.decorators import (
     assert_teaches,
     owns_assign,
@@ -37,6 +37,8 @@ from info.forms import (
     ExtraClassForm,
     FeeForm,
     FeeTransactionForm,
+    MarkQueryForm,
+    MarkQueryReviewForm,
     MarksEntryForm,
     NoticeForm,
     PasswordResetRequestForm,
@@ -81,6 +83,7 @@ from .models import (
     Dept,
     Fee,
     FeeTransaction,
+    MarkQuery,
     Marks,
     MarksClass,
     Notice,
@@ -822,6 +825,11 @@ def _student_marks_rows(stud):
 def marks_list(request, stud_id):
     stud = get_object_or_404(Student, USN=stud_id)
     sc_list = _student_marks_rows(stud)
+    # Only the person whose marks these are can question them, so only they
+    # need the state loaded.
+    own_page = request.user.is_student and request.user.student.USN == stud.pk
+    if own_page:
+        StudentCourse.attach_queries(sc_list, stud.class_id_id)
 
     # Courses with something actually marked. Filtering on a truthy CIE instead
     # would silently drop a course genuinely sitting at zero - which is exactly
@@ -830,6 +838,8 @@ def marks_list(request, stud_id):
     return render(request, 'info/marks_list.html', {
         'student': stud,
         'sc_list': sc_list,
+        'own_page': own_page,
+        'query_form': MarkQueryForm(),
         'sgpa': sgpa_for(sc_list),
         'cie_max': CIE_MAX,
         'see_max': SEE_MAX,
@@ -845,6 +855,121 @@ def marks_list(request, stud_id):
             ((sc.course.shortname or sc.course.name, sc.get_cie())
              for sc in with_cie),
             key=lambda pair: -pair[1]),
+    })
+
+
+@login_required()
+@require_POST
+def raise_mark_query(request, mark_id):
+    """A student questioning one of their own marks."""
+    mark = get_object_or_404(
+        Marks.objects.select_related('studentcourse__student',
+                                     'studentcourse__course'),
+        id=mark_id)
+    student = mark.studentcourse.student
+    if not (request.user.is_student and request.user.student.USN == student.pk):
+        raise PermissionDenied
+
+    form = MarkQueryForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, ' '.join(
+            error for errors in form.errors.values() for error in errors))
+        return redirect('marks_list', stud_id=student.pk)
+
+    try:
+        query = services.raise_mark_query(mark, student,
+                                          form.cleaned_data['reason'],
+                                          request.user)
+    except services.QueryNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        notifications.announce(notifications.messages_for_query_raised(query))
+        messages.success(request, 'Your query has gone to the course teacher.')
+
+    return redirect('marks_list', stud_id=student.pk)
+
+
+@login_required()
+@require_POST
+def withdraw_mark_query(request, query_id):
+    query = get_object_or_404(MarkQuery, id=query_id)
+    if not (request.user.is_student
+            and request.user.student.USN == query.student_id):
+        raise PermissionDenied
+
+    try:
+        services.withdraw_mark_query(query, request.user)
+    except services.QueryNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, 'Query withdrawn.')
+
+    return redirect('marks_list', stud_id=query.student_id)
+
+
+@login_required()
+@teacher_required
+def mark_queries(request):
+    """The teacher's queue of questioned marks.
+
+    Scoped to the classes they teach rather than to a class they pick: a
+    query is addressed to whoever taught the course, and making them find it
+    is how a queue gets ignored.
+    """
+    if request.user.is_superuser and not request.user.is_teacher:
+        queries = MarkQuery.objects.all()
+    else:
+        queries = MarkQuery.objects.for_teacher(request.user.teacher)
+
+    queries = queries.select_related(
+        'student', 'marks', 'marks__studentcourse__course', 'reviewed_by')
+
+    show = request.GET.get('show', 'open')
+    if show == 'open':
+        queries = queries.open()
+
+    return render(request, 'info/mark_queries.html', {
+        'queries': list(queries[:100]),
+        'open_count': (MarkQuery.objects.for_teacher(request.user.teacher).open().count()
+                       if request.user.is_teacher else MarkQuery.objects.open().count()),
+        'show': show,
+    })
+
+
+@login_required()
+@teacher_required
+def review_mark_query(request, query_id):
+    """Answer one query: correct the mark, or say why it stands."""
+    query = get_object_or_404(
+        MarkQuery.objects.select_related('student', 'marks',
+                                         'marks__studentcourse__course'),
+        id=query_id)
+
+    assert_teaches(request, query.marks.studentcourse.course_id, query.student)
+
+    if request.method == 'POST':
+        form = MarkQueryReviewForm(request.POST,
+                                   total_marks=query.marks.total_marks)
+        if form.is_valid():
+            try:
+                services.resolve_mark_query(
+                    query, request.user,
+                    accept=form.cleaned_data['decision'] == 'accept',
+                    response=form.cleaned_data['response'],
+                    new_mark=form.cleaned_data['new_mark'])
+            except services.QueryNotAllowed as exc:
+                messages.error(request, str(exc))
+            else:
+                notifications.announce(
+                    notifications.messages_for_query_resolved(query))
+                messages.success(request, 'Answered. The student has been told.')
+                return redirect('mark_queries')
+    else:
+        form = MarkQueryReviewForm(total_marks=query.marks.total_marks)
+
+    return render(request, 'info/review_mark_query.html', {
+        'query': query,
+        'form': form,
     })
 
 

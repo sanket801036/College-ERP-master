@@ -551,6 +551,9 @@ class StudentCourse(models.Model):
     # attach_submitted(). None means "not loaded", and everything below then
     # falls back to treating a component as submitted - the old behaviour.
     _submitted_cache = None
+    # Re-evaluation state per component, filled by attach_queries(). None
+    # means the page did not ask for it and shows no re-evaluation controls.
+    _query_cache = None
     # Which components have been *entered*, as opposed to released. On the
     # student page these differ, and telling a student that a test they sat
     # last week was "not yet conducted" is its own small lie.
@@ -633,10 +636,16 @@ class StudentCourse(models.Model):
         rows = []
         for name in CIE_COMPONENTS:
             mark = scored.get(name)
+            query_state = (self._query_cache or {}).get(name, {})                 if self._query_cache is not None else {}
             rows.append({
                 'name': name,
                 'marks': mark.marks1 if mark else 0,
                 'total': mark.total_marks if mark else 20,
+                # Empty unless attach_queries() has run, which is what keeps
+                # the PDF and the API from growing a re-evaluation column.
+                'mark_id': query_state.get('mark_id'),
+                'query': query_state.get('query'),
+                'can_query': query_state.get('can_query', False),
                 'pending': mark is None or not self.is_submitted(name),
                 # Entered but held back. "Not yet conducted" would be wrong for
                 # a test the student sat last week.
@@ -819,6 +828,50 @@ class StudentCourse(models.Model):
         return rows
 
     @staticmethod
+    def attach_queries(student_courses, class_id, now=None):
+        """Fill each row's re-evaluation state in two queries.
+
+        Whether a mark can still be questioned depends on when its batch was
+        published, and that lives on MarksClass rather than on the mark. Asking
+        per component would be five queries per course; this asks once for the
+        class and once for the student's existing queries.
+        """
+        rows = list(student_courses)
+        if not rows:
+            return rows
+
+        now = now or timezone.now()
+        published = {}
+        for mc in (MarksClass.objects
+                   .filter(assign__class_id=class_id, is_published=True)
+                   .select_related('assign')):
+            published[(mc.assign.course_id, mc.name)] = mc.published_at
+
+        mark_ids = [m.pk for sc in rows for m in sc.marks_set.all()]
+        queries = {}
+        for query in (MarkQuery.objects
+                      .filter(marks_id__in=mark_ids)
+                      .order_by('marks_id', '-created_at')):
+            # Ordered newest first, so the first one seen per mark wins.
+            queries.setdefault(query.marks_id, query)
+
+        for sc in rows:
+            sc._query_cache = {}
+            for mark in sc.marks_set.all():
+                published_at = published.get((sc.course_id, mark.name))
+                closes = published_at + QUERY_WINDOW if published_at else None
+                existing = queries.get(mark.pk)
+                sc._query_cache[mark.name] = {
+                    'mark_id': mark.pk,
+                    'query': existing,
+                    'closes': closes,
+                    'can_query': bool(
+                        closes and now <= closes
+                        and not (existing and existing.status == QUERY_OPEN)),
+                }
+        return rows
+
+    @staticmethod
     def attach_attendance(student_courses, course):
         """Fill the attendance cache for a list of rows in one query."""
         rows = list(student_courses)
@@ -853,6 +906,23 @@ class Marks(models.Model):
         if self.name == 'Semester End Exam':
             return 100
         return 20
+
+    @property
+    def batch(self):
+        """The MarksClass this mark belongs to, or None.
+
+        There is no foreign key: Marks hangs off (student, course, component)
+        and MarksClass off (assign, component), so the two are matched on the
+        class and course rather than followed. A class taught by two teachers
+        has two assigns and therefore two batches; the first is the one that
+        published, since publication is what a caller is asking about.
+        """
+        return (MarksClass.objects
+                .filter(assign__class_id=self.studentcourse.student.class_id_id,
+                        assign__course=self.studentcourse.course_id,
+                        name=self.name)
+                .order_by('-is_published', 'pk')
+                .first())
 
 
 class MarksClass(models.Model):
@@ -1503,6 +1573,7 @@ NOTIFICATION_KINDS = (
     ('attendance', 'Low attendance'),
     ('marks', 'Marks released'),
     ('notice', 'Notice published'),
+    ('query', 'Mark query'),
 )
 
 
@@ -1566,3 +1637,101 @@ class Notification(models.Model):
         if self.read_at is None:
             self.read_at = timezone.now()
             self.save(update_fields=['read_at'])
+
+
+# How long after a batch is released a student may still question a mark. Long
+# enough to notice it, short enough that a grade sheet eventually settles.
+QUERY_WINDOW = timedelta(days=7)
+
+QUERY_OPEN = 'open'
+QUERY_ACCEPTED = 'accepted'
+QUERY_REJECTED = 'rejected'
+QUERY_WITHDRAWN = 'withdrawn'
+
+mark_query_status = (
+    (QUERY_OPEN, 'Awaiting review'),
+    (QUERY_ACCEPTED, 'Accepted'),
+    (QUERY_REJECTED, 'Rejected'),
+    (QUERY_WITHDRAWN, 'Withdrawn'),
+)
+
+
+class MarkQueryQuerySet(models.QuerySet):
+    def open(self):
+        return self.filter(status=QUERY_OPEN)
+
+    def for_teacher(self, teacher):
+        """Queries about marks in the classes this teacher actually teaches."""
+        taught = Assign.objects.filter(teacher=teacher)
+        return self.filter(
+            marks__studentcourse__course__in=taught.values('course'),
+            marks__studentcourse__student__class_id__in=taught.values('class_id'),
+        )
+
+
+class MarkQuery(models.Model):
+    """A student saying "I think this mark is wrong", and what came of it.
+
+    Colleges have a re-evaluation process and the app had nothing: the only
+    route was to find the teacher in person, and nothing recorded that a mark
+    had ever been questioned. A row here is that record - who asked, what they
+    said, who answered, and what the mark was before and after.
+
+    Deliberately narrow. It re-checks one component of one student's CIE; it
+    is not a general complaints box, which is what `SupportRequest` is for.
+    """
+    marks = models.ForeignKey(Marks, on_delete=models.CASCADE,
+                              related_name='queries')
+    # Denormalised from marks.studentcourse so the student's own list does not
+    # have to join through three tables to find their own queries.
+    student = models.ForeignKey(Student, on_delete=models.CASCADE,
+                                related_name='mark_queries')
+    reason = models.TextField(max_length=1000)
+    status = models.CharField(max_length=20, choices=mark_query_status,
+                              default=QUERY_OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name='reviewed_queries')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    response = models.TextField(max_length=1000, blank=True)
+    # What the mark was when the query was raised, and what it became. Kept
+    # here as well as in the audit log because this is the record the student
+    # is shown, and "changed from 12 to 15" is the answer they are waiting for.
+    mark_before = models.PositiveSmallIntegerField(null=True, blank=True)
+    mark_after = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    objects = MarkQueryQuerySet.as_manager()
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            # One live query per mark. Without this, a student who clicks twice
+            # puts the same question in the teacher's queue twice, and a
+            # teacher who answers one of them leaves the other hanging.
+            models.UniqueConstraint(
+                fields=['marks'], condition=models.Q(status=QUERY_OPEN),
+                name='one_open_query_per_mark'),
+        ]
+
+    def __str__(self):
+        return '%s : %s (%s)' % (self.student_id, self.marks.name, self.status)
+
+    @property
+    def is_open(self):
+        return self.status == QUERY_OPEN
+
+    @property
+    def course(self):
+        return self.marks.studentcourse.course
+
+    @property
+    def outcome(self):
+        """One line for the student, or None while it is still open."""
+        if self.status == QUERY_ACCEPTED:
+            return 'Changed from %s to %s' % (self.mark_before, self.mark_after)
+        if self.status == QUERY_REJECTED:
+            return 'Mark unchanged'
+        if self.status == QUERY_WITHDRAWN:
+            return 'Withdrawn'
+        return None

@@ -592,3 +592,61 @@ class PasswordResetVerifyForm(forms.Form):
         if not code.isdigit():
             raise forms.ValidationError('The code is six digits.')
         return code
+
+
+class MarkQueryForm(forms.Form):
+    """What the student says when they think a mark is wrong."""
+    reason = forms.CharField(
+        label='What do you think is wrong?',
+        min_length=15, max_length=1000,
+        widget=forms.Textarea(attrs={
+            'rows': 4,
+            'placeholder': 'For example: question 3b was marked out of 5 but '
+                           'the paper says 10.'}),
+        error_messages={
+            'min_length': 'Say a little more - the teacher has to be able to '
+                          'check what you mean.'})
+
+    def clean_reason(self):
+        return self.cleaned_data['reason'].strip()
+
+
+class MarkQueryReviewForm(forms.Form):
+    """The teacher's answer, and the corrected mark if there is one."""
+    decision = forms.ChoiceField(
+        choices=(('accept', 'Correct the mark'), ('reject', 'Mark stands')),
+        widget=forms.RadioSelect)
+    new_mark = forms.IntegerField(
+        label='Corrected mark', required=False, min_value=0)
+    response = forms.CharField(
+        label='What should the student be told?',
+        max_length=1000, required=False,
+        widget=forms.Textarea(attrs={'rows': 3}))
+
+    def __init__(self, *args, total_marks=20, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.total_marks = total_marks
+        self.fields['new_mark'].max_value = total_marks
+        self.fields['new_mark'].widget.attrs.update({'max': total_marks,
+                                                     'min': 0})
+        self.fields['new_mark'].help_text = 'Out of %d.' % total_marks
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('decision') != 'accept':
+            # A rejection carries no number; keeping one would put a figure in
+            # the record that was never applied.
+            cleaned['new_mark'] = None
+            if not cleaned.get('response'):
+                self.add_error('response',
+                               'Say why the mark stands - "rejected" on its '
+                               'own is not an answer the student can use.')
+            return cleaned
+
+        mark = cleaned.get('new_mark')
+        if mark is None:
+            self.add_error('new_mark', 'Enter the corrected mark.')
+        elif mark > self.total_marks:
+            self.add_error('new_mark',
+                           'This component is out of %d.' % self.total_marks)
+        return cleaned

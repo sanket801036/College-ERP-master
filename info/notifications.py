@@ -32,6 +32,7 @@ from django.utils import timezone
 
 from .models import (
     ATTENDANCE_THRESHOLD,
+    Assign,
     Fee,
     Marks,
     MarksClass,
@@ -313,6 +314,66 @@ def messages_for_batch(batch):
             url=reverse('marks_list', args=[student.pk])))
 
     return messages
+
+
+# -- mark queries ----------------------------------------------------------
+
+def messages_for_query_raised(query):
+    """Tell the teacher a mark of theirs has been questioned."""
+    teacher = _teacher_for(query)
+    if teacher is None or teacher.user is None:
+        return []
+
+    mark = query.marks
+    body = '\n'.join([
+        'Hello %s,' % teacher.name, '',
+        '%s (%s) has questioned their %s in %s.'
+        % (query.student.name, query.student.pk, mark.name,
+           mark.studentcourse.course.name), '',
+        'Current mark: %d out of %d' % (mark.marks1, mark.total_marks), '',
+        'What they said:', query.reason, '',
+        'Open the ERP to look at it again and either correct the mark or '
+        'explain why it stands.',
+    ])
+    return [Message(user=teacher.user, kind='query',
+                    key='query:%d:raised' % query.pk,
+                    subject='Mark queried: %s, %s'
+                            % (mark.studentcourse.course.shortname, mark.name),
+                    body=body, url=reverse('mark_queries'))]
+
+
+def messages_for_query_resolved(query):
+    """Tell the student what came of it."""
+    if query.student.user is None:
+        return []
+
+    mark = query.marks
+    body = '\n'.join([
+        'Hello %s,' % query.student.name, '',
+        'Your query about %s in %s has been reviewed.'
+        % (mark.name, mark.studentcourse.course.name), '',
+        '  Outcome: %s' % query.outcome, '',
+        ('What the teacher said:' + '\n' + query.response
+         if query.response else ''),
+        '',
+        'Your marks page shows the current figure.',
+    ])
+    return [Message(user=query.student.user, kind='query',
+                    key='query:%d:%s' % (query.pk, query.status),
+                    subject='Mark query %s: %s'
+                            % (query.status, mark.studentcourse.course.shortname),
+                    body=body,
+                    url=reverse('marks_list', args=[query.student.pk]))]
+
+
+def _teacher_for(query):
+    """Whoever teaches the course to that student's class."""
+    assign = (Assign.objects
+              .filter(class_id=query.student.class_id_id,
+                      course=query.marks.studentcourse.course_id)
+              .select_related('teacher__user')
+              .first())
+    return assign.teacher if assign else None
 
 
 # -- notices ---------------------------------------------------------------

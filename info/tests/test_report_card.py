@@ -89,7 +89,10 @@ class ClassRankTests(Base):
         self.client.force_login(self.student.user)
         url = reverse('marks_list', args=(self.student.pk,))
 
-        with self.assertNumQueries(11):
+        # 13 since the re-evaluation work: attach_queries adds two - one for
+        # the class's publication dates, one for this student's own queries -
+        # and neither grows with the number of courses or students.
+        with self.assertNumQueries(13):
             self.assertEqual(self.client.get(url).status_code, 200)
 
         for n in range(4, 12):
@@ -98,7 +101,10 @@ class ClassRankTests(Base):
                                    username='student%d' % n)
             self.score(other, 'Internal test 1', n)
 
-        with self.assertNumQueries(11):
+        # 13 since the re-evaluation work: attach_queries adds two - one for
+        # the class's publication dates, one for this student's own queries -
+        # and neither grows with the number of courses or students.
+        with self.assertNumQueries(13):
             self.assertEqual(self.client.get(url).status_code, 200)
 
 

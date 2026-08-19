@@ -75,6 +75,14 @@ urlpatterns = [
     path('fees/add/', views.add_fee, name='add_fee'),
     path('fees/<int:fee_id>/edit/', views.edit_fee, name='edit_fee'),
 
+    path('marks/<int:mark_id>/query/', views.raise_mark_query,
+         name='raise_mark_query'),
+    path('marks/queries/<int:query_id>/withdraw/', views.withdraw_mark_query,
+         name='withdraw_mark_query'),
+    path('teacher/queries/', views.mark_queries, name='mark_queries'),
+    path('teacher/queries/<int:query_id>/', views.review_mark_query,
+         name='review_mark_query'),
+
     path('notifications/', views.notifications_list, name='notifications'),
     path('notifications/<int:notification_id>/', views.notification_open,
          name='notification_open'),
