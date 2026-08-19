@@ -444,6 +444,17 @@ body {
   text-align: center;
 }
 
+/* Notification list. Unread is marked by a left edge rather than a wash of
+   colour, so a long list of unread items is still readable. */
+.erp-unread {
+  border-left: 3px solid var(--erp-primary);
+  background: var(--erp-primary-light);
+}
+
+.erp-notification-body {
+  white-space: pre-line;
+}
+
 /* ---------- Charts ----------
    No chart library: geometry is computed server-side and these style the
    result. Marks stay thin, grid stays recessive, and every colour here is a

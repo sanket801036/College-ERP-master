@@ -316,7 +316,7 @@ class DeliveryTests(NotificationBase):
     def _message(self, key='notice:1'):
         return notifications.Message(
             user=self.student.user, kind='notice', key=key,
-            subject='Something happened', body='Body')
+            subject='Something happened', body='Body', url='/notices/')
 
     def test_a_send_is_recorded(self):
         notifications.send_all([self._message()])
@@ -326,14 +326,18 @@ class DeliveryTests(NotificationBase):
         self.assertEqual(record.key, 'notice:1')
         self.assertEqual(len(mail.outbox), 1)
 
-    def test_a_person_without_an_email_is_skipped_quietly(self):
+    def test_a_person_without_an_email_is_still_told_in_the_app(self):
         self.student.user.email = ''
         self.student.user.save(update_fields=['email'])
 
         result = notifications.send_all([self._message()])
 
-        self.assertEqual(result, notifications.Result(0, 0, 0))
+        self.assertEqual(result.sent, 0)
         self.assertEqual(len(mail.outbox), 0)
+        # The notification is the row, not the email.
+        record = Notification.objects.get()
+        self.assertIsNone(record.emailed_at)
+        self.assertFalse(record.is_read)
 
     def test_a_second_run_reports_what_it_skipped(self):
         notifications.send_all([self._message()])
@@ -344,15 +348,20 @@ class DeliveryTests(NotificationBase):
         self.assertEqual(result.skipped, 1)
         self.assertEqual(len(mail.outbox), 1)
 
-    def test_a_failed_send_is_not_recorded_as_sent(self):
+    def test_a_failed_send_is_not_recorded_as_emailed(self):
         with self.settings(
                 EMAIL_BACKEND='info.tests.test_notifications.BrokenBackend'):
             result = notifications.send_all([self._message()])
 
         self.assertEqual(result.failed, 1)
-        # Nothing recorded, so the next run tries again rather than believing
-        # the message arrived.
-        self.assertFalse(Notification.objects.exists())
+        # The person can still see it in the app; emailed_at staying null is
+        # what makes the next run try again rather than call it delivered.
+        self.assertIsNone(Notification.objects.get().emailed_at)
+
+    def test_a_delivered_message_records_when_it_went(self):
+        notifications.send_all([self._message()])
+
+        self.assertIsNotNone(Notification.objects.get().emailed_at)
 
     def test_a_retry_after_a_failure_sends(self):
         with self.settings(

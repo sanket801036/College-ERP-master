@@ -89,7 +89,7 @@ class ClassRankTests(Base):
         self.client.force_login(self.student.user)
         url = reverse('marks_list', args=(self.student.pk,))
 
-        with self.assertNumQueries(12):
+        with self.assertNumQueries(11):
             self.assertEqual(self.client.get(url).status_code, 200)
 
         for n in range(4, 12):
@@ -98,7 +98,7 @@ class ClassRankTests(Base):
                                    username='student%d' % n)
             self.score(other, 'Internal test 1', n)
 
-        with self.assertNumQueries(12):
+        with self.assertNumQueries(11):
             self.assertEqual(self.client.get(url).status_code, 200)
 
 

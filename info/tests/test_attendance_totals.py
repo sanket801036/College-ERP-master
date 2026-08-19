@@ -118,9 +118,12 @@ class AttendanceQueryCountTests(TestCase):
         self.client.force_login(self.students[0].user)
         url = reverse('attendance', args=(self.students[0].USN,))
 
-        # Two of these belong to the topbar's unread-notice badge, which every
-        # page carries; the point is that none of them scale with course count.
-        with self.assertNumQueries(9):
+        # One of these is the topbar badge, which every page carries; the
+        # point is that none of them scale with course count. It was
+        # two until the bell became a notification inbox: counting unread
+        # notices first had to work out the reader's role, and counting
+        # their own notifications does not.
+        with self.assertNumQueries(8):
             self.assertEqual(self.client.get(url).status_code, 200)
 
     def test_teacher_class_page_query_count_is_flat(self):

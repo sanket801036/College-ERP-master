@@ -1,4 +1,4 @@
-"""Send the emails nobody is sitting at a screen to trigger.
+"""Record what people need to be told, and email whoever can be emailed.
 
     python manage.py send_notifications                 # all four
     python manage.py send_notifications fee attendance  # just these
@@ -8,6 +8,11 @@ Meant for a scheduler. Render's free tier has no cron, so this is a command
 rather than a Celery beat schedule or a bare `while True` - anything that can
 run a shell line once a day can run it, including a laptop, a GitHub Actions
 schedule, or a paid cron job later, and none of that changes the code.
+
+Notifications appear in the app whether or not mail is configured - the row
+is the notification, and email is one way of delivering it. Marks and notices
+are already recorded when they are published, so for those this run usually
+has only the email left to do.
 
 Running it twice sends nothing twice: see `info/notifications.py` for why.
 A `--dry-run` reports the same counts without sending or recording anything.
@@ -79,8 +84,9 @@ class Command(BaseCommand):
             total_sent += result.sent
             total_failed += result.failed
 
-            line = ('%s: %d sent, %d already had it, %d failed'
-                    % (KINDS[kind], result.sent, result.skipped, result.failed))
+            line = ('%s: %d new, %d emailed, %d already had it, %d failed'
+                    % (KINDS[kind], result.recorded, result.sent,
+                       result.skipped, result.failed))
             style = self.style.ERROR if result.failed else self.style.SUCCESS
             self.stdout.write(style(line))
 
@@ -90,4 +96,5 @@ class Command(BaseCommand):
             raise CommandError('%d message(s) could not be sent' % total_failed)
 
         self.stdout.write('%d message(s) %s.'
-                          % (total_sent, 'would be sent' if dry_run else 'sent'))
+                          % (total_sent,
+                             'would be emailed' if dry_run else 'emailed'))

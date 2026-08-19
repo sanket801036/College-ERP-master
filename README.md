@@ -111,15 +111,23 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-605 tests covering the attendance, CIE, grade and fee calculations, role and
+624 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.
 
-## Scheduled email
+## Notifications
 
-Four kinds of message go out without anybody pressing anything: fee reminders,
-low-attendance warnings, marks-release alerts and newly published notices.
+Four kinds of message: fee reminders, low-attendance warnings, marks-release
+alerts and newly published notices. Each one is a row in `Notification`, shown
+in the bell menu in the topbar with an unread count, and emailed to whoever
+has an address on their account. The row is the notification; email is one way
+of delivering it, which is why somebody with no address still gets told.
+
+Publishing a notice or releasing a batch of marks records the notification
+immediately - the app already knows about those the moment they happen. Fee
+and attendance warnings are states rather than events, so they are found by
+the scheduled run.
 
 ```bash
 python manage.py send_notifications             # all four
@@ -130,7 +138,9 @@ python manage.py send_notifications --dry-run   # say what would go, send nothin
 It is a management command rather than Celery or a background thread because
 the free tier this deploys on has no worker and no cron: anything that can run
 one shell line a day can run this, and moving to a real scheduler later changes
-the crontab, not the code. Daily is the intended cadence.
+the crontab, not the code. Daily is the intended cadence. Nothing breaks while
+it is not running - the in-app notifications for notices and marks are still
+recorded, and the queries look at what is true now rather than at a backlog.
 
 Running it twice is safe. Every message carries a key naming exactly what it
 reports, and `Notification` has a unique constraint on (recipient, key), so a

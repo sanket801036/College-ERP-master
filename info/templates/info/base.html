@@ -42,10 +42,11 @@
         <div class="collapse navbar-collapse" id="navbarResponsive">
           <ul class="navbar-nav ml-auto align-items-center">
             <li class="nav-item">
-              <a class="nav-link position-relative" href="{% url 'notices' %}" title="Notices">
+              <a class="nav-link position-relative" href="{% url 'notifications' %}"
+                 title="Notifications">
                 <i class="fas fa-bell"></i>
-                {% if unread_notices %}
-                  <span class="erp-bell-badge">{{ unread_notices }}</span>
+                {% if unread_notifications %}
+                  <span class="erp-bell-badge">{{ unread_notifications }}</span>
                 {% endif %}
               </a>
             </li>

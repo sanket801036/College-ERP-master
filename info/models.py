@@ -1506,16 +1506,30 @@ NOTIFICATION_KINDS = (
 )
 
 
-class Notification(models.Model):
-    """One row per message that has actually been sent to somebody.
+class NotificationQuerySet(models.QuerySet):
+    def unread(self):
+        return self.filter(read_at__isnull=True)
 
-    The point of this table is not the audit trail, it is the unique
-    constraint. These commands run on a scheduler nobody watches closely; a
-    retry, an overlapping run or a second server means a student gets the same
-    "you are below 75%" email three times, and the third one is what makes
-    people filter the sender out. Claiming the row before sending is what
-    stops that, and it works across processes because the database decides who
-    got there first.
+    def unemailed(self):
+        """Recorded but not yet emailed - either new, or a send that failed."""
+        return self.filter(emailed_at__isnull=True)
+
+
+class Notification(models.Model):
+    """One row per thing somebody needs to be told, whether or not it is mailed.
+
+    Two jobs, and it is worth being clear which is which.
+
+    The first is the unread list in the app: the row *is* the notification,
+    and email is one way of delivering it. Somebody with no address on their
+    account still gets told; they just have to sign in to find out.
+
+    The second is not sending anything twice. The scheduled command runs where
+    nobody is watching, and a retry, an overlapping run or a second server
+    would otherwise mean a student gets the same "you are below 75%" three
+    times - which is what makes people filter the sender out. The unique
+    constraint on (user, key) is what prevents it, and it holds across
+    processes because the database decides who got there first.
     """
     user = models.ForeignKey(User, on_delete=models.CASCADE,
                              related_name='notifications')
@@ -1525,11 +1539,30 @@ class Notification(models.Model):
     # student should get both.
     key = models.CharField(max_length=120)
     subject = models.CharField(max_length=200)
-    sent_at = models.DateTimeField(auto_now_add=True)
+    body = models.TextField(blank=True)
+    # Where the notification points. Being told the marks are out without a
+    # way to go and look at them is half a feature.
+    url = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Null until the email actually leaves, which is what lets a failed send
+    # be retried without creating a second copy in the app.
+    emailed_at = models.DateTimeField(null=True, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    objects = NotificationQuerySet.as_manager()
 
     class Meta:
         unique_together = (('user', 'key'),)
-        ordering = ['-sent_at']
+        ordering = ['-created_at']
 
     def __str__(self):
         return '%s -> %s' % (self.key, self.user)
+
+    @property
+    def is_read(self):
+        return self.read_at is not None
+
+    def mark_read(self):
+        if self.read_at is None:
+            self.read_at = timezone.now()
+            self.save(update_fields=['read_at'])

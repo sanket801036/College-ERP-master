@@ -91,7 +91,7 @@ their **features**.
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
 | **Class report** (§7.8.1) | 🟢 rebuilt | Summary header, at-risk flagging, sorting, Excel export and a print stylesheet all landed in pass 20. Still open: RP5 (per-component breakdown), RP6 (SEE eligibility column), RP7 (compare sections), RP12 (pagination — deliberately skipped, see below) |
 | **Fees** (§7.6) | 🟢 ledger, receipts, bulk assignment, list rebuilt | Pass 25 added PDF receipts, the payment history the transaction model never got a page for, and raising a fee for a whole class; pass 26 made the staff list usable at volume (FE17). Still open: FE11/FE12 (payment instructions, mock gateway), FE16 (collection dashboard), FE19, FE20, FE21, FE23 (waivers, instalments, late fees, year tagging) - FE22, reminders, is done. **FE31 still stands and needs a decision** - see below |
-| **Dashboards** (§6) | 🟢 rebuilt, charts landed | Pass 29 added attendance-by-class, fee collection and students-by-department for admins, and a class comparison for teachers. Still open: today's-schedule strip (A1), dark mode (A3), global search (A2), breadcrumbs (A5). A4 is done - the topbar carries an unread count |
+| **Dashboards** (§6) | 🟢 rebuilt, charts landed | Pass 29 added attendance-by-class, fee collection and students-by-department for admins, and a class comparison for teachers. Still open: today's-schedule strip (A1), dark mode (A3), global search (A2), breadcrumbs (A5). A4 is done - the topbar bell is a notification inbox with an unread count, covering fees, attendance, marks and notices |
 | **Accounts** (§7.9) | 🟢 creation, passwords, profile and directory | Pass 31 added self-service contact details (AC15) and a searchable student/teacher directory (AC20). Still open: photo upload (AC16, blocked on CF1), bulk import (AC8), edit/deactivate (AC21) and soft delete (AC22) |
 | **API** (§7.10) | 🟢 done | Swagger/ReDoc, `/api/v1/` versioning, pagination, throttling and teacher endpoints in pass 28; a token-issuing sign-in and attendance writes in pass 34; marks entry in pass 37. Both write paths share their rules with the web forms rather than reimplementing them |
 
@@ -102,9 +102,13 @@ has credentials for yet.
 ### Still open, highest value first
 
 1. **CF1** — the remaining config blocker. **CF3 is closed** and so are all four
-   scheduled sends: FE22, NB17, AT23 and MK21 are one management command,
+   sends: FE22, NB17, AT23 and MK21 are one management command,
    `send_notifications`, backed by a `Notification` table whose unique key is
-   what stops a re-run from mailing the same thing twice. It is a command
+   what stops a re-run from mailing the same thing twice. They are **in-app as
+   well as email** — the row is the notification, the topbar bell counts the
+   unread ones, and somebody with no address on their account is still told.
+   Notices and marks record theirs at the moment they are published rather
+   than waiting for the scheduled run. It is a command
    rather than Celery because the free tier has no worker and no cron - the
    scheduler is whatever runs one shell line a day, and swapping it later does
    not touch the code. Media storage is
@@ -831,7 +835,7 @@ Currently a flat, unpaginated list of every session with a green/red cell. Every
 | AT20 | **Attendance correction request** | Student disputes a wrongly-marked absence → teacher approves/rejects → record updates with a full audit trail. Right now `change_attendance` lets a teacher silently flip any record with no record of who changed what or why. This single feature demonstrates workflow design, state machines, permissions, and auditability all at once — the strongest interview item in this whole module | ❌ `AttendanceCorrectionRequest` |
 | AT21 | **Leave application** | Apply in advance (medical/event), attach a document, teacher approves → sessions marked as excused rather than absent. Requires a third state beyond present/absent | ❌ `LeaveApplication` + a status field on `Attendance` |
 | AT22 | **Medical/OD exemption** | Excused sessions excluded from the 75% denominator — how real colleges actually work | ❌ |
-| AT23 | **Low-attendance alerts** | 🟢 **Done.** A weekly digest listing every course below 75%, with the number of consecutive classes that would fix each one. Computed from `Attendance` rather than `AttendanceTotal`, whose rows only appear when somebody opens the page - the job would otherwise never warn a student nobody had looked at. The alert-log model this row asked for is `Notification` |
+| AT23 | **Low-attendance alerts** | 🟢 **Done, in-app and by email.** A weekly digest listing every course below 75%, with the number of consecutive classes that would fix each one. Computed from `Attendance` rather than `AttendanceTotal`, whose rows only appear when somebody opens the page - the job would otherwise never warn a student nobody had looked at. The alert-log model this row asked for is `Notification` |
 | AT24 | **Parent notification** | Email the guardian on sustained low attendance | ❌ needs guardian contact fields (ties to the parent portal, Tier 3 #17) |
 | AT25 | **Attendance freeze date** | After a cut-off, records lock and only an admin can amend — with the amendment logged | ⚠️ |
 
@@ -961,7 +965,7 @@ Same treatment as the attendance module. **Data ready?** ✅ = buildable today, 
 | MK18 | **Re-evaluation request** | Student disputes a mark → teacher/admin reviews → mark updated with full audit trail. Same shape as the attendance-correction workflow (AT20) and can share its state machine and permission logic | ❌ `MarkRevaluationRequest` |
 | MK19 | **Marks audit log** | Today `marks_confirm` and `edit_marks` overwrite `marks1` in place with no record of the previous value, who changed it, or when. For grades specifically, that is the kind of gap an interviewer will press on | ❌ audit model |
 | ~~MK20~~ | **Result publication control** ✅ **Done (pass 23).** `MarksClass.is_published` + `published_at`. The student page reads the published set, the teacher's class report reads the entered set | Teacher enters marks, but students only see them once results are formally published — colleges never expose marks the instant they're typed | ⚠️ `MarksClass.is_published` |
-| MK21 | **Marks release notification** | 🟢 **Done.** One email per student per published batch, carrying their own mark, and saying "absent" rather than zero where that is what happened |
+| MK21 | **Marks release notification** | 🟢 **Done, in-app and by email.** Recorded the moment the batch is published, so it does not wait for the nightly run; one message per student, carrying their own mark, and saying "absent" rather than zero where that is what happened |
 
 #### Phase D — Technical fixes this module needs (all verified against the running app)
 
@@ -1261,7 +1265,7 @@ Next:
 | NB14 | **Narrower targeting** | Audience is only All / Students / Teachers. Real use needs per-class, per-department, per-semester targeting | ⚠️ |
 | NB15 | **Rich text** | Bold, lists, links — a plain `TextField` renders as one undifferentiated block. Must sanitise on output; do not trust stored HTML | ⚠️ |
 | NB16 | **Read receipts for the author** | "Seen by 342 of 450" — falls out of NB4 for free | ❌ (with NB4) |
-| NB17 | **Email on publish** | 🟢 **Done.** Sent to the audience the notice names (All / Students / Teachers), skipping expired ones, and only for notices published inside the window so switching it on does not mail the archive |
+| NB17 | **Email and in-app on publish** | 🟢 **Done.** Recorded when the notice is posted and sent to the audience the notice names (All / Students / Teachers), skipping expired ones, and only for notices published inside the window so switching it on does not mail the archive |
 
 #### Phase C — Correctness & security
 

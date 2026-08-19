@@ -134,10 +134,10 @@ class ReadStateTests(NoticeBase):
 
         self.assertEqual(NoticeRead.objects.count(), 1)
 
-    def test_the_unread_badge_is_available_on_every_page(self):
-        response = self.client.get(reverse('index'))
+    def test_the_board_reports_how_many_are_unread(self):
+        response = self.client.get(reverse('notices'))
 
-        self.assertEqual(response.context['unread_notices'], 1)
+        self.assertEqual(response.context['unread_count'], 1)
 
     def test_a_student_cannot_open_a_notice_meant_for_teachers(self):
         staff_only = self.make('Staff meeting', audience='Teachers')

@@ -22,6 +22,7 @@ from django.views.decorators.http import require_POST
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
+from info import notifications
 from info.decorators import (
     assert_teaches,
     owns_assign,
@@ -84,6 +85,7 @@ from .models import (
     MarksClass,
     Notice,
     NoticeRead,
+    Notification,
     PasswordResetOTP,
     Student,
     StudentCourse,
@@ -905,6 +907,7 @@ def publish_marks(request, marks_c_id):
         messages.success(request, '%s is hidden from students again.' % mc.name)
     else:
         mc.publish()
+        notifications.announce(notifications.messages_for_batch(mc))
         AuditLog.record(
             actor=request.user, action='marks.published', target=mc,
             summary='%s published for %s' % (mc.name, mc.assign.class_id))
@@ -1449,6 +1452,38 @@ def notice_detail(request, notice_id):
 
 
 @login_required()
+def notifications_list(request):
+    """Everything the app has told this person, newest first.
+
+    Opening the list does not mark anything read - the badge would clear
+    before anybody had looked at what caused it. Reading happens by opening an
+    item, or by saying so.
+    """
+    rows = list(request.user.notifications.all()[:100])
+    return render(request, 'info/notifications.html', {
+        'notifications': rows,
+        'unread': sum(1 for row in rows if not row.is_read),
+    })
+
+
+@login_required()
+def notification_open(request, notification_id):
+    """Mark one read and go where it points."""
+    notification = get_object_or_404(Notification, id=notification_id,
+                                     user=request.user)
+    notification.mark_read()
+    return redirect(notification.url or 'notifications')
+
+
+@login_required()
+@require_POST
+def notifications_read_all(request):
+    request.user.notifications.unread().update(read_at=timezone.now())
+    messages.success(request, 'Marked everything as read.')
+    return redirect('notifications')
+
+
+@login_required()
 def add_notice(request):
     if not (request.user.is_superuser or request.user.is_teacher):
         return redirect('/')
@@ -1459,6 +1494,7 @@ def add_notice(request):
             notice = form.save(commit=False)
             notice.posted_by = request.user
             notice.save()
+            notifications.announce(notifications.messages_for_notice(notice))
             return redirect('notice_detail', notice_id=notice.id)
     else:
         form = NoticeForm(user=request.user)
@@ -1477,7 +1513,10 @@ def edit_notice(request, notice_id):
     if request.method == 'POST':
         form = NoticeForm(request.POST, instance=notice, user=request.user)
         if form.is_valid():
-            form.save()
+            notice = form.save()
+            # Covers the notice that was saved as a draft and published later;
+            # a second call adds nothing, the key is already claimed.
+            notifications.announce(notifications.messages_for_notice(notice))
             return redirect('notice_detail', notice_id=notice.id)
     else:
         form = NoticeForm(instance=notice, user=request.user)

@@ -75,6 +75,12 @@ urlpatterns = [
     path('fees/add/', views.add_fee, name='add_fee'),
     path('fees/<int:fee_id>/edit/', views.edit_fee, name='edit_fee'),
 
+    path('notifications/', views.notifications_list, name='notifications'),
+    path('notifications/<int:notification_id>/', views.notification_open,
+         name='notification_open'),
+    path('notifications/read-all/', views.notifications_read_all,
+         name='notifications_read_all'),
+
     path('notices/', views.notices, name='notices'),
     path('notices/add/', views.add_notice, name='add_notice'),
     path('notices/<int:notice_id>/', views.notice_detail, name='notice_detail'),

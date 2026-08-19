@@ -95,7 +95,11 @@ class TimetableRenderTests(TestCase):
         self.client.force_login(self.student.user)
         url = reverse('timetable', args=(self.klass.pk,))
 
-        with self.assertNumQueries(6):
+        # One of these is the topbar badge, which every page carries. It was
+        # two until the bell became a notification inbox: counting unread
+        # notices first had to work out the reader's role, and counting
+        # their own notifications does not.
+        with self.assertNumQueries(5):
             self.assertEqual(self.client.get(url).status_code, 200)
 
     def test_teacher_timetable_renders(self):

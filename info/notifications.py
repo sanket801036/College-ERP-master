@@ -26,8 +26,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.mail import send_mail
-from django.db import IntegrityError, transaction
 from django.db.models import F
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import (
@@ -44,9 +44,9 @@ from .services import attendance_rows
 
 logger = logging.getLogger(__name__)
 
-Message = namedtuple('Message', 'user kind key subject body')
+Message = namedtuple('Message', 'user kind key subject body url')
 
-Result = namedtuple('Result', 'sent skipped failed')
+Result = namedtuple('Result', 'sent skipped failed recorded')
 
 # How far back a first run looks. Anything older is treated as history that
 # people have already seen in the app.
@@ -63,60 +63,83 @@ def _week_key(when=None):
     return '%dW%02d' % (year, week)
 
 
-def _deliver(message):
-    """Send one message, once. True if it left the building."""
-    try:
-        with transaction.atomic():
-            Notification.objects.create(user=message.user, kind=message.kind,
-                                        key=message.key,
-                                        subject=message.subject[:200])
-    except IntegrityError:
-        # Somebody else claimed it between the filter and here.
-        return False
+def _record(message):
+    """Put the notification in the recipient's list. Returns (row, created)."""
+    return Notification.objects.get_or_create(
+        user=message.user, key=message.key,
+        defaults={'kind': message.kind, 'subject': message.subject[:200],
+                  'body': message.body, 'url': message.url})
 
+
+def _email(record, message):
+    """Try to deliver `record` by mail. True if it left the building."""
     try:
         send_mail(message.subject, message.body + SIGN_OFF,
                   settings.DEFAULT_FROM_EMAIL, [message.user.email],
                   fail_silently=False)
     except Exception:
-        # Give the row back so the next run retries rather than recording a
-        # message that never arrived.
-        logger.exception('Could not send %s to user %s', message.key,
+        # The row stays: the person can still see the notification when they
+        # sign in, and emailed_at being null is what makes the next run try
+        # again rather than treating a failure as delivered.
+        logger.exception('Could not email %s to user %s', message.key,
                          message.user.pk)
-        Notification.objects.filter(user=message.user, key=message.key).delete()
         return False
 
+    record.emailed_at = timezone.now()
+    record.save(update_fields=['emailed_at'])
     return True
 
 
 def send_all(messages, dry_run=False):
-    """Deliver what has not already gone out.
+    """Record what has happened, and email whoever can be emailed.
 
-    The `already` lookup is one query for the whole batch; the unique
-    constraint underneath it is what actually guarantees the rule.
+    Recording and emailing are separate on purpose. A student with no address
+    on their account is still told - they just have to sign in to find out -
+    and a mail server that is down costs a delivery, not the notification.
     """
-    messages = [m for m in messages if m.user and m.user.email]
+    messages = [m for m in messages if m.user]
     if not messages:
-        return Result(0, 0, 0)
+        return Result(0, 0, 0, 0)
 
-    already = set(
-        Notification.objects
-        .filter(key__in={m.key for m in messages},
-                user__in={m.user.pk for m in messages})
-        .values_list('user_id', 'key'))
+    if dry_run:
+        existing = dict(
+            Notification.objects
+            .filter(key__in={m.key for m in messages},
+                    user__in={m.user.pk for m in messages})
+            .values_list('key', 'emailed_at'))
+        recorded = sum(1 for m in messages if m.key not in existing)
+        sendable = [m for m in messages
+                    if m.user.email and existing.get(m.key) is None]
+        return Result(len(sendable), len(messages) - len(sendable), 0, recorded)
 
-    sent = skipped = failed = 0
+    sent = skipped = failed = recorded = 0
     for message in messages:
-        if (message.user.pk, message.key) in already:
+        record, created = _record(message)
+        recorded += int(created)
+
+        if record.emailed_at is not None or not message.user.email:
             skipped += 1
-        elif dry_run:
-            sent += 1
-        elif _deliver(message):
+        elif _email(record, message):
             sent += 1
         else:
             failed += 1
 
-    return Result(sent, skipped, failed)
+    return Result(sent, skipped, failed, recorded)
+
+
+def record_only(messages):
+    """Add notifications without mailing anything.
+
+    Used where the app already knows something the moment it happens - a
+    notice going up, a batch of marks being released - so the app can show it
+    straight away and the scheduled run only has the mail left to do.
+    """
+    created = 0
+    for message in messages:
+        if message.user:
+            _, was_created = _record(message)
+            created += int(was_created)
+    return created
 
 
 # -- fees ------------------------------------------------------------------
@@ -169,7 +192,8 @@ def fee_reminders(due_soon_days=DEFAULT_DUE_SOON_DAYS, today=None):
         messages.append(Message(
             user=student.user, kind='fee',
             key='fee:%s:%s' % (student.pk, week),
-            subject=subject, body='\n'.join(lines)))
+            subject=subject, body='\n'.join(lines),
+            url=reverse('fees', args=[student.pk])))
 
     return messages
 
@@ -221,6 +245,7 @@ def attendance_alerts(today=None):
         messages.append(Message(
             user=student.user, kind='attendance',
             key='attendance:%s:%s' % (student.pk, week),
+            url=reverse('attendance', args=[student.pk]),
             subject='Attendance below %d%% in %d course%s'
                     % (threshold, len(rows_for_student),
                        '' if len(rows_for_student) == 1 else 's'),
@@ -242,41 +267,50 @@ def marks_release_alerts(window_days=DEFAULT_WINDOW_DAYS, now=None):
 
     messages = []
     for batch in batches:
-        students = (Student.objects
-                    .filter(class_id=batch.assign.class_id, is_active=True,
-                            user__isnull=False)
-                    .select_related('user'))
-        scores = {
-            m.studentcourse.student_id: m
-            for m in Marks.objects
-            .filter(name=batch.name,
-                    studentcourse__course=batch.assign.course,
-                    studentcourse__student__class_id=batch.assign.class_id)
-            .select_related('studentcourse')
-        }
+        messages += messages_for_batch(batch)
+    return messages
 
-        course = batch.assign.course
-        subject = '%s marks published: %s' % (batch.name, course.shortname)
-        for student in students:
-            mark = scores.get(student.pk)
-            if mark is None:
-                # No row for this student - nothing to tell them yet.
-                continue
-            scored = ('absent' if mark.is_absent
-                      else '%d out of %d' % (mark.marks1, mark.total_marks))
-            body = '\n'.join([
-                'Hello %s,' % student.name, '',
-                'Your %s marks for %s (%s) have been published.'
-                % (batch.name, course.name, course.shortname), '',
-                '  Your result: %s' % scored, '',
-                'Sign in to the ERP to see this alongside your other '
-                'components and your CIE total. If you think a mark is wrong, '
-                'raise it with the course teacher.',
-            ])
-            messages.append(Message(
-                user=student.user, kind='marks',
-                key='marks:%d:%s' % (batch.pk, student.pk),
-                subject=subject, body=body))
+
+def messages_for_batch(batch):
+    """One message per student in the class, carrying their own mark."""
+    students = (Student.objects
+                .filter(class_id=batch.assign.class_id, is_active=True,
+                        user__isnull=False)
+                .select_related('user'))
+    scores = {
+        m.studentcourse.student_id: m
+        for m in Marks.objects
+        .filter(name=batch.name,
+                studentcourse__course=batch.assign.course,
+                studentcourse__student__class_id=batch.assign.class_id)
+        .select_related('studentcourse')
+    }
+
+    course = batch.assign.course
+    subject = '%s marks published: %s' % (batch.name, course.shortname)
+
+    messages = []
+    for student in students:
+        mark = scores.get(student.pk)
+        if mark is None:
+            # No row for this student - nothing to tell them yet.
+            continue
+        scored = ('absent' if mark.is_absent
+                  else '%d out of %d' % (mark.marks1, mark.total_marks))
+        body = '\n'.join([
+            'Hello %s,' % student.name, '',
+            'Your %s marks for %s (%s) have been published.'
+            % (batch.name, course.name, course.shortname), '',
+            '  Your result: %s' % scored, '',
+            'Sign in to the ERP to see this alongside your other '
+            'components and your CIE total. If you think a mark is wrong, '
+            'raise it with the course teacher.',
+        ])
+        messages.append(Message(
+            user=student.user, kind='marks',
+            key='marks:%d:%s' % (batch.pk, student.pk),
+            subject=subject, body=body,
+            url=reverse('marks_list', args=[student.pk])))
 
     return messages
 
@@ -284,7 +318,7 @@ def marks_release_alerts(window_days=DEFAULT_WINDOW_DAYS, now=None):
 # -- notices ---------------------------------------------------------------
 
 def notice_alerts(window_days=DEFAULT_WINDOW_DAYS, now=None):
-    """Email a newly published notice to the audience it names."""
+    """Announce recently published notices to the audience they name."""
     now = now or timezone.now()
     since = now - timedelta(days=window_days)
 
@@ -294,33 +328,41 @@ def notice_alerts(window_days=DEFAULT_WINDOW_DAYS, now=None):
 
     messages = []
     for notice in notices:
-        if notice.is_expired:
-            continue
-
-        recipients = []
-        if notice.audience in ('All', 'Students'):
-            recipients += [s.user for s in Student.objects
-                           .filter(is_active=True, user__isnull=False)
-                           .select_related('user')]
-        if notice.audience in ('All', 'Teachers'):
-            recipients += [t.user for t in Teacher.objects
-                           .filter(is_active=True, user__isnull=False)
-                           .select_related('user')]
-
-        body_lines = ['A notice has been posted on the ERP.', '',
-                      notice.title, '', notice.message]
-        if notice.expires_at:
-            body_lines += ['', 'This notice applies until %s.'
-                           % notice.expires_at.strftime('%d %b %Y')]
-        body = '\n'.join(body_lines)
-
-        for user in recipients:
-            messages.append(Message(
-                user=user, kind='notice', key='notice:%d' % notice.pk,
-                subject='[%s] %s' % (notice.category, notice.title),
-                body=body))
-
+        messages += messages_for_notice(notice)
     return messages
+
+
+def messages_for_notice(notice):
+    """One message per person the notice is addressed to."""
+    if not notice.is_published or notice.is_expired:
+        return []
+
+    recipients = []
+    if notice.audience in ('All', 'Students'):
+        recipients += [s.user for s in Student.objects
+                       .filter(is_active=True, user__isnull=False)
+                       .select_related('user')]
+    if notice.audience in ('All', 'Teachers'):
+        recipients += [t.user for t in Teacher.objects
+                       .filter(is_active=True, user__isnull=False)
+                       .select_related('user')]
+
+    body_lines = ['A notice has been posted on the ERP.', '',
+                  notice.title, '', notice.message]
+    if notice.expires_at:
+        body_lines += ['', 'This notice applies until %s.'
+                       % notice.expires_at.strftime('%d %b %Y')]
+    body = '\n'.join(body_lines)
+
+    return [Message(user=user, kind='notice', key='notice:%d' % notice.pk,
+                    subject='[%s] %s' % (notice.category, notice.title),
+                    body=body, url=reverse('notice_detail', args=[notice.pk]))
+            for user in recipients]
+
+
+def announce(messages):
+    """Record now, mail later - what the app calls when an event happens."""
+    return record_only(messages)
 
 
 # Kept for the commands to import as one list rather than four names.
