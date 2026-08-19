@@ -15,6 +15,7 @@ from info.models import (
     Class,
     Fee,
     FeeTransaction,
+    LeaveRequest,
     Notice,
     Student,
     SupportRequest,
@@ -650,3 +651,48 @@ class MarkQueryReviewForm(forms.Form):
             self.add_error('new_mark',
                            'This component is out of %d.' % self.total_marks)
         return cleaned
+
+
+LEAVE_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024
+LEAVE_DOCUMENT_TYPES = ('.pdf', '.jpg', '.jpeg', '.png')
+
+
+class LeaveRequestForm(forms.ModelForm):
+    """What a student fills in to ask for days to be excused."""
+
+    class Meta:
+        model = LeaveRequest
+        fields = ['category', 'from_date', 'to_date', 'reason', 'document']
+        widgets = {
+            'from_date': forms.DateInput(attrs={'type': 'date'}),
+            'to_date': forms.DateInput(attrs={'type': 'date'}),
+            'reason': forms.Textarea(attrs={
+                'rows': 4,
+                'placeholder': 'What happened, and anything the teacher '
+                               'should know.'}),
+        }
+        labels = {'from_date': 'First day', 'to_date': 'Last day',
+                  'reason': 'Why'}
+
+    def clean_reason(self):
+        reason = self.cleaned_data['reason'].strip()
+        if len(reason) < 15:
+            raise forms.ValidationError(
+                'Say a little more - somebody has to decide on this.')
+        return reason
+
+    def clean_document(self):
+        document = self.cleaned_data.get('document')
+        if not document:
+            return document
+        # Size before type: rejecting a 200 MB file should not depend on what
+        # its name ends in.
+        if document.size > LEAVE_DOCUMENT_MAX_BYTES:
+            raise forms.ValidationError(
+                'That file is %.1f MB; the limit is %.0f MB.'
+                % (document.size / 1024 / 1024,
+                   LEAVE_DOCUMENT_MAX_BYTES / 1024 / 1024))
+        name = (document.name or '').lower()
+        if not name.endswith(LEAVE_DOCUMENT_TYPES):
+            raise forms.ValidationError('Attach a PDF or an image.')
+        return document

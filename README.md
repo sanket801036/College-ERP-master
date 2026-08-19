@@ -42,6 +42,13 @@ the address on the account, expires in ten minutes, works once, and locks
 after five wrong guesses. The page answers identically whether or not the
 account exists, so it cannot be used to find out which usernames are real.
 
+Students apply for leave - medical, official duty or personal, with an
+optional certificate - and any teacher of their class decides. Approving it
+excuses the absences already marked in that range and any session marked later
+while it still applies, and an excused session is left out of the attendance
+percentage rather than counted against the student. Turning up anyway beats
+the leave: the session counts.
+
 A published mark can be questioned for a week: the student says what they
 think is wrong, the teacher who taught the course either corrects it or
 explains why it stands, and both sides are told. Corrections go through the
@@ -117,7 +124,7 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-655 tests covering the attendance, CIE, grade and fee calculations, role and
+691 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.

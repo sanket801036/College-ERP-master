@@ -1,0 +1,99 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Leave{% endblock %}
+
+{% block content %}
+
+<h2 class="mb-1">Leave</h2>
+<p class="text-muted">
+  Approved leave takes those sessions out of your attendance percentage
+  instead of counting them against you.
+</p>
+
+<div class="row">
+  <div class="col-lg-5 mb-3">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Apply</h5>
+
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+
+          {% for error in form.non_field_errors %}
+            <div class="alert alert-danger py-2 small">{{ error }}</div>
+          {% endfor %}
+
+          {% for field in form %}
+            <div class="form-group">
+              <label class="small text-muted" for="{{ field.id_for_label }}">
+                {{ field.label }}
+              </label>
+              {{ field }}
+              {% if field.help_text %}
+                <small class="form-text text-muted">{{ field.help_text }}</small>
+              {% endif %}
+              {% for error in field.errors %}
+                <div class="text-danger small mt-1">{{ error }}</div>
+              {% endfor %}
+            </div>
+          {% endfor %}
+
+          <button class="btn btn-primary" type="submit">Send application</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7 mb-3">
+    <div class="card">
+      <div class="card-body pb-0">
+        <h5 class="card-title mb-0">Your applications</h5>
+      </div>
+      <div class="list-group list-group-flush mt-2">
+        {% for leave in leaves %}
+          <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start">
+              <div class="mr-3">
+                <b>{{ leave.from_date|date:'d M Y' }}
+                  &ndash; {{ leave.to_date|date:'d M Y' }}</b>
+                <span class="text-muted small ml-1">
+                  {{ leave.days }} day{{ leave.days|pluralize }} &middot;
+                  {{ leave.get_category_display }}
+                </span>
+                <p class="mb-1 mt-1 text-muted small">{{ leave.reason }}</p>
+
+                {% if leave.is_open %}
+                  <span class="erp-badge erp-badge-warning">Awaiting a decision</span>
+                  <form method="post" class="d-inline"
+                        action="{% url 'withdraw_leave' leave.id %}">
+                    {% csrf_token %}
+                    <button class="btn btn-link btn-sm p-0 align-baseline"
+                            type="submit">Withdraw</button>
+                  </form>
+                {% else %}
+                  <div class="small">
+                    <b>{{ leave.outcome }}</b>
+                    {% if leave.response %}
+                      <div class="text-muted">{{ leave.response }}</div>
+                    {% endif %}
+                  </div>
+                {% endif %}
+              </div>
+              {% if leave.document %}
+                <a class="small text-nowrap" href="{{ leave.document.url }}">
+                  <i class="fas fa-paperclip"></i> Attachment
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        {% empty %}
+          <div class="list-group-item text-center text-muted py-5">
+            You have not applied for any leave.
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

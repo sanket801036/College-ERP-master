@@ -66,7 +66,7 @@ class AttendanceView(StudentAPIView):
         # handler. A read should not write - and AttendanceTotal stores nothing
         # of its own anyway, the counts all come from Attendance - so the
         # totals are assembled in memory from a single grouped query instead.
-        counts = (Attendance.objects
+        counts = (Attendance.objects.counted()
                   .filter(student=student, course__in=courses)
                   .values('course')
                   .annotate(held=Count('pk'),
@@ -164,7 +164,7 @@ class ClassStudentsView(TeacherAPIView):
         assign = get_object_or_404(self.assignments(request), id=assign_id)
 
         students = list(assign.class_id.student_set.all().order_by('USN'))
-        counts = (Attendance.objects
+        counts = (Attendance.objects.counted()
                   .filter(course=assign.course, student__in=students)
                   .values('student')
                   .annotate(held=Count('pk'),

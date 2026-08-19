@@ -85,7 +85,7 @@ their **features**.
 | **Notice board** (§7.5) | 🟢 built out | NB8 (attachments, blocked on CF1), NB11 (scheduled publishing), NB14 (per-class/department targeting), NB15+NB20 (rich text — never ship without sanitisation), NB22 (should a teacher be able to address the whole institution?) |
 | **Free-teacher finder** (§7.8.2) | 🟢 finds free teachers | FT1 (still only reachable from the teacher timetable), FT3 (why each teacher is free), FT4 (department filter), FT5 (teaching load), FT6 (request-a-substitute workflow) |
 | **Marks - student** (§7.2) | 🟢 rebuilt | Accordion, CIE meter, letter grades, required-marks calculator, SEE eligibility and a real credit-weighted SGPA landed in pass 19 on VTU's 10-point scale; class rank (MK8) and the PDF marks card (MK10) in pass 24; publication control (MK20) in pass 23. Pass 30 added the cross-subject comparison (MK12) and a per-course internals sparkline (MK11). Pass 45 added re-evaluation (MK18). Still open: MK16 (attendance/marks correlation) and semester history (MK15, needs semester tagging) |
-| **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D: alerts (AT23) are built and scheduled; correction requests, leave and exemptions are not |
+| **Attendance - student** (§7.1) | 🟢 summary page done, charts landed | Summary carries a meter per course (B3) and the detail page a running trend (B2/AT12). Note AT4 is only *part* done — the zone-coloured progress bar landed, but inside the existing table rather than as the per-course cards the spec describes. Still open on the detail page: calendar heatmap (AT9), month grouping (AT10), filters (AT11), day-of-week insight (AT13), streaks (AT14), export (AT16). Phase D: alerts (AT23), leave (AT21) and exemptions (AT22) are built; correction requests (AT20) are not |
 | **Attendance - teacher** (§7.3) | 🟢 secured, entry rebuilt | Pass 21 landed one-click marking from the dashboard, mark-all-present, a live counter, keyboard entry, roster search, the unsaved-changes guard, and real session states; TA-C4 and TA-C6 are closed. Still open: TA6 (photos, blocked on CF1), TA9/TA10 (bulk import, offline drafts), TA12-TA17 (class analytics and export), TA19-TA21 (cancel reason, reschedule, substitutes) |
 | **Marks entry - teacher** (§7.7) | 🟢 secured, validated, entry rebuilt | Pass 22 landed the max-marks hint, live inline validation, keyboard entry, running statistics, the previous component alongside, sorting and the unsaved-changes guard, and folded the separate edit template into this one. Still open: TM5 (absent-vs-zero, needs a flag on `Marks`), TM6 (draft save), TM7 (bulk import), TM11-TM14 (post-entry statistics and export), TM15 (publication control), TM24 (confirmation screen) |
 | **Timetable** (§7.4) | 🟢 correctness done | Presentation untouched: no mobile "today" view, "right now" indicator, day highlighting, labelled free slots, room field, or `.ics` export |
@@ -833,8 +833,8 @@ Currently a flat, unpaginated list of every session with a green/red cell. Every
 | # | Feature | Detail | Data ready? |
 |---|---|---|---|
 | AT20 | **Attendance correction request** | Student disputes a wrongly-marked absence → teacher approves/rejects → record updates with a full audit trail. Right now `change_attendance` lets a teacher silently flip any record with no record of who changed what or why. This single feature demonstrates workflow design, state machines, permissions, and auditability all at once — the strongest interview item in this whole module | ❌ `AttendanceCorrectionRequest` |
-| AT21 | **Leave application** | Apply in advance (medical/event), attach a document, teacher approves → sessions marked as excused rather than absent. Requires a third state beyond present/absent | ❌ `LeaveApplication` + a status field on `Attendance` |
-| AT22 | **Medical/OD exemption** | Excused sessions excluded from the 75% denominator — how real colleges actually work | ❌ |
+| AT21 | **Leave application** | 🟢 **Done.** Medical / official duty / personal, with an optional certificate, applied for up to 14 days after the event and at most 30 days long. Any teacher of that class decides; approving excuses the absences already marked in the range **and** any session marked later while the leave still covers it, which is what makes applying in advance mean anything. Turning up anyway beats the leave - the session counts |
+| AT22 | **Medical/OD exemption** | 🟢 **Done.** `Attendance.is_excused` plus `Attendance.objects.counted()`, which every count in the app now goes through - the model, the dashboards, the class charts and both API endpoints. An excused session leaves the percentage alone rather than counting as attended, so a course whose only session was excused reads as "no classes yet" rather than 0% |
 | AT23 | **Low-attendance alerts** | 🟢 **Done, in-app and by email.** A weekly digest listing every course below 75%, with the number of consecutive classes that would fix each one. Computed from `Attendance` rather than `AttendanceTotal`, whose rows only appear when somebody opens the page - the job would otherwise never warn a student nobody had looked at. The alert-log model this row asked for is `Notification` |
 | AT24 | **Parent notification** | Email the guardian on sustained low attendance | ❌ needs guardian contact fields (ties to the parent portal, Tier 3 #17) |
 | AT25 | **Attendance freeze date** | After a cut-off, records lock and only an admin can amend — with the amendment logged | ⚠️ |
@@ -856,7 +856,7 @@ Currently a flat, unpaginated list of every session with a green/red cell. Every
 3. **AT1–AT5, AT7** — the redesigned page: bunk calculator, donut, zone badges, course cards, projection
 4. **AT9–AT16** — the detail page: heatmap, trend, insights, export
 5. **AT30** — unit tests for the attendance maths (do this alongside 1–3, not after)
-6. **AT20/AT21** — correction-request and leave workflows, the standout feature of this module
+6. **AT20** — the correction-request workflow; AT21 (leave) is built and is the model to copy
 7. **AT23** — alerts, once SMTP exists from §5.1
 
 ---
@@ -1931,8 +1931,9 @@ geometry-in-Python, SVG-in-template shape.
    that puts two classes side by side
 2. **D1, D2, D7** — the admin analytics strip. `FeeQuerySet.totals()` from
    pass 26 is most of what a collection chart needs
-3. **AT20 / AT21** — the two request-and-approve workflows still open
-   (attendance correction, leave). **MK18/TM16 are built**, and the shape they
+3. **AT20** — the last request-and-approve workflow still open (a student
+   disputing a wrongly-marked absence). **MK18/TM16 and AT21/AT22 are built**,
+   and the shape they
    settled on is the one to copy: a row per request holding the reason, the
    answer and the before/after values; a partial unique index so one live
    request per subject; the rules in `services.py` so the state machine has one

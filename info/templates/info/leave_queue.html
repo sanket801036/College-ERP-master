@@ -1,0 +1,89 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Leave applications{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-0">Leave applications</h2>
+    <p class="text-muted mb-0">
+      {% if open_count %}
+        {{ open_count }} waiting for a decision
+      {% else %}
+        Nothing waiting for a decision
+      {% endif %}
+    </p>
+  </div>
+  <div class="btn-group">
+    <a class="btn btn-outline-secondary {% if show == 'open' %}active{% endif %}"
+       href="?show=open">Open</a>
+    <a class="btn btn-outline-secondary {% if show != 'open' %}active{% endif %}"
+       href="?show=all">All</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="thead-light">
+        <tr>
+          <th>Student</th>
+          <th>Dates</th>
+          <th>Kind</th>
+          <th>Why</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leave in leaves %}
+          <tr>
+            <td>
+              {{ leave.student.name }}
+              <div class="text-muted small">{{ leave.student.pk }}</div>
+            </td>
+            <td class="text-nowrap">
+              {{ leave.from_date|date:'d M' }} &ndash; {{ leave.to_date|date:'d M Y' }}
+              <div class="text-muted small">
+                {{ leave.days }} day{{ leave.days|pluralize }}
+              </div>
+            </td>
+            <td>
+              {{ leave.get_category_display }}
+              {% if leave.document %}
+                <div><i class="fas fa-paperclip text-muted small"></i></div>
+              {% endif %}
+            </td>
+            <td class="text-muted small">{{ leave.reason|truncatewords:16 }}</td>
+            <td>
+              {% if leave.is_open %}
+                <span class="erp-badge erp-badge-warning">Awaiting a decision</span>
+              {% else %}
+                <span class="text-muted small">{{ leave.outcome }}</span>
+              {% endif %}
+            </td>
+            <td class="text-right">
+              <a class="btn btn-sm {% if leave.is_open %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                 href="{% url 'review_leave' leave.id %}">
+                {% if leave.is_open %}Review{% else %}Open{% endif %}
+              </a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-5">
+              {% if show == 'open' %}
+                Nothing to decide.
+              {% else %}
+                No student has applied for leave yet.
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

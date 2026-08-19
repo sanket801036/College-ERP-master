@@ -1,0 +1,100 @@
+{% extends 'info/base.html' %}
+
+{% block title %}Review leave{% endblock %}
+
+{% block content %}
+
+<h2 class="mb-1">Leave application</h2>
+<p class="text-muted">
+  <a href="{% url 'leave_queue' %}">&larr; Back to the queue</a>
+</p>
+
+<div class="row">
+  <div class="col-lg-6 mb-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">What was asked</h5>
+
+        <dl class="row mb-3">
+          <dt class="col-5 text-muted small">Student</dt>
+          <dd class="col-7">{{ leave.student.name }} ({{ leave.student.pk }})</dd>
+
+          <dt class="col-5 text-muted small">Class</dt>
+          <dd class="col-7">{{ leave.student.class_id }}</dd>
+
+          <dt class="col-5 text-muted small">Kind</dt>
+          <dd class="col-7">{{ leave.get_category_display }}</dd>
+
+          <dt class="col-5 text-muted small">Dates</dt>
+          <dd class="col-7">
+            {{ leave.from_date|date:'d M Y' }} &ndash; {{ leave.to_date|date:'d M Y' }}
+            <span class="text-muted">({{ leave.days }} day{{ leave.days|pluralize }})</span>
+          </dd>
+
+          <dt class="col-5 text-muted small">Applied</dt>
+          <dd class="col-7">{{ leave.created_at|date:'d M Y, H:i' }}</dd>
+
+          {% if leave.document %}
+            <dt class="col-5 text-muted small">Attachment</dt>
+            <dd class="col-7">
+              <a href="{{ leave.document.url }}">
+                <i class="fas fa-paperclip"></i> Open
+              </a>
+            </dd>
+          {% endif %}
+        </dl>
+
+        <p class="mb-1 text-muted small">In their words</p>
+        <p class="mb-0" style="white-space: pre-line;">{{ leave.reason }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6 mb-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Your decision</h5>
+
+        {% if leave.is_open %}
+          <p class="text-muted small">
+            Approving excuses every absence already marked between those dates,
+            and any session marked later while the leave still covers it.
+            Excused sessions are left out of the percentage rather than counted
+            as attended.
+          </p>
+
+          <form method="post">
+            {% csrf_token %}
+            <div class="form-group">
+              <label class="small text-muted" for="response">
+                What should the student be told?
+              </label>
+              <textarea class="form-control" name="response" id="response"
+                        rows="3"></textarea>
+              <small class="form-text text-muted">
+                Required when refusing.
+              </small>
+            </div>
+            <button class="btn btn-primary" type="submit"
+                    name="decision" value="approve">
+              <i class="fas fa-check"></i> Approve
+            </button>
+            <button class="btn btn-outline-danger" type="submit"
+                    name="decision" value="reject">
+              Refuse
+            </button>
+          </form>
+        {% else %}
+          <p class="mb-1"><b>{{ leave.outcome }}</b></p>
+          <p class="text-muted small mb-2">
+            Answered by {{ leave.reviewed_by|default:'somebody since removed' }}
+            on {{ leave.reviewed_at|date:'d M Y, H:i' }}
+          </p>
+          <p class="mb-0" style="white-space: pre-line;">{{ leave.response }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

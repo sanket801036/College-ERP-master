@@ -37,6 +37,7 @@ from info.forms import (
     ExtraClassForm,
     FeeForm,
     FeeTransactionForm,
+    LeaveRequestForm,
     MarkQueryForm,
     MarkQueryReviewForm,
     MarksEntryForm,
@@ -83,6 +84,7 @@ from .models import (
     Dept,
     Fee,
     FeeTransaction,
+    LeaveRequest,
     MarkQuery,
     Marks,
     MarksClass,
@@ -229,7 +231,7 @@ def _teacher_class_attendance(assigns):
     Keyed by assignment rather than class, since the same class can appear twice
     under two courses and they are separate attendance registers.
     """
-    counts = (Attendance.objects
+    counts = (Attendance.objects.counted()
               .filter(course__in=[a.course_id for a in assigns],
                       student__class_id__in={a.class_id_id for a in assigns})
               .values('course', 'student__class_id')
@@ -971,6 +973,114 @@ def review_mark_query(request, query_id):
         'query': query,
         'form': form,
     })
+
+
+@login_required()
+def leave_list(request):
+    """The student's own applications, and the form to make another."""
+    if not request.user.is_student:
+        raise PermissionDenied
+    student = request.user.student
+
+    if request.method == 'POST':
+        form = LeaveRequestForm(request.POST, request.FILES)
+        if form.is_valid():
+            try:
+                leave = services.apply_for_leave(
+                    student=student,
+                    category=form.cleaned_data['category'],
+                    from_date=form.cleaned_data['from_date'],
+                    to_date=form.cleaned_data['to_date'],
+                    reason=form.cleaned_data['reason'],
+                    actor=request.user,
+                    document=form.cleaned_data.get('document'))
+            except services.LeaveNotAllowed as exc:
+                form.add_error(None, str(exc))
+            else:
+                notifications.announce(
+                    notifications.messages_for_leave_applied(leave))
+                messages.success(
+                    request, 'Applied. The teachers of your class can see it.')
+                return redirect('leave_list')
+    else:
+        form = LeaveRequestForm()
+
+    return render(request, 'info/leave_list.html', {
+        'student': student,
+        'form': form,
+        'leaves': list(student.leave_requests.select_related('reviewed_by')),
+    })
+
+
+@login_required()
+@require_POST
+def withdraw_leave(request, leave_id):
+    leave = get_object_or_404(LeaveRequest, id=leave_id)
+    if not (request.user.is_student
+            and request.user.student.USN == leave.student_id):
+        raise PermissionDenied
+
+    try:
+        services.withdraw_leave(leave, request.user)
+    except services.LeaveNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, 'Application withdrawn.')
+    return redirect('leave_list')
+
+
+@login_required()
+@teacher_required
+def leave_queue(request):
+    """Applications from the classes this teacher teaches."""
+    if request.user.is_teacher:
+        leaves = LeaveRequest.objects.for_teacher(request.user.teacher)
+    else:
+        leaves = LeaveRequest.objects.all()
+
+    open_count = leaves.open().count()
+    show = request.GET.get('show', 'open')
+    if show == 'open':
+        leaves = leaves.open()
+
+    return render(request, 'info/leave_queue.html', {
+        'leaves': list(leaves.select_related('student', 'reviewed_by')[:100]),
+        'open_count': open_count,
+        'show': show,
+    })
+
+
+@login_required()
+@teacher_required
+def review_leave(request, leave_id):
+    """Approve or refuse one application."""
+    leave = get_object_or_404(
+        LeaveRequest.objects.select_related('student', 'reviewed_by'),
+        id=leave_id)
+
+    if request.user.is_teacher and not request.user.is_superuser:
+        teaches = Assign.objects.filter(
+            teacher=request.user.teacher,
+            class_id=leave.student.class_id_id).exists()
+        if not teaches:
+            raise PermissionDenied
+
+    if request.method == 'POST':
+        response = request.POST.get('response', '')
+        try:
+            if request.POST.get('decision') == 'approve':
+                services.approve_leave(leave, request.user, response)
+            else:
+                services.reject_leave(leave, request.user, response)
+        except services.LeaveNotAllowed as exc:
+            messages.error(request, str(exc))
+        else:
+            notifications.announce(
+                notifications.messages_for_leave_decided(leave))
+            messages.success(request, 'Answered. The student has been told.')
+            return redirect('leave_queue')
+
+    return render(request, 'info/review_leave.html', {'leave': leave})
 
 
 @login_required()

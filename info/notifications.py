@@ -376,6 +376,62 @@ def _teacher_for(query):
     return assign.teacher if assign else None
 
 
+# -- leave -----------------------------------------------------------------
+
+def messages_for_leave_applied(leave):
+    """Tell the teachers of that class somebody has applied."""
+    teachers = (Teacher.objects
+                .filter(assign__class_id=leave.student.class_id_id,
+                        is_active=True, user__isnull=False)
+                .select_related('user')
+                .distinct())
+
+    body = '\n'.join([
+        '%s (%s) has applied for leave.' % (leave.student.name, leave.student.pk),
+        '',
+        '  %s leave, %s to %s (%d day%s)'
+        % (leave.get_category_display(),
+           leave.from_date.strftime('%d %b %Y'),
+           leave.to_date.strftime('%d %b %Y'),
+           leave.days, '' if leave.days == 1 else 's'),
+        '',
+        'What they said:', leave.reason, '',
+        'Approving it excuses those sessions rather than marking them present.',
+    ])
+    return [Message(user=teacher.user, kind='leave',
+                    key='leave:%d:applied:%s' % (leave.pk, teacher.pk),
+                    subject='Leave applied for: %s' % leave.student.name,
+                    body=body, url=reverse('leave_queue'))
+            for teacher in teachers]
+
+
+def messages_for_leave_decided(leave):
+    """Tell the student what was decided."""
+    if leave.student.user is None:
+        return []
+
+    body = '\n'.join([
+        'Hello %s,' % leave.student.name, '',
+        'Your leave application for %s to %s has been reviewed.'
+        % (leave.from_date.strftime('%d %b %Y'),
+           leave.to_date.strftime('%d %b %Y')), '',
+        '  Outcome: %s' % leave.outcome, '',
+        ('What the teacher said:' + '\n' + leave.response
+         if leave.response else ''),
+        '',
+        'Excused sessions are left out of your attendance percentage rather '
+        'than counted against it.',
+    ])
+    return [Message(user=leave.student.user, kind='leave',
+                    key='leave:%d:%s' % (leave.pk, leave.status),
+                    subject='Leave %s: %s to %s'
+                            % (leave.status,
+                               leave.from_date.strftime('%d %b'),
+                               leave.to_date.strftime('%d %b')),
+                    body=body,
+                    url=reverse('leave_list'))]
+
+
 # -- notices ---------------------------------------------------------------
 
 def notice_alerts(window_days=DEFAULT_WINDOW_DAYS, now=None):

@@ -415,6 +415,18 @@ class AttendanceClass(models.Model):
         return self.status != CLASS_CANCELLED and not self.is_future
 
 
+class AttendanceQuerySet(models.QuerySet):
+    def counted(self):
+        """The sessions that count towards the percentage.
+
+        An approved leave does not make a student present - it takes the
+        session out of the sum altogether, which is how colleges actually
+        treat medical and official duty. Excusing rows rather than deleting
+        them keeps the register honest about who was in the room.
+        """
+        return self.filter(is_excused=False)
+
+
 class Attendance(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
@@ -425,10 +437,16 @@ class Attendance(models.Model):
     # string, and bool('False') is True, so any check on a fresh object read
     # the opposite of what it said.
     status = models.BooleanField(default=True)
+    # Approved leave. Not a third value of `status`, because "were they in the
+    # room" and "does this count against them" are different questions and the
+    # register should still answer the first one.
+    is_excused = models.BooleanField(default=False)
     # Null on rows that predate this column. Note queryset.update() does not
     # touch auto_now - only .save() does - so this records edits made through
     # the views, which is where attendance actually gets changed.
     updated_at = models.DateTimeField(auto_now=True, null=True)
+
+    objects = AttendanceQuerySet.as_manager()
 
     def __str__(self):
         return '%s : %s' % (self.student.name, self.course.shortname)
@@ -446,7 +464,7 @@ class AttendanceTotalQuerySet(models.QuerySet):
         following a relation.
         """
         def count_of(**extra):
-            return (Attendance.objects
+            return (Attendance.objects.counted()
                     .filter(student=models.OuterRef('student'),
                             course=models.OuterRef('course'), **extra)
                     .order_by()
@@ -487,7 +505,7 @@ class AttendanceTotal(models.Model):
         if held is not None:
             return held, self._attended
 
-        counts = (Attendance.objects
+        counts = (Attendance.objects.counted()
                   .filter(student_id=self.student_id, course_id=self.course_id)
                   .aggregate(held=models.Count('pk'),
                              attended=models.Count('pk',
@@ -1574,6 +1592,7 @@ NOTIFICATION_KINDS = (
     ('marks', 'Marks released'),
     ('notice', 'Notice published'),
     ('query', 'Mark query'),
+    ('leave', 'Leave application'),
 )
 
 
@@ -1733,5 +1752,132 @@ class MarkQuery(models.Model):
         if self.status == QUERY_REJECTED:
             return 'Mark unchanged'
         if self.status == QUERY_WITHDRAWN:
+            return 'Withdrawn'
+        return None
+
+
+# How far back a student may apply. Medical leave is usually applied for after
+# the fact - you do not plan a fever - but a term-long backdated claim would
+# make attendance meaningless, so there is a limit.
+LEAVE_BACKDATE_LIMIT = timedelta(days=14)
+# How long a single application may run. Longer than this is a matter for the
+# department, not a form.
+LEAVE_MAX_DAYS = 30
+
+LEAVE_OPEN = 'open'
+LEAVE_APPROVED = 'approved'
+LEAVE_REJECTED = 'rejected'
+LEAVE_WITHDRAWN = 'withdrawn'
+
+leave_status = (
+    (LEAVE_OPEN, 'Awaiting a decision'),
+    (LEAVE_APPROVED, 'Approved'),
+    (LEAVE_REJECTED, 'Rejected'),
+    (LEAVE_WITHDRAWN, 'Withdrawn'),
+)
+
+leave_category = (
+    ('Medical', 'Medical'),
+    ('Official duty', 'Official duty (sport, event, placement)'),
+    ('Personal', 'Personal'),
+)
+
+
+def _leave_document_path(instance, filename):
+    """Where a certificate lands, under the student it belongs to.
+
+    A random name rather than the uploaded one: two students both sending
+    `scan.pdf` must not collide, and the original filename is not worth
+    carrying into a public bucket.
+    """
+    suffix = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'pdf'
+    return 'leave/%s/%s.%s' % (instance.student_id,
+                               get_random_string(16), suffix)
+
+
+class LeaveRequestQuerySet(models.QuerySet):
+    def open(self):
+        return self.filter(status=LEAVE_OPEN)
+
+    def approved(self):
+        return self.filter(status=LEAVE_APPROVED)
+
+    def covering(self, student_id, date):
+        return self.approved().filter(student_id=student_id,
+                                      from_date__lte=date, to_date__gte=date)
+
+    def covering_any(self, date):
+        """Every approved leave that includes this date, whoever it belongs to."""
+        return self.approved().filter(from_date__lte=date, to_date__gte=date)
+
+    def for_teacher(self, teacher):
+        """Applications from the classes this teacher teaches."""
+        return self.filter(
+            student__class_id__in=Assign.objects.filter(teacher=teacher)
+            .values('class_id'))
+
+
+class LeaveRequest(models.Model):
+    """A student asking for days to be excused, and the answer.
+
+    Approving one does not mark anybody present. It marks the sessions in the
+    range excused, and excused sessions leave the percentage alone rather than
+    counting against it - which is how medical and official-duty leave works
+    in practice, and is the whole reason a student would apply.
+
+    Sessions that have not happened yet cannot be marked here, so attendance
+    submission checks for approved leave as it goes. That is what makes
+    applying *in advance* mean anything.
+    """
+    student = models.ForeignKey(Student, on_delete=models.CASCADE,
+                                related_name='leave_requests')
+    category = models.CharField(max_length=20, choices=leave_category,
+                                default='Medical')
+    from_date = models.DateField()
+    to_date = models.DateField()
+    reason = models.TextField(max_length=1000)
+    # Optional: a medical certificate or an event letter. Kept optional
+    # because a student without a scanner still has to be able to apply.
+    document = models.FileField(upload_to=_leave_document_path, blank=True,
+                                null=True,
+                                help_text='PDF or image, up to 5 MB.')
+    status = models.CharField(max_length=20, choices=leave_status,
+                              default=LEAVE_OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name='reviewed_leave')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    response = models.TextField(max_length=1000, blank=True)
+    # How many already-marked sessions the approval excused. Zero is a normal
+    # answer for leave applied for in advance, and the number is worth keeping
+    # rather than recomputing against a register that has moved on since.
+    sessions_excused = models.PositiveIntegerField(default=0)
+
+    objects = LeaveRequestQuerySet.as_manager()
+
+    class Meta:
+        ordering = ['-from_date', '-created_at']
+
+    def __str__(self):
+        return '%s : %s to %s' % (self.student_id, self.from_date, self.to_date)
+
+    @property
+    def is_open(self):
+        return self.status == LEAVE_OPEN
+
+    @property
+    def days(self):
+        return (self.to_date - self.from_date).days + 1
+
+    @property
+    def outcome(self):
+        if self.status == LEAVE_APPROVED:
+            return ('Approved - %d session%s excused'
+                    % (self.sessions_excused,
+                       '' if self.sessions_excused == 1 else 's'))
+        if self.status == LEAVE_REJECTED:
+            return 'Rejected'
+        if self.status == LEAVE_WITHDRAWN:
             return 'Withdrawn'
         return None

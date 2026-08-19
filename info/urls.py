@@ -79,6 +79,13 @@ urlpatterns = [
          name='raise_mark_query'),
     path('marks/queries/<int:query_id>/withdraw/', views.withdraw_mark_query,
          name='withdraw_mark_query'),
+    path('leave/', views.leave_list, name='leave_list'),
+    path('leave/<int:leave_id>/withdraw/', views.withdraw_leave,
+         name='withdraw_leave'),
+    path('teacher/leave/', views.leave_queue, name='leave_queue'),
+    path('teacher/leave/<int:leave_id>/', views.review_leave,
+         name='review_leave'),
+
     path('teacher/queries/', views.mark_queries, name='mark_queries'),
     path('teacher/queries/<int:query_id>/', views.review_mark_query,
          name='review_mark_query'),

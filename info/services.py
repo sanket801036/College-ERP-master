@@ -11,6 +11,11 @@ from django.utils import timezone
 
 from info.models import (  # noqa: F401
     CLASS_TAKEN,
+    LEAVE_APPROVED,
+    LEAVE_BACKDATE_LIMIT,
+    LEAVE_MAX_DAYS,
+    LEAVE_REJECTED,
+    LEAVE_WITHDRAWN,
     QUERY_ACCEPTED,
     QUERY_REJECTED,
     QUERY_WINDOW,
@@ -20,6 +25,7 @@ from info.models import (  # noqa: F401
     AttendanceTotal,
     AuditLog,
     Course,
+    LeaveRequest,
     MarkQuery,
     Student,
     StudentCourse,
@@ -58,12 +64,21 @@ def submit_attendance(session, present_usns, actor):
     previous = {a.student_id: a.status
                 for a in Attendance.objects.filter(attendanceclass=session)}
 
+    # Leave approved before the session was marked has to be applied as the
+    # register is filled in, or applying in advance would mean nothing.
+    excused = set(LeaveRequest.objects
+                  .covering_any(session.date)
+                  .values_list('student_id', flat=True))
+
     entries = []
     for student in assign.class_id.student_set.all():
         present = student.USN in present_usns
         Attendance.objects.update_or_create(
             course=course, student=student, attendanceclass=session,
-            defaults={'status': present, 'date': session.date},
+            defaults={'status': present, 'date': session.date,
+                      # Present beats excused: somebody who turned up anyway
+                      # was there, and the session counts.
+                      'is_excused': not present and student.USN in excused},
         )
         was = previous.get(student.USN)
         # On a first submission there is nothing to compare against, so the
@@ -154,7 +169,8 @@ def attendance_rows(students=None, courses=None):
     own anyway; the instances returned are unsaved carriers for the counts, so
     that the percentage and "classes needed" arithmetic lives in one place.
     """
-    rows = Attendance.objects.all()
+    # Excused sessions are not in the sum: see AttendanceQuerySet.counted().
+    rows = Attendance.objects.counted()
     if students is not None:
         rows = rows.filter(student__in=students)
     if courses is not None:
@@ -291,3 +307,121 @@ def withdraw_mark_query(query, actor):
         summary='%s withdrew their query about %s'
                 % (query.student.name, query.marks.name))
     return query
+
+
+class LeaveNotAllowed(Exception):
+    """Raised when an application cannot be made or answered, with the reason."""
+
+
+def check_leave_dates(student, from_date, to_date, today=None):
+    """Validate a proposed range, raising LeaveNotAllowed with what is wrong."""
+    today = today or timezone.localdate()
+
+    if to_date < from_date:
+        raise LeaveNotAllowed('The last day cannot be before the first.')
+
+    days = (to_date - from_date).days + 1
+    if days > LEAVE_MAX_DAYS:
+        raise LeaveNotAllowed(
+            'One application covers at most %d days. Longer than that is a '
+            'matter for the department office.' % LEAVE_MAX_DAYS)
+
+    if from_date < today - LEAVE_BACKDATE_LIMIT:
+        raise LeaveNotAllowed(
+            'Leave can be applied for up to %d days after the event. Speak to '
+            'the department about anything older.' % LEAVE_BACKDATE_LIMIT.days)
+
+    clash = (LeaveRequest.objects
+             .filter(student=student, from_date__lte=to_date,
+                     to_date__gte=from_date)
+             .exclude(status__in=[LEAVE_REJECTED, LEAVE_WITHDRAWN])
+             .first())
+    if clash is not None:
+        raise LeaveNotAllowed(
+            'You already have an application covering %s to %s.'
+            % (clash.from_date.strftime('%d %b'),
+               clash.to_date.strftime('%d %b %Y')))
+
+
+@transaction.atomic
+def apply_for_leave(student, category, from_date, to_date, reason, actor,
+                    document=None):
+    """Record a student's application. Nothing is excused until it is approved."""
+    check_leave_dates(student, from_date, to_date)
+
+    leave = LeaveRequest.objects.create(
+        student=student, category=category, from_date=from_date,
+        to_date=to_date, reason=reason.strip(), document=document)
+    AuditLog.record(
+        actor=actor, action='leave.applied', target=leave, student=student,
+        summary='%s applied for %s leave, %s to %s'
+                % (student.name, category.lower(), from_date, to_date))
+    return leave
+
+
+@transaction.atomic
+def approve_leave(leave, actor, response=''):
+    """Approve, and excuse the absences already marked inside the range.
+
+    Sessions still to come are handled by `submit_attendance`, which checks
+    for approved leave as the register is filled in. Approving therefore has
+    two halves, and this is the retrospective one.
+    """
+    if not leave.is_open:
+        raise LeaveNotAllowed('That application has already been answered.')
+
+    excused = (Attendance.objects
+               .filter(student=leave.student, status=False,
+                       date__gte=leave.from_date, date__lte=leave.to_date)
+               .update(is_excused=True))
+
+    leave.status = LEAVE_APPROVED
+    leave.sessions_excused = excused
+    leave.response = (response or '').strip()
+    leave.reviewed_by = actor if getattr(actor, 'is_authenticated', False) else None
+    leave.reviewed_at = timezone.now()
+    leave.save()
+
+    AuditLog.record(
+        actor=actor, action='leave.approved', target=leave,
+        student=leave.student,
+        summary='%s to %s approved; %d session%s excused'
+                % (leave.from_date, leave.to_date, excused,
+                   '' if excused == 1 else 's'))
+    return leave
+
+
+@transaction.atomic
+def reject_leave(leave, actor, response):
+    if not leave.is_open:
+        raise LeaveNotAllowed('That application has already been answered.')
+    if not (response or '').strip():
+        raise LeaveNotAllowed('Say why it is refused.')
+
+    leave.status = LEAVE_REJECTED
+    leave.response = response.strip()
+    leave.reviewed_by = actor if getattr(actor, 'is_authenticated', False) else None
+    leave.reviewed_at = timezone.now()
+    leave.save()
+
+    AuditLog.record(
+        actor=actor, action='leave.rejected', target=leave,
+        student=leave.student,
+        summary='%s to %s refused' % (leave.from_date, leave.to_date))
+    return leave
+
+
+@transaction.atomic
+def withdraw_leave(leave, actor):
+    """The student cancelling their own application before it is answered."""
+    if not leave.is_open:
+        raise LeaveNotAllowed('That application has already been answered.')
+
+    leave.status = LEAVE_WITHDRAWN
+    leave.save(update_fields=['status'])
+    AuditLog.record(
+        actor=actor, action='leave.withdrawn', target=leave,
+        student=leave.student,
+        summary='%s withdrew their leave application for %s to %s'
+                % (leave.student.name, leave.from_date, leave.to_date))
+    return leave
