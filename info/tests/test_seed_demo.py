@@ -11,6 +11,7 @@ import shutil
 import tempfile
 from io import StringIO
 
+from django.contrib.auth import authenticate, get_user_model
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 
@@ -27,6 +28,8 @@ from info.models import (
     Notification,
     Student,
 )
+
+User = get_user_model()
 
 MEDIA = tempfile.mkdtemp()
 
@@ -83,8 +86,23 @@ class SeedDemoTests(TestCase):
         with leave.document.open('rb') as handle:
             self.assertTrue(handle.read(4).startswith(b'%PDF'))
 
+    def test_the_approved_leave_actually_excused_something(self):
+        leave = LeaveRequest.objects.filter(status=LEAVE_APPROVED).get()
+
+        # An approval that excused nothing reads as the feature not working.
+        self.assertGreaterEqual(leave.sessions_excused, 1)
+        self.assertIn('excused', leave.outcome)
+        self.assertTrue(
+            Attendance.objects.filter(student=leave.student,
+                                      is_excused=True).exists())
+
     def test_the_bell_is_not_empty_on_a_fresh_demo(self):
         self.assertTrue(Notification.objects.unread().exists())
+
+    def test_demo_logins_are_off_unless_asked_for(self):
+        # The published passwords are weak on purpose; nothing should create
+        # them without being told to.
+        self.assertNotIn('admin12345', self.output.getvalue())
 
     def test_running_it_twice_refuses_rather_than_doubling_everything(self):
         before = Student.objects.count()
@@ -94,3 +112,52 @@ class SeedDemoTests(TestCase):
 
         self.assertIn('already has students', output.getvalue())
         self.assertEqual(Student.objects.count(), before)
+
+
+@override_settings(MEDIA_ROOT=MEDIA)
+class DemoLoginTests(TestCase):
+    """The three accounts the portfolio page advertises."""
+
+    @classmethod
+    def setUpTestData(cls):
+        with override_settings(MEDIA_ROOT=MEDIA):
+            call_command('seed_demo', '--demo-logins', stdout=StringIO())
+
+    def test_all_three_can_sign_in(self):
+        for username, password in [('admin', 'admin12345'),
+                                   ('teststud', 'testpass123'),
+                                   ('testteach', 'testpass123')]:
+            with self.subTest(user=username):
+                self.assertIsNotNone(authenticate(username=username,
+                                                  password=password))
+
+    def test_they_land_on_their_own_role(self):
+        admin = User.objects.get(username='admin')
+        student = User.objects.get(username='teststud')
+        teacher = User.objects.get(username='testteach')
+
+        self.assertTrue(admin.is_superuser)
+        self.assertTrue(student.is_student)
+        self.assertTrue(teacher.is_teacher)
+
+    def test_the_demo_student_has_a_populated_record(self):
+        # Attached to somebody the seed already built, so signing in shows a
+        # term of attendance rather than an empty shell.
+        student = User.objects.get(username='teststud').student
+
+        self.assertTrue(student.attendance_set.exists()
+                        if hasattr(student, 'attendance_set')
+                        else Attendance.objects.filter(student=student).exists())
+
+    def test_nobody_is_met_by_the_change_password_screen(self):
+        for username in ('admin', 'teststud', 'testteach'):
+            with self.subTest(user=username):
+                self.assertFalse(
+                    User.objects.get(username=username).must_change_password)
+
+    def test_the_replaced_login_does_not_linger(self):
+        # The seeded student had their own random-password account; two logins
+        # pointing at one student is not a state worth having.
+        self.assertEqual(
+            User.objects.filter(student__isnull=False).count(),
+            Student.objects.filter(user__isnull=False).count())

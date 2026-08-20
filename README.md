@@ -146,7 +146,7 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-741 tests covering the attendance, CIE, grade and fee calculations, role and
+748 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.

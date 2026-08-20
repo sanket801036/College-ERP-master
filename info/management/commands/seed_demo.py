@@ -82,6 +82,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--reset', action='store_true',
                             help='Delete existing demo data first.')
+        parser.add_argument(
+            '--demo-logins', action='store_true',
+            help='Also create the three published demo accounts (admin, '
+                 'teststud, testteach) with their known passwords.')
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -174,8 +178,57 @@ class Command(BaseCommand):
         for role, name, username, password in credentials:
             self.stdout.write('%-9s %-18s %-16s %s' % (role, name, username,
                                                        password))
+        if options['demo_logins']:
+            self._demo_logins(students[0], teachers['t101'])
+        else:
+            self.stdout.write(
+                '\nCreate an admin with: python manage.py createsuperuser\n')
+
+    def _demo_logins(self, student, teacher):
+        """The three accounts a public demo advertises.
+
+        Deliberately fixed and deliberately weak: they are printed on a
+        portfolio page for strangers to try, so the passwords are the point
+        rather than an oversight. Everything else this command creates gets a
+        random one.
+
+        They attach to people the seed already created rather than making new
+        ones, so signing in as the demo student lands on a populated
+        timetable, attendance and marks instead of an empty shell.
+        """
+        accounts = [
+            ('admin', 'admin12345', None),
+            ('teststud', 'testpass123', student),
+            ('testteach', 'testpass123', teacher),
+        ]
+
+        for username, password, profile in accounts:
+            user = User.objects.filter(username=username).first()
+            if user is None:
+                user = User(username=username,
+                            email='%s@example.edu' % username)
+            user.set_password(password)
+            # An account handed to a stranger should not be met by the
+            # change-your-password screen the moment they sign in.
+            user.must_change_password = False
+            user.is_superuser = user.is_staff = profile is None
+            user.save()
+
+            if profile is not None:
+                # The seeded person's own login is replaced rather than left
+                # beside this one: two accounts pointing at one student is not
+                # a state the app should have to reason about.
+                previous = profile.user
+                profile.user = user
+                profile.save(update_fields=['user'])
+                if previous is not None and previous.pk != user.pk:
+                    previous.delete()
+
+        self.stdout.write(self.style.SUCCESS('PUBLISHED DEMO LOGINS'))
+        for username, password, _ in accounts:
+            self.stdout.write('  %-12s %s' % (username, password))
         self.stdout.write(
-            '\nCreate an admin with: python manage.py createsuperuser\n')
+            '  These are public by design. Do not reuse them anywhere real.')
 
     def _make_user(self, first_name, suffix):
         password = get_random_string(10, 'abcdefghijkmnpqrstuvwxyz23456789')
@@ -299,9 +352,21 @@ class Command(BaseCommand):
         notifications.announce(notifications.messages_for_query_raised(waiting))
 
         # Leave: one approved with a certificate, one waiting.
+        #
+        # The dates come from a real absence rather than a guess. Picking
+        # "three days ago" and hoping produces an approval that excused
+        # nothing, which reads as the feature not working - the whole point of
+        # approving leave is the sessions it takes out of the percentage.
+        absent_on = (Attendance.objects
+                     .filter(student=students[0], status=False,
+                             is_excused=False,
+                             date__gte=date.today() - timedelta(days=12),
+                             date__lte=date.today())
+                     .order_by('-date')
+                     .values_list('date', flat=True).first())
+        first_day = absent_on or date.today() - timedelta(days=3)
         approved = services.apply_for_leave(
-            students[0], 'Medical', date.today() - timedelta(days=3),
-            date.today() - timedelta(days=2),
+            students[0], 'Medical', first_day, first_day,
             'Viral fever - certificate from the college doctor attached.',
             students[0].user, document=self._certificate())
         services.approve_leave(approved, teacher.user,

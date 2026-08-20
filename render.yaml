@@ -1,8 +1,8 @@
-databases:
-  - name: college-erp-db
-    plan: free
-    databaseName: college_erp
-    user: college_erp
+# No `databases:` block. Render's free Postgres expires 30 days after it is
+# created and then gets deleted, backups are not offered on it, and a demo that
+# quietly dies a month after the interview link goes out is worse than no demo.
+# The database is Neon instead - free tier, no expiry - and it reaches this
+# service the same way any other secret does, through DATABASE_URL below.
 
 services:
   - type: web
@@ -12,10 +12,13 @@ services:
     buildCommand: "./build.sh"
     startCommand: "gunicorn CollegeERP.wsgi:application"
     envVars:
+      # sync:false rather than fromDatabase: the connection string belongs to
+      # a database this blueprint does not own, and it is a password, so it
+      # cannot live in the repository. Render asks for it on a new blueprint;
+      # on a service that already exists it has to be pasted in once, under
+      # Environment.
       - key: DATABASE_URL
-        fromDatabase:
-          name: college-erp-db
-          property: connectionString
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
