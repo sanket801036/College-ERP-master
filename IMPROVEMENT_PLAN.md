@@ -276,6 +276,19 @@ python manage.py shell -c "from django.core.files.storage import default_storage
 real test is the one that matters to a visitor: upload a photo, redeploy, and
 see that it is still there.
 
+### Keeping an eye on it
+
+`/healthz` answers `{"status": "ok", "database": true}` and touches the
+database to say so - an instance that booted but cannot reach Postgres serves
+500s on every page, and a check that only proves the web server is listening
+would call that healthy. Point Render's health check at it, or any uptime
+monitor.
+
+A monitor pinging it every ten minutes also keeps the free instance from
+spinning down, which is what turns a 50-second first load into an immediate
+one. Free instance hours are finite (750 a month, and one always-on service is
+about 730), so that is a deliberate trade rather than a free win.
+
 ### The scheduler
 
 `send_notifications` sends fee reminders, low-attendance warnings, marks

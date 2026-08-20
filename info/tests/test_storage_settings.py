@@ -88,3 +88,46 @@ class DatabaseConnectionTests(SimpleTestCase):
 
         self.assertLessEqual(module.DATABASES['default']['CONN_MAX_AGE'], 300)
         self.assertTrue(module.DATABASES['default']['CONN_HEALTH_CHECKS'])
+
+
+class DeploymentCheckTests(SimpleTestCase):
+    """The check that would have caught the live misconfiguration.
+
+    On the deployed service the bucket, region and credentials were all set
+    and the endpoint was not, so boto3 signed for Backblaze and addressed
+    Amazon. Files were written and every link pointed somewhere they were not.
+    """
+
+    def run_check(self, **overrides):
+        from info.checks import check_object_storage
+
+        defaults = {'USE_S3': True, 'AWS_S3_REGION_NAME': 'us-east-005',
+                    'AWS_S3_ENDPOINT_URL': 'https://s3.us-east-005.backblazeb2.com',
+                    'AWS_ACCESS_KEY_ID': 'id', 'AWS_SECRET_ACCESS_KEY': 'secret'}
+        defaults.update(overrides)
+        with self.settings(**defaults):
+            return [w.id for w in check_object_storage(None)]
+
+    def test_a_complete_configuration_is_quiet(self):
+        self.assertEqual(self.run_check(), [])
+
+    def test_local_storage_is_not_asked_about_buckets(self):
+        self.assertEqual(self.run_check(USE_S3=False), [])
+
+    def test_a_non_aws_region_without_an_endpoint_is_flagged(self):
+        self.assertIn('info.W001', self.run_check(AWS_S3_ENDPOINT_URL=None))
+
+    def test_cloudflares_region_is_flagged_the_same_way(self):
+        self.assertIn('info.W001',
+                      self.run_check(AWS_S3_REGION_NAME='auto',
+                                     AWS_S3_ENDPOINT_URL=None))
+
+    def test_a_real_aws_region_needs_no_endpoint(self):
+        for region in ('us-east-1', 'ap-south-1', 'eu-west-2'):
+            with self.subTest(region=region):
+                self.assertEqual(
+                    self.run_check(AWS_S3_REGION_NAME=region,
+                                   AWS_S3_ENDPOINT_URL=None), [])
+
+    def test_a_bucket_without_credentials_is_flagged(self):
+        self.assertIn('info.W002', self.run_check(AWS_SECRET_ACCESS_KEY=''))

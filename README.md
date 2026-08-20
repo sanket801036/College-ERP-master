@@ -37,6 +37,13 @@ password shown once), record fee payments, and see average attendance, students
 at risk, outstanding fees and a feed of who changed what. The full Django admin
 covers departments, courses, classes and teaching assignments.
 
+Five wrong passwords on one account in a quarter of an hour, or twenty from
+one address across any accounts, and the form stops checking passwords for a
+while - the second catches the spray of one common password across a whole
+class list, which no per-account count would notice. Signing in successfully
+clears the count. `/healthz` reports whether this instance can actually reach
+the database, rather than only whether gunicorn is listening.
+
 Anyone locked out can reset their own password: a six-digit code goes to
 the address on the account, expires in ten minutes, works once, and locks
 after five wrong guesses. The page answers identically whether or not the
@@ -146,7 +153,7 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-748 tests covering the attendance, CIE, grade and fee calculations, role and
+765 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.

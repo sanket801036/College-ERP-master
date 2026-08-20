@@ -12,9 +12,9 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Count, Q
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -320,6 +320,27 @@ def _students_by_dept():
             .order_by('-total'))
     return [(row['class_id__dept__name'] or 'Unassigned', row['total'])
             for row in rows]
+
+
+def healthz(request):
+    """Is this instance actually able to serve a request?
+
+    Deliberately touches the database. An instance that has booted but cannot
+    reach Postgres answers every page with a 500, and a check that only proves
+    gunicorn is listening would call that healthy - which is the state worth
+    catching, since the database is a separate service that sleeps, closes
+    idle connections and has its credentials rotated.
+
+    Open on purpose: a monitor cannot sign in. It says nothing beyond ok or
+    not, so there is nothing here worth reading.
+    """
+    try:
+        connection.ensure_connection()
+    except Exception:
+        logger.exception('Health check could not reach the database')
+        return JsonResponse({'status': 'error', 'database': False}, status=503)
+
+    return JsonResponse({'status': 'ok', 'database': True})
 
 
 @login_required()

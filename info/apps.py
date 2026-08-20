@@ -7,5 +7,6 @@ class InfoConfig(AppConfig):
 
     def ready(self):
         # Importing for the side effect of connecting the auth signal
-        # receivers; nothing else references this module.
-        from info import signals  # noqa: F401
+        # receivers and registering the deployment checks; nothing else
+        # references either module.
+        from info import checks, signals  # noqa: F401

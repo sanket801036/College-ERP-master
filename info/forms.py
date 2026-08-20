@@ -23,6 +23,8 @@ from info.models import (
     fee_type_choice,
     notice_audience_choice,
 )
+from info.security import lockout_state
+from info.signals import client_ip
 
 User = get_user_model()
 
@@ -357,7 +359,28 @@ class ErpLoginForm(AuthenticationForm):
     error_messages = dict(AuthenticationForm.error_messages, **{
         'wrong_role': 'That account is not registered as %(role)s. '
                       'Pick the right tab and try again.',
+        'locked_out': 'Too many failed sign-in attempts. Try again in '
+                      '%(minutes)s minute%(plural)s, or use Contact '
+                      'Administrator below.',
     })
+
+    def clean(self):
+        """Refuse to even check the password once somebody is guessing.
+
+        Before authenticate(), deliberately: calling it while locked would let
+        the right password through on the sixth try, which is the try worth
+        stopping. It also means a hammering client stops generating rows -
+        every POST that reaches authenticate() writes a LoginEvent, and an
+        attacker should not be able to fill a table by being refused.
+        """
+        username = self.cleaned_data.get('username') or self.data.get('username', '')
+        locked, minutes = lockout_state(username, client_ip(self.request))
+        if locked:
+            raise forms.ValidationError(
+                self.error_messages['locked_out'], code='locked_out',
+                params={'minutes': minutes, 'plural': '' if minutes == 1 else 's'})
+
+        return super().clean()
 
     def confirm_login_allowed(self, user):
         super().confirm_login_allowed(user)

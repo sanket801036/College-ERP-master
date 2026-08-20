@@ -7,6 +7,7 @@ from django.urls import include, path
 from info.views import (
     ErpLoginView,
     ErpPasswordChangeView,
+    healthz,
     password_reset_request,
     password_reset_set,
     password_reset_verify,
@@ -14,6 +15,10 @@ from info.views import (
 )
 
 urlpatterns = [
+    # Before the app's own routes: a monitor asking whether this instance is
+    # alive should not depend on anything the app does with sessions or roles.
+    path('healthz', healthz, name='healthz'),
+
     path('admin/', admin.site.urls),
     path('', include('info.urls')),
     path('info/', include('info.urls')),
