@@ -8,25 +8,37 @@ to fail outright.
 
     python manage.py seed_demo
 """
+import io
 import random
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils.crypto import get_random_string
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
+from info import notifications, services
 from info.models import (
     Assign,
     AssignTime,
     Attendance,
     AttendanceClass,
+    AttendanceCorrection,
     AttendanceRange,
     Class,
     Course,
     Dept,
     Fee,
+    LeaveRequest,
+    MarkQuery,
+    Marks,
+    MarksClass,
     Notice,
+    Notification,
     Student,
     Teacher,
 )
@@ -75,9 +87,14 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if options['reset']:
             self.stdout.write('Clearing existing data...')
-            for model in (Attendance, AttendanceClass, AssignTime, Assign,
-                          Fee, Notice, Student, Teacher, Course, Class, Dept,
-                          AttendanceRange):
+            # Children before parents. Most of these would cascade anyway, but
+            # Notification hangs off User rather than Student, so a re-seed
+            # would otherwise leave the bell counting messages about people who
+            # no longer exist.
+            for model in (Notification, MarkQuery, AttendanceCorrection,
+                          LeaveRequest, Attendance, AttendanceClass,
+                          AssignTime, Assign, Fee, Notice, Student, Teacher,
+                          Course, Class, Dept, AttendanceRange):
                 model.objects.all().delete()
 
             # Deleting the Student/Teacher rows leaves their login accounts
@@ -148,6 +165,8 @@ class Command(BaseCommand):
         self._fill_marks(assigns, students)
         self._fill_fees(students)
         self._add_notices()
+        self._publish_marks(assigns)
+        self._add_workflows(assigns, teachers, students)
 
         self.stdout.write(self.style.SUCCESS('\nDemo data created.\n'))
         self.stdout.write('%-9s %-18s %-16s %s' % ('ROLE', 'NAME', 'USERNAME',
@@ -185,7 +204,7 @@ class Command(BaseCommand):
         self.stdout.write('  attendance: %d records' % len(rows))
 
     def _fill_marks(self, assigns, students):
-        from info.models import MarksClass, StudentCourse
+        from info.models import StudentCourse
 
         entered = ['Internal test 1', 'Internal test 2']
         count = 0
@@ -231,3 +250,126 @@ class Command(BaseCommand):
                     'month.',
             audience='Teachers')
         self.stdout.write('  notices: 3')
+
+    def _publish_marks(self, assigns):
+        """Release the first internal, and tell the class it is out.
+
+        Publication is what a student can see, and it is also what opens the
+        seven-day window for questioning a mark - so without this the
+        re-evaluation workflow below would have nothing to work on.
+        """
+        for assign in assigns.values():
+            batch = MarksClass.objects.get(assign=assign,
+                                           name='Internal test 1')
+            batch.publish()
+            notifications.announce(notifications.messages_for_batch(batch))
+        self.stdout.write('  marks published: internal test 1')
+
+    def _add_workflows(self, assigns, teachers, students):
+        """One of each request-and-approve workflow, in both states.
+
+        A demo where every queue is empty shows none of this, so each workflow
+        gets one answered case and one still waiting - which is also what the
+        teacher's queues need in order to look like queues.
+        """
+        teacher = teachers['t101']
+        course = assigns['CS501'].course
+
+        # Re-evaluation: one accepted, one still open.
+        settled = Marks.objects.get(studentcourse__student=students[2],
+                                    studentcourse__course=course,
+                                    name='Internal test 1')
+        query = services.raise_mark_query(
+            settled, students[2],
+            'Question 4(b) is marked out of 5 on my paper but the scheme says '
+            '10. Could you check the total?', students[2].user)
+        services.resolve_mark_query(
+            query, teacher.user, accept=True,
+            response='You are right, the total was added wrong. Corrected.',
+            new_mark=min(settled.total_marks, settled.marks1 + 3))
+        notifications.announce(notifications.messages_for_query_resolved(query))
+
+        pending = Marks.objects.get(studentcourse__student=students[3],
+                                    studentcourse__course=course,
+                                    name='Internal test 1')
+        waiting = services.raise_mark_query(
+            pending, students[3],
+            'I answered the last question on the back of the sheet and I do '
+            'not think it was seen.', students[3].user)
+        notifications.announce(notifications.messages_for_query_raised(waiting))
+
+        # Leave: one approved with a certificate, one waiting.
+        approved = services.apply_for_leave(
+            students[0], 'Medical', date.today() - timedelta(days=3),
+            date.today() - timedelta(days=2),
+            'Viral fever - certificate from the college doctor attached.',
+            students[0].user, document=self._certificate())
+        services.approve_leave(approved, teacher.user,
+                               'Certificate received. Get well.')
+        notifications.announce(notifications.messages_for_leave_decided(approved))
+
+        upcoming = services.apply_for_leave(
+            students[1], 'Official duty', date.today() + timedelta(days=2),
+            date.today() + timedelta(days=3),
+            'Selected for the inter-college hackathon at the city campus.',
+            students[1].user)
+        notifications.announce(notifications.messages_for_leave_applied(upcoming))
+
+        # Attendance dispute: one accepted, one waiting.
+        disputes = 0
+        for student, reason, accept in [
+            (students[4], 'I was in the lab that morning and signed the '
+                          'sheet - I think it was passed round late.', True),
+            (students[5], 'I came in after the roll call because the bus was '
+                          'diverted. I was there for the whole class.', False),
+        ]:
+            # The most recent session inside the seven-day window, whatever
+            # it says. Waiting for the random marking above to hand us an
+            # absence in the right week means the demo sometimes ships with an
+            # empty queue, so the absence is arranged rather than hoped for.
+            record = (Attendance.objects
+                      .filter(student=student, course=course,
+                              date__gte=date.today() - timedelta(days=6),
+                              date__lte=date.today())
+                      .order_by('-date').first())
+            if record is None:
+                continue
+            if record.status or record.is_excused:
+                record.status = False
+                record.is_excused = False
+                record.save(update_fields=['status', 'is_excused'])
+
+            dispute = services.dispute_attendance(record, student, reason,
+                                                  student.user)
+            disputes += 1
+            if accept:
+                services.resolve_correction(
+                    dispute, teacher.user, accept=True,
+                    response='Found your signature on the sheet. Corrected.')
+                notifications.announce(
+                    notifications.messages_for_dispute_resolved(dispute))
+            else:
+                notifications.announce(
+                    notifications.messages_for_dispute_raised(dispute))
+
+        self.stdout.write('  workflows: 2 mark queries, 2 leave applications, '
+                          '%d attendance disputes' % disputes)
+
+    def _certificate(self):
+        """A one-line PDF, so the leave application has a real attachment.
+
+        Also the end-to-end proof that object storage is wired up: this is a
+        file written through whatever STORAGES points at, and on the deployed
+        site it has to survive the next redeploy.
+        """
+        buffer = io.BytesIO()
+        page = canvas.Canvas(buffer, pagesize=A4)
+        page.setFont('Helvetica-Bold', 14)
+        page.drawString(25 * mm, 260 * mm, 'Medical certificate')
+        page.setFont('Helvetica', 11)
+        page.drawString(25 * mm, 248 * mm,
+                        'This is demonstration data, not a real certificate.')
+        page.showPage()
+        page.save()
+        buffer.seek(0)
+        return ContentFile(buffer.read(), name='certificate.pdf')

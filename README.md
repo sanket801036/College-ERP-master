@@ -115,15 +115,28 @@ semester date range to exist first.
 Configuration comes from environment variables (see `.env.example`):
 `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, or a single
 `DATABASE_URL`; plus `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` and `LOG_LEVEL`.
+`DATABASE_URL` is what the deployment uses, which is why the database provider
+is a paste rather than a migration - it runs on serverless Postgres (Neon),
+and connections are capped at five minutes with health checks on, because that
+is when an idle serverless instance closes them underneath you.
 
 Two optional groups, both of which degrade rather than break when unset:
 
 - `EMAIL_HOST` and friends. Without them mail is printed to the console, which
   is what local development wants; with them it is sent.
-- `AWS_STORAGE_BUCKET_NAME` and its credentials. Without them uploads go to
-  `MEDIA_ROOT` on the local disk, which is fine locally and under
-  docker-compose. On Render that disk does not survive a redeploy, so set these
-  to keep profile photos.
+- `AWS_STORAGE_BUCKET_NAME`, `AWS_S3_REGION_NAME`, `AWS_S3_ENDPOINT_URL` and
+  the two credentials. Without them uploads go to `MEDIA_ROOT` on the local
+  disk, which is fine locally and under docker-compose. On Render that disk
+  does not survive a redeploy, so without them profile photos and leave
+  certificates are lost on every deploy.
+
+  "AWS" there names the protocol rather than the vendor: this talks the S3 API
+  through `boto3`, and the deployment points it at Backblaze B2, whose free
+  tier does not expire the way AWS's twelve months does. The endpoint variable
+  is the only difference - S3 itself, Cloudflare R2 and MinIO all work the same
+  way, so moving between them is a change of configuration rather than of code.
+  Uploads are photographs of people and medical certificates, so the bucket is
+  private and every link is signed and expires after an hour.
 
 ## Tests and linting
 
@@ -133,7 +146,7 @@ ruff check .
 pip-audit -r requirements.txt
 ```
 
-727 tests covering the attendance, CIE, grade and fee calculations, role and
+741 tests covering the attendance, CIE, grade and fee calculations, role and
 ownership checks on every teacher view, form validation, timetable clash
 detection, the audit trail, the charts, the API, and query counts on the list
 pages. All three run in CI on every push.

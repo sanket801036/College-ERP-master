@@ -43,3 +43,22 @@ services:
         sync: false
       - key: DEFAULT_FROM_EMAIL
         sync: false
+      # Uploads. This disk does not survive a deploy, so without these the
+      # profile photos and leave certificates are gone every time the service
+      # restarts. All five are sync:false: the bucket and region are not
+      # secret, but they belong to whoever deployed this rather than to the
+      # repository, and an existing service is not given sync:false values
+      # retrospectively - they are added by hand in the dashboard once.
+      #
+      # Set for Backblaze B2 in this deployment; the endpoint is what makes it
+      # any S3-compatible provider rather than AWS specifically.
+      - key: AWS_STORAGE_BUCKET_NAME
+        sync: false
+      - key: AWS_S3_REGION_NAME
+        sync: false
+      - key: AWS_S3_ENDPOINT_URL
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false

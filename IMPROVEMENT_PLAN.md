@@ -144,7 +144,7 @@ has credentials for yet.
 
 ---
 
-## Deployment runbook — switching email and the scheduler on
+## Deployment runbook — what the code cannot do for itself
 
 Two things the code cannot do for itself: neither a secret nor a cron entry
 belongs in a git repository, so both are settings on the host. Everything else
@@ -209,6 +209,72 @@ switches `EMAIL_BACKEND` to Django's console backend, so mail is written to
 the service log instead of sent. The password reset flow then works, prints
 its code to the log, and nobody receives it - useful locally, not much use in
 a demo.
+
+### The database
+
+Render's free Postgres **expires 30 days after it is created**, then allows a
+14-day grace period to upgrade, then deletes the database and everything in it.
+Free instances also have no backups of any kind. For a portfolio demo that is a
+countdown to the day an interviewer opens the link and finds a 500.
+
+So the deployment runs on **Neon**: its free tier does not expire, 0.5 GB is
+several times what this database needs, and it suspends after five minutes idle
+and wakes on the next connection without anybody doing anything. Supabase was
+the alternative and is rejected for one reason: its free project *pauses* after
+a week of inactivity and a human has to resume it, which is precisely the
+failure a rarely-visited demo cannot afford.
+
+Moving there is a paste, not a migration, because the app reads `DATABASE_URL`:
+
+1. Neon → create a project → copy the connection string.
+2. From the Render shell, `python manage.py backup_db --output backup.json.gz`,
+   and download it in the same session - that disk does not survive the deploy.
+3. Locally, against the Neon URL: `migrate`, then `loaddata backup.json.gz`.
+   Or skip both and run `seed_demo` instead if the demo data is all that
+   matters.
+4. Set `DATABASE_URL` on the Render service to the Neon string, deploy, and
+   check the site. Keep the Render database until then; delete it afterwards.
+
+`conn_max_age` is 300 with `conn_health_checks=True` for this: a serverless
+instance closes idle connections at five minutes, and a pooled connection held
+for ten is a dead socket handed to the next request.
+
+### Uploads
+
+`MEDIA_ROOT` on Render is ephemeral, so profile photos and - since the leave
+workflow - medical certificates vanish on every deploy. The fix is object
+storage, and the app already speaks the S3 API through `boto3`, so this is five
+environment variables rather than any code:
+
+| Variable | Example |
+|---|---|
+| `AWS_STORAGE_BUCKET_NAME` | `college-erp-media` |
+| `AWS_S3_REGION_NAME` | `us-west-004` |
+| `AWS_S3_ENDPOINT_URL` | `https://s3.us-west-004.backblazeb2.com` |
+| `AWS_ACCESS_KEY_ID` | the application key id |
+| `AWS_SECRET_ACCESS_KEY` | the application key |
+
+Backblaze B2 is the provider: 10 GB free with no twelve-month cliff, and it
+speaks S3. Cloudflare R2 is equally good and needs a card linked to activate;
+AWS S3 works with the endpoint left unset. Whichever it is, make the bucket
+**private** and restrict the application key to that one bucket - these are
+photographs of people and medical certificates. Access comes from the signed,
+one-hour URLs the app already generates, not from public objects.
+
+`AWS_DEFAULT_ACL` stays `None` because B2 has no object-level ACLs at all;
+sending one is an error there rather than a stricter setting.
+
+**Checking it worked**, from the Render shell:
+
+```bash
+python manage.py shell -c "from django.core.files.storage import default_storage as s; \
+  print(type(s).__name__); f=s.save('probe.txt', __import__('django').core.files.base.ContentFile(b'ok')); \
+  print(s.url(f)); s.delete(f)"
+```
+
+`S3Storage` and a signed URL on your bucket's host means it is wired up. The
+real test is the one that matters to a visitor: upload a photo, redeploy, and
+see that it is still there.
 
 ### The scheduler
 
@@ -1832,7 +1898,7 @@ Every view in `info/views.py` (33 total), checked against what this document act
 
 | # | Issue | Detail |
 |---|---|---|
-| CF1 | **Media files are not configured** | `MEDIA_ROOT` is `''` and `MEDIA_URL` is `'/'` (verified). Profile photos (AC16) and notice attachments (NB8) have nowhere to go. **And Render's filesystem is ephemeral**, so even once configured, uploads vanish on every redeploy — this needs S3, Cloudinary or similar, not just a settings change. Worth knowing before promising either feature |
+| CF1 | **Media files are not configured** | 🟢 **Done.** `MEDIA_ROOT`/`MEDIA_URL` were fixed with the profile-photo work; this closes the deployment half. `AWS_S3_ENDPOINT_URL` makes the existing S3 backend point at any S3-compatible provider - the deployment uses Backblaze B2, whose free tier does not expire after twelve months the way AWS's does. Private bucket, signed links, one-hour expiry, and `AWS_DEFAULT_ACL = None` because B2 has no object-level ACLs to set. The variables are declared `sync: false` in `render.yaml` so the secrets never enter git |
 | CF2 | **No logging configuration** | `LOGGING` is empty (verified). With `DEBUG=False` in production, unhandled exceptions produce a 500 page and **no record anywhere**. Given how many 500 paths this document catalogues, this should be near the top of the list. Console handler at minimum |
 | CF3 | **Email backend points at a non-existent SMTP server** | `EMAIL_BACKEND` is the SMTP backend with no host configured, and `DEFAULT_FROM_EMAIL` is still `webmaster@localhost` (verified). Every mail-dependent feature — OTP (§5.1), fee reminders (FE22), notice notifications (NB17) — will fail at send time. Use the console backend in development and configure real SMTP via environment variables for production |
 | CF4 | **`TIME_ZONE` is UTC** | `USE_TZ=True` with `TIME_ZONE='UTC'` (verified). For a college in India this means attendance dates, session times and fee due dates all display in UTC — a 7:30 AM class straddles a date boundary. Set `Asia/Kolkata` |
@@ -1852,7 +1918,7 @@ Verified absent from the repository: `.github/`, `Dockerfile`, `docker-compose.y
 | IN5 | **No linting or formatting config** | No ruff/black/isort, no pre-commit. Formatting in `views.py` is already inconsistent (trailing whitespace, mixed quoting) |
 | IN6 | **No dependency scanning** | `requirements.txt` is pinned, which is good, but nothing checks for known CVEs. `pip-audit` in CI is a two-line addition |
 | IN7 | **No seed data / fixtures** | Directly connected to MD1: a fresh deploy has no `Dept`, `Course`, `Class` or `AttendanceRange`, so the app cannot be meaningfully demonstrated until someone hand-creates all of it through the admin. A `loaddata` fixture or a management command would make the deployed demo self-setting-up |
-| IN8 | **No database backups** | Render's free Postgres tier has a 90-day lifetime and no automated backups. A periodic `pg_dump` to somewhere durable is worth scripting before the demo has data worth keeping |
+| IN8 | **No database backups** | 🟢 **Addressed, and the deadline is shorter than this row first said.** Render's free Postgres expires **30 days** after creation - it was 90 when this was written - then a 14-day grace period, then Render deletes it and its data, and free instances support no backups at all. `backup_db` writes a gzipped `dumpdata` that loads into an empty database, which is also how the move off Render Postgres is done |
 
 ### 9.4 Quality attributes barely touched
 

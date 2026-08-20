@@ -94,8 +94,17 @@ WSGI_APPLICATION = 'CollegeERP.wsgi.application'
 
 if config('DATABASE_URL', default=''):
     # Render (and most PaaS providers) inject a single DATABASE_URL
+    #
+    # conn_max_age is 300 rather than 600 because serverless Postgres - Neon,
+    # which is where this deploys - closes idle connections after five minutes.
+    # Holding one for ten means handing a dead socket to the next request, which
+    # surfaces as an intermittent 500 that reproduces nowhere. The health check
+    # covers the same gap from the other side: a connection is tested before it
+    # is reused rather than discovered broken mid-query.
     DATABASES = {
-        'default': dj_database_url.config(conn_max_age=600, ssl_require=not DEBUG)
+        'default': dj_database_url.config(conn_max_age=300,
+                                          conn_health_checks=True,
+                                          ssl_require=not DEBUG)
     }
 else:
     DATABASES = {
@@ -156,9 +165,14 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Render's disk is ephemeral, so a file written to MEDIA_ROOT there is gone on
-# the next deploy. Set the AWS variables and uploads go to S3 instead; leave
-# them unset and it stays on the local disk, which is what local development
-# and docker-compose want.
+# the next deploy - which since the leave workflow landed means medical
+# certificates, not only profile photos. Set the AWS variables and uploads go to
+# object storage instead; leave them unset and it stays on the local disk, which
+# is what local development and docker-compose want.
+#
+# "AWS" here names the protocol, not the vendor. This talks the S3 API through
+# boto3, and the deployment uses Backblaze B2, which speaks it: swapping to AWS,
+# Cloudflare R2 or MinIO is a change of endpoint and credentials, not of code.
 AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default='')
 USE_S3 = bool(AWS_STORAGE_BUCKET_NAME)
 
@@ -176,8 +190,15 @@ if USE_S3:
     AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='')
     AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='')
     AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='')
-    # Uploads are photographs of people, so they are not world-readable and
-    # links are signed and expire.
+    # Empty for AWS itself, which boto3 addresses by region. Anything else -
+    # B2's https://s3.<region>.backblazeb2.com, R2, MinIO - needs telling where
+    # it lives.
+    AWS_S3_ENDPOINT_URL = config('AWS_S3_ENDPOINT_URL', default='') or None
+    # Uploads are photographs of people and medical certificates, so they are
+    # not world-readable and links are signed and expire. None rather than
+    # 'private' because B2 has no object-level ACLs at all - objects inherit the
+    # bucket's - and sending one is an error there. The bucket is private; the
+    # signing below is what grants access.
     AWS_DEFAULT_ACL = None
     AWS_QUERYSTRING_AUTH = True
     AWS_QUERYSTRING_EXPIRE = 3600
@@ -213,6 +234,25 @@ SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# HSTS tells the browser to refuse plain HTTP to this host for the given
+# window, which closes the gap the redirect above leaves open: the first
+# request of a session, before the redirect happens.
+#
+# An hour rather than a year, and no preload. HSTS cannot be taken back inside
+# its own window - a browser that has been told 'HTTPS only for a year' will
+# not talk to that host over HTTP for a year, however broken the certificate
+# turns out to be. An hour is safe to raise once the deployment has been
+# stable, which is the intended path rather than the default being timid
+# forever.
+#
+# includeSubDomains and preload stay off, and `check --deploy` will grumble
+# about both. On a shared host like *.onrender.com they are not ours to claim:
+# the demo owns one name under somebody else's domain. Turn them on with a
+# domain of your own.
+SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS',
+                             default=0 if DEBUG else 3600, cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = config('SECURE_HSTS_INCLUDE_SUBDOMAINS',
+                                        default=False, cast=bool)
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
