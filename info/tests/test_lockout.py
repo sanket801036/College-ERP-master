@@ -127,6 +127,26 @@ class HealthTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'status': 'ok', 'database': True})
 
+    def test_it_can_be_read_from_another_origin(self):
+        # The portfolio polls this from its own domain to know when a sleeping
+        # free-tier instance is back. Without the header the browser hides
+        # even the status code from it.
+        response = self.client.get('/healthz')
+
+        self.assertEqual(response['Access-Control-Allow-Origin'], '*')
+        self.assertEqual(response['Cache-Control'], 'no-store')
+
+    def test_the_unreachable_answer_is_readable_too(self):
+        from unittest import mock
+
+        # A poller that can read "ok" but not "down" waits out its whole
+        # timeout against an instance that is up and broken.
+        with mock.patch('info.views.connection.ensure_connection',
+                        side_effect=OSError('no route to host')):
+            response = self.client.get('/healthz')
+
+        self.assertEqual(response['Access-Control-Allow-Origin'], '*')
+
     def test_it_reports_the_database_being_unreachable(self):
         from unittest import mock
 

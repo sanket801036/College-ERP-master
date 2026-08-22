@@ -333,14 +333,27 @@ def healthz(request):
 
     Open on purpose: a monitor cannot sign in. It says nothing beyond ok or
     not, so there is nothing here worth reading.
+
+    Readable cross-origin for the same reason. The portfolio links here and
+    has to know when a sleeping free-tier instance is back before it sends
+    somebody at it; without the header the browser hides even the status code
+    and the caller is left guessing. A wildcard is honest about what this is -
+    two booleans, no session, nothing that varies by who asks.
     """
     try:
         connection.ensure_connection()
     except Exception:
         logger.exception('Health check could not reach the database')
-        return JsonResponse({'status': 'error', 'database': False}, status=503)
+        response = JsonResponse({'status': 'error', 'database': False},
+                                status=503)
+    else:
+        response = JsonResponse({'status': 'ok', 'database': True})
 
-    return JsonResponse({'status': 'ok', 'database': True})
+    response['Access-Control-Allow-Origin'] = '*'
+    # A poller asking every second must not be answered from a cache that
+    # remembers the instance was down.
+    response['Cache-Control'] = 'no-store'
+    return response
 
 
 @login_required()

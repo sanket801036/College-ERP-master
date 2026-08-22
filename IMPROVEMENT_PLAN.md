@@ -699,6 +699,21 @@ All three dashboards should:
 - Be keyboard-navigable (tab order, focus outlines)
 - Use semantic HTML (`<main>`, `<section>`, `<article>`)
 
+**Since done — the chrome, not yet the dashboards.** The blocker was not the
+dashboards at all: `theme.css` pinned the sidebar open at 270px at *every*
+width, deliberately and with `!important`, and no template rendered any
+control that could close it. A 360px phone got 90px of page and no way to
+change that. Below 992px it is now an off-canvas drawer (hamburger, backdrop,
+Esc, closes on navigation and on growing past the breakpoint); above it the
+rail is unchanged. With it: 16px form controls so iOS stops zooming the page
+in on focus and leaving it there, 44px tap targets, the last four unwrapped
+tables put in scroll containers, and a pinned day column on both timetables so
+scrolling sideways does not lose the row's name. `info/tests/test_mobile_nav.py`
+holds the parts that can be asserted.
+
+Still open here: the dashboards' own small-screen layout, and the semantic
+landmarks — the base template is still `div`-based throughout.
+
 ---
 
 ### 6.5 Additional Dashboard Feature Ideas
