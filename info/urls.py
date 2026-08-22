@@ -1,4 +1,3 @@
-from django.contrib import admin
 from django.urls import include, path
 
 from . import views
@@ -110,5 +109,3 @@ urlpatterns = [
     path('notices/<int:notice_id>/edit/', views.edit_notice, name='edit_notice'),
     path('notices/<int:notice_id>/delete/', views.delete_notice, name='delete_notice'),
 ]
-admin.site.site_url = None
-admin.site.site_header = 'My Site'

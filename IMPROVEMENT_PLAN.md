@@ -1834,6 +1834,38 @@ The admin is currently the **only** way to manage `Dept`, `Course`, `Class`, `As
 | AD5 | **Read-only audit fields** | Once audit models exist (FE29/MK19/TA-S7), surface them read-only |
 | AD6 | **Restrict staff access** | Any `is_staff` user reaches the full admin; scope it with permissions |
 
+**Since done — the skin, and the tests this section never had.** The admin was
+the last screen still wearing stock Django: it announced itself as **"My Site"**
+(set as an import-time side effect at the bottom of `info/urls.py`), used the
+teal-and-grey palette, and ignored the app's dark mode entirely — while the
+dashboard links into it twice, so "Full Admin" landed on what read as a
+different product.
+
+It is now an `ErpAdminSite` (`info/admin_site.py`, wired through
+`ErpAdminConfig` in `info/apps.py`), with `info/static/info/css/erp-admin.css`
+remapping Django 5.2's own CSS variables onto the `--erp-*` tokens — variables
+rather than element selectors, so nothing needs re-syncing when Django changes
+a rule. The index is grouped into People / Academics / Operations / Records
+with a row of counts, and anything unclassified falls into "Other" rather than
+off the page.
+
+One real bug fixed with it: Django's admin theme script reads a different
+`localStorage` key from the app's and wrote `data-theme="auto"` over whatever
+the ERP had already resolved — a value `theme.css` matches nowhere — so **a
+dark mode chosen in the app was discarded on every admin page.** Both sides now
+write the same two values to the same key.
+
+Also closed here: **AD3** in part (`NoticeAdmin` assigned `list_filter` twice,
+and the poorer tuple won, so three filters had never rendered), fieldsets on
+Student/Teacher/Fee/Notice, and a `UserAdmin` that can finally see
+`must_change_password` — the field `ForcePasswordChangeMiddleware` redirects on,
+previously invisible on the one screen meant for unsticking an account. **AD5**
+was already true and is now held by tests.
+
+Still open: **AD1** (clash validation), **AD4** (the `AttendanceRange` reset is
+still an unguarded destructive form — `info/tests/test_admin.py` now covers what
+it does, but does not make it ask first), **AD6**.
+
 #### 7.11.3 Error pages (G9)
 
 | # | Feature | Detail |

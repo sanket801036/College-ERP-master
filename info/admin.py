@@ -123,6 +123,15 @@ class StudentAdmin(admin.ModelAdmin):
     search_fields = ('USN', 'name', 'class_id__id', 'class_id__dept__name')
     ordering = ['class_id__dept__name', 'class_id__id', 'USN']
     actions = [deactivate, reactivate]
+    fieldsets = (
+        ('Identity', {'fields': ('USN', 'name', 'photo')}),
+        ('Enrolment', {
+            'fields': ('class_id', 'user', 'is_active'),
+            'description': 'Clearing is_active blocks sign-in and keeps every '
+                           'record; it is not a delete.',
+        }),
+        ('Personal', {'fields': ('sex', 'DOB', 'phone', 'address')}),
+    )
 
 
 class TeacherAdmin(admin.ModelAdmin):
@@ -131,6 +140,11 @@ class TeacherAdmin(admin.ModelAdmin):
     search_fields = ('name', 'dept__name')
     ordering = ['dept__name', 'name']
     actions = [deactivate, reactivate]
+    fieldsets = (
+        ('Identity', {'fields': ('id', 'name', 'photo')}),
+        ('Post', {'fields': ('dept', 'user', 'is_active')}),
+        ('Personal', {'fields': ('sex', 'DOB', 'phone', 'address')}),
+    )
 
 
 class AttendanceClassAdmin(admin.ModelAdmin):
@@ -189,6 +203,14 @@ class FeeAdmin(admin.ModelAdmin):
     search_fields = ('student__name', 'student__USN', 'fee_type')
     list_filter = ('fee_type', 'due_date')
     ordering = ['-due_date']
+    fieldsets = (
+        (None, {'fields': ('student', 'fee_type', 'description')}),
+        ('Amounts', {
+            'fields': ('amount', 'paid_amount', 'due_date'),
+            'description': 'paid_amount is the sum of the transactions below '
+                           'and is recalculated on save.',
+        }),
+    )
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
@@ -247,16 +269,53 @@ class AuditLogAdmin(admin.ModelAdmin):
         return False
 
 
+class ErpUserAdmin(UserAdmin):
+    """Stock UserAdmin does not know about the fields this project added.
+
+    `must_change_password` is what ForcePasswordChangeMiddleware redirects on,
+    and it was invisible here - so the one screen meant for fixing an account
+    could neither see that somebody was stuck behind the change-password wall
+    nor let them out of it.
+    """
+
+    list_display = UserAdmin.list_display + ('must_change_password',)
+    list_filter = UserAdmin.list_filter + ('must_change_password',)
+    fieldsets = UserAdmin.fieldsets + (
+        ('College ERP', {
+            'fields': ('must_change_password',),
+            'description': 'While this is set the account is redirected to '
+                           'the change-password screen on every request.',
+        }),
+    )
+    add_fieldsets = UserAdmin.add_fieldsets + (
+        ('College ERP', {'fields': ('must_change_password',)}),
+    )
+
+
 class NoticeAdmin(admin.ModelAdmin):
     list_display = ('title', 'category', 'audience', 'is_published', 'pinned',
                     'posted_by', 'created_at')
+    # There used to be a second `list_filter = ('audience',)` three lines
+    # below this one, which simply won - so the category, published and pinned
+    # filters had never appeared on the page despite being written down. Ruff's
+    # selected rules do not include PIE794, so nothing said a word.
     list_filter = ('category', 'audience', 'is_published', 'pinned')
     search_fields = ('title', 'message')
-    list_filter = ('audience',)
+    date_hierarchy = 'created_at'
     ordering = ['-created_at']
+    fieldsets = (
+        (None, {'fields': ('title', 'message')}),
+        ('Who sees it', {'fields': ('audience', 'category')}),
+        ('Publication', {
+            'fields': ('is_published', 'published_at', 'pinned', 'expires_at',
+                       'posted_by'),
+            'description': 'An unpublished notice is visible to nobody, '
+                           'whatever its audience.',
+        }),
+    )
 
 
-admin.site.register(User, UserAdmin)
+admin.site.register(User, ErpUserAdmin)
 admin.site.register(Dept, DeptAdmin)
 admin.site.register(Class, ClassAdmin)
 admin.site.register(Student, StudentAdmin)

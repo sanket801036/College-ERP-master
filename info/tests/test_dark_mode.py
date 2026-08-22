@@ -88,3 +88,15 @@ class PageTests(TestCase):
         response = self.client.get(reverse('password_reset'))
 
         self.assertContains(response, "setAttribute('data-theme'")
+
+    def test_the_django_admin_shares_the_same_choice(self):
+        # The admin is a different template tree with its own theme script, and
+        # Django's reads a different localStorage key - so a preference set in
+        # the app was discarded the moment somebody clicked "Full Admin". The
+        # key, not just the presence of a script, is what makes it one setting.
+        self.client.force_login(f.make_admin())
+
+        response = self.client.get(reverse('admin:index'))
+
+        self.assertContains(response, "setAttribute('data-theme'")
+        self.assertContains(response, 'erp-theme')

@@ -40,8 +40,12 @@ AUTH_USER_MODEL = 'info.User'
 # Application definition
 
 INSTALLED_APPS = [
+    # info comes first so that info/templates/admin/* wins over the templates
+    # shipped by django.contrib.admin. Reordering these two silently reverts
+    # the admin to its stock appearance; test_admin.py holds the ordering.
     'info.apps.InfoConfig',
-    'django.contrib.admin',
+    # Stands in for 'django.contrib.admin' - same app, a different AdminSite.
+    'info.apps.ErpAdminConfig',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
