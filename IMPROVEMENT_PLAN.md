@@ -427,6 +427,14 @@ All four are **student-only, read-only**, token-authenticated (via djoser, wired
 
 ## 4. Proposed Roadmap
 
+> **The AI layer has its own document: [`AI_ROADMAP.md`](AI_ROADMAP.md).**
+> Everything below is the *records* system — what exists, what is broken, what a
+> real ERP would also have. The RAG chatbot, quizzes, generated practice, the
+> growth profile, early warning and the parent portal are scoped separately,
+> because they are a product direction rather than an audit finding. Four items
+> in this document are blocked on things that layer adds and are cross-referenced
+> there: **AT24**, **AT14**, **MK15**, and Tier 3 #17 below.
+
 ### Tier 1 — table stakes for "interview ready"
 1. Automated tests (pytest-django) covering models, views, and the API — with coverage reporting
 2. Replace raw `request.POST` parsing with Django Forms/ModelForms — real validation + error messages
