@@ -65,11 +65,12 @@ underneath it; build RAG first and the quiz's hardest part is already done.
 
 | | |
 |---|---|
-| **LLM** | xAI Grok — `https://api.x.ai/v1`, OpenAI-compatible, `xai-…` key |
+| **Generation** | **Groq** — `https://api.groq.com/openai/v1`, OpenAI-compatible, `gsk_…` key. Free tier |
+| **Embeddings** | **Gemini** `text-embedding-004` — free tier. Neither Groq nor xAI has an embeddings endpoint, so generation and embeddings come from different providers |
 | **Vector store** | **pgvector on the existing Neon Postgres.** No second database, no hosted vector service, no new bill |
 | **Voice** | Browser Web Speech API. No infrastructure, no cost, no upload of anybody's voice |
 | **RAG sources** | Teacher-uploaded course material and school policy first; web is a fallback for topics with no material |
-| **Secrets** | `config('XAI_API_KEY', default='')` through python-decouple, like every other secret here; `sync: false` in `render.yaml` |
+| **Secrets** | `GROQ_API_KEY` and `GEMINI_API_KEY` through python-decouple, like every other secret here; `sync: false` in `render.yaml` |
 | **Feature flags** | A service is on when its key is present, off and harmless when it is absent — the pattern `USE_S3` already establishes |
 | **Quiz points** | Mastery-based: a question pays once, the first time it is answered correctly |
 | **Generated content** | Nothing an LLM writes reaches a student without a human approving it |
@@ -101,7 +102,7 @@ when it is unsure. **This tier alone is a complete, demonstrable product.**
 | | |
 |---|---|
 | **Does** | Turns uploaded PDFs, notes and policy documents into something the system can search by meaning rather than by keyword |
-| **Needs** | `pgvector` extension on Neon; an embeddings model; a chunker. No new service |
+| **Needs** | `pgvector` on Neon; a Gemini key for embeddings; a chunker. No new service |
 | **Effort** | M |
 | **Risk** | Chunking badly is invisible until answers are subtly wrong. Embedding cost is per-document, not per-question, so it is bounded |
 | **Reuses** | B2 object storage (already holds leave certificates and photos), `django-storages`, Neon, the `USE_S3` feature-flag pattern |
@@ -117,7 +118,7 @@ Three source kinds, and they are not equally hard:
 | | |
 |---|---|
 | **Does** | Answers a student's question about the college, their course, or the rules, and shows where the answer came from |
-| **Needs** | Item 1, a Grok key, the budget guard (item 14) |
+| **Needs** | Item 1, a Groq key, the budget guard (item 14) |
 | **Effort** | M |
 | **Risk** | Confident invention. An ERP chatbot that guesses a fee deadline is worse than no chatbot |
 | **Reuses** | The `services.py` pattern, `owns_student_record`, the existing auth |
@@ -203,7 +204,7 @@ Closes **AT14**.
 
 | | |
 |---|---|
-| **Does** | Grok writes questions from a retrieved chunk of the actual syllabus, with a citation, into a review queue |
+| **Does** | The model writes questions from a retrieved chunk of the actual syllabus, with a citation, into a review queue |
 | **Needs** | Items 1, 5, 6, 14 |
 | **Effort** | M |
 | **Risk** | Wrong answers presented as authoritative; the same prompt run twice doubling the bank |
@@ -346,7 +347,8 @@ A stranger clicking the chatbot four hundred times is not a hypothetical.
 | **Effort** | S |
 | **Reuses** | `info/checks.py` — the `@register('deploy')` check that already catches half-configured object storage |
 
-`XAI_API_KEY` via python-decouple, `sync: false` in `render.yaml`, and a check for
+`GROQ_API_KEY` and `GEMINI_API_KEY` via python-decouple, `sync: false` in
+`render.yaml`, and a check for
 "a generator is named but no key is set". The storage check exists because
 exactly that class of bug shipped once already: uploads succeeded, the signed URL
 pointed at the wrong host, and nothing errored.
