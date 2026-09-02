@@ -226,6 +226,23 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL',
 # A send that hangs should not hang the request with it.
 EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=10, cast=int)
 
+# The AI layer. Two providers, because no single one serves both halves:
+# generation writes answers and questions, embeddings turn text into the
+# vectors a search compares, and Groq has no embeddings endpoint.
+#
+# Absent keys are not an error. Following the same rule as storage and email
+# above, a checkout with neither key still runs - retrieval falls back to a
+# deterministic fake embedder and the chatbot is simply off. `info/checks.py`
+# complains about a half-configured deployment; nothing fails at import.
+GROQ_API_KEY = config('GROQ_API_KEY', default='')
+GROQ_MODEL = config('GROQ_MODEL', default='openai/gpt-oss-120b')
+GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
+
+# A public demo runs on somebody's free tier, and a stranger clicking a chat
+# box four hundred times is not hypothetical. Zero disables the feature.
+AI_DAILY_CALL_CAP = config('AI_DAILY_CALL_CAP', default=200, cast=int)
+AI_USER_DAILY_CALL_CAP = config('AI_USER_DAILY_CALL_CAP', default=30, cast=int)
+
 # The largest a profile photo may be, before it is resized on the way in.
 PROFILE_PHOTO_MAX_BYTES = config('PROFILE_PHOTO_MAX_BYTES', default=5 * 1024 * 1024,
                                  cast=int)
