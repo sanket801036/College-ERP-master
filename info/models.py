@@ -1996,3 +1996,114 @@ class AiUsage(models.Model):
 
     def __str__(self):
         return '%s %s %s: %d' % (self.day, self.user, self.kind, self.calls)
+
+
+# The corpus the assistant is allowed to read. Two kinds, and the distinction
+# is the security boundary rather than a category: course material is only
+# searchable by the students taking that course, policy is searchable by
+# everybody. An injected prompt cannot surface a document that was never in
+# the candidate set - see info/guardrails.py, which explains why the
+# classifier is not the thing keeping people apart.
+MATERIAL_COURSE = 'course'
+MATERIAL_POLICY = 'policy'
+material_kind_choice = (
+    (MATERIAL_COURSE, 'Course material'),
+    (MATERIAL_POLICY, 'College policy'),
+)
+
+
+class CourseMaterial(models.Model):
+    """A document somebody uploaded for the assistant to answer from.
+
+    Publication is separate from upload, copying MarksClass: a teacher
+    uploading last year's paper by mistake should be able to notice before
+    students are answered out of it. Nothing unpublished is ever searched.
+
+    `content_hash` is over the normalised text, not the file. The same
+    paragraph out of a PDF and out of a text file has to hash the same, or a
+    re-upload stores the document twice and every answer cites whichever copy
+    it happened to hit.
+    """
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, null=True,
+                               blank=True, related_name='materials',
+                               help_text='Empty for college-wide policy.')
+    kind = models.CharField(max_length=10, choices=material_kind_choice,
+                            default=MATERIAL_COURSE)
+    title = models.CharField(max_length=200)
+    # Where the text came from, for a citation a student can go and check.
+    source = models.CharField(max_length=200, blank=True)
+    file = models.FileField(upload_to='materials/', null=True, blank=True)
+
+    content_hash = models.CharField(max_length=64, editable=False)
+    chunk_count = models.PositiveIntegerField(default=0)
+
+    is_published = models.BooleanField(default=False)
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name='materials')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['kind', 'is_published'])]
+        constraints = [
+            # A course document with no course is unreachable by any student,
+            # and a policy pinned to one course is not policy.
+            models.CheckConstraint(
+                condition=(models.Q(kind=MATERIAL_COURSE, course__isnull=False)
+                           | models.Q(kind=MATERIAL_POLICY, course__isnull=True)),
+                name='material_kind_matches_course'),
+            models.UniqueConstraint(
+                fields=['course', 'content_hash'],
+                name='one_copy_of_a_document_per_course'),
+        ]
+
+    def __str__(self):
+        return self.title
+
+    def publish(self):
+        self.is_published = True
+        self.published_at = timezone.now()
+        self.save(update_fields=['is_published', 'published_at', 'updated_at'])
+
+    def unpublish(self):
+        self.is_published = False
+        self.published_at = None
+        self.save(update_fields=['is_published', 'published_at', 'updated_at'])
+
+
+class MaterialChunk(models.Model):
+    """One passage of a document, as the retriever will see it.
+
+    The offsets are what a citation is built from. They point into the
+    *normalised* text rather than the original file, because that is what was
+    chunked - a citation into the raw PDF byte stream would name a position
+    nobody can find.
+
+    The embedding lives on this row and is added in a later migration, once
+    pgvector is installed. Until then the corpus is stored and readable and
+    simply cannot be searched by meaning, which is a better state than a
+    column nobody can migrate.
+    """
+    material = models.ForeignKey(CourseMaterial, on_delete=models.CASCADE,
+                                 related_name='chunks')
+    index = models.PositiveIntegerField()
+    text = models.TextField()
+    start = models.PositiveIntegerField(default=0)
+    end = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['material', 'index']
+        unique_together = (('material', 'index'),)
+
+    def __str__(self):
+        return '%s [%d]' % (self.material.title, self.index)
+
+    @property
+    def citation(self):
+        """What a student is shown so they can go and check the answer."""
+        return '%s, passage %d' % (self.material.source or self.material.title,
+                                   self.index + 1)
