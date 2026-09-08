@@ -32,11 +32,23 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Gemini's text-embedding-004. Pinned, not read from a response: see the
-# module docstring - a provider that quietly returned 1536 one day would
-# corrupt the store rather than fail.
-GEMINI_MODEL = 'text-embedding-004'
+# Pinned, not read from a response: see the module docstring - a provider that
+# quietly returned a different width one day would corrupt the store rather
+# than fail.
+#
+# `text-embedding-004` was the obvious choice and no longer exists; asking for
+# it returns a 404 that reads like a broken endpoint. `gemini-embedding-001`
+# replaces it.
+GEMINI_MODEL = 'gemini-embedding-001'
+
+# The model's default is 3072, and 768 is asked for explicitly. That is not a
+# storage economy, it is an index limit: pgvector will *store* up to 16,000
+# dimensions but its HNSW and IVFFlat indexes both cap at 2,000. A 3072-wide
+# column is therefore unindexable, and every similarity query degrades to a
+# sequential scan over every chunk in the college - which works fine on a
+# seeded demo and falls over on a real corpus, silently, later.
 GEMINI_DIMENSIONS = 768
+
 GEMINI_ENDPOINT = ('https://generativelanguage.googleapis.com/v1beta/'
                    'models/%s:batchEmbedContents')
 
@@ -159,6 +171,10 @@ class GeminiEmbedder(Embedder):
         payload = {'requests': [
             {'model': 'models/%s' % self.model,
              'content': {'parts': [{'text': text}]},
+             # Asked for explicitly rather than taking the model's 3072
+             # default - see GEMINI_DIMENSIONS for why the width is an index
+             # decision, not a storage one.
+             'outputDimensionality': self.dimensions,
              # RETRIEVAL_DOCUMENT tells the model this text is being stored to
              # be searched, not used as the search. Gemini embeds the two
              # asymmetrically, and using the wrong one costs real accuracy.

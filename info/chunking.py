@@ -36,6 +36,11 @@ TARGET_CHARS = 1200
 # mostly duplicates.
 OVERLAP_CHARS = 180
 
+# And never more than this share of either neighbour, whatever OVERLAP_CHARS
+# says. The flat number is right for a full-size chunk and wrong for a short
+# one, where it would make a passage mostly its predecessor - see `_emit`.
+OVERLAP_MAX_FRACTION = 0.25
+
 # Below this a chunk is a heading, a page number or a stray line. Embedding it
 # gives a vector that matches far too much, so it is folded into its neighbour
 # instead of being stored as a chunk of its own.
@@ -197,8 +202,20 @@ def _emit(text, pieces, overlap, target):
         if index and overlap:
             # The tail of the previous chunk, cut at a space so the overlap
             # does not begin with half a word.
+            #
+            # Capped as a fraction of the neighbours rather than taken flat.
+            # A flat 180 characters is the intended ~15% of a full-size chunk
+            # and half of a short one, and a chunk that is half its neighbour
+            # embeds to a vector pulled toward the neighbour's subject. That
+            # showed up only against a real embedding model: a question about
+            # re-evaluation matched the fees passage at 0.805 and the
+            # re-evaluation passage at 0.767, because the latter opened with
+            # 180 characters about fees.
             previous = pieces[index - 1]
-            carried = previous[-overlap:]
+            take = min(overlap,
+                       int(len(previous) * OVERLAP_MAX_FRACTION),
+                       int(len(piece) * OVERLAP_MAX_FRACTION))
+            carried = previous[-take:] if take else ''
             space = carried.find(' ')
             if space != -1:
                 carried = carried[space + 1:]

@@ -229,3 +229,64 @@ class DeterminismTests(SimpleTestCase):
 
         self.assertEqual([c.text for c in chunk_text(wrapped, overlap=0)],
                          [c.text for c in chunk_text(flowed, overlap=0)])
+
+
+class OverlapProportionTests(SimpleTestCase):
+    """The flat overlap was right for a full chunk and wrong for a short one.
+
+    Found against a real embedding model, not here: a question about
+    re-evaluation matched the *fees* passage at 0.805 and the re-evaluation
+    passage at 0.767, because the latter opened with 180 characters about
+    fees. A chunk that is half its neighbour embeds to a vector pulled toward
+    the neighbour's subject, and no test using a hash-based fake embedder can
+    see that happen.
+    """
+
+    def short_chunks(self):
+        # Paragraph-sized, well under the target - the shape a handbook or a
+        # set of notes actually has. Each is comfortably over MIN_CHARS, or
+        # runt-merging folds all three into one chunk and every assertion
+        # below passes on an empty loop.
+        text = '\n\n'.join([
+            'Attendance. %s' % para('present', 22),
+            'Fees. %s' % para('rupees', 22),
+            'Re-evaluation. %s' % para('query', 26),
+        ])
+        return chunk_text(text)
+
+    def test_the_fixture_really_produces_several_chunks(self):
+        # Guards the three below from passing vacuously.
+        self.assertGreater(len(self.short_chunks()), 2)
+
+    def test_a_short_chunk_is_not_mostly_its_neighbour(self):
+        for chunk in self.short_chunks()[1:]:
+            carried = len(chunk.text) - len(chunk.text.split('. ', 1)[-1])
+            self.assertLess(carried, len(chunk.text) * 0.5, chunk.text[:80])
+
+    def test_each_chunk_still_leads_with_its_own_subject(self):
+        # The words that decide the vector should be the chunk's own.
+        chunks = self.short_chunks()
+
+        self.assertIn('rupees', chunks[1].text)
+        self.assertIn('query', chunks[2].text)
+
+    def test_a_full_size_chunk_keeps_the_intended_overlap(self):
+        # The cap must not quietly remove overlap from the case it was tuned
+        # for; a definition straddling a boundary still has to be findable.
+        text = '\n\n'.join(para('word', 200) for _ in range(3))
+
+        chunks = chunk_text(text)
+
+        self.assertGreater(len(chunks), 1)
+        first_word_of_second = chunks[1].text.split()[0]
+        self.assertEqual(first_word_of_second, 'word')
+
+    def test_overlap_never_exceeds_a_quarter_of_a_chunk(self):
+        text = '\n\n'.join(['Short one. %s' % para('alpha', 24),
+                            'Short two. %s' % para('beta', 26)])
+
+        chunks = chunk_text(text)
+        self.assertEqual(len(chunks), 2, 'the fixture must give two chunks')
+
+        carried = chunks[1].text.split('Short two.')[0]
+        self.assertLessEqual(len(carried), len(chunks[1].text) * 0.35)
