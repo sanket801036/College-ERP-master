@@ -34,10 +34,12 @@ look at what people are actually trying.
 """
 import json
 import logging
-import urllib.error
 import urllib.request
 
 from django.conf import settings
+from django.db import IntegrityError, transaction
+from django.db.models import F, Sum
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -167,3 +169,74 @@ def get_guard():
     if not key:
         return AllowEverything()
     return PromptGuard(key)
+
+
+# ---------------------------------------------------------------------------
+# How much, rather than what
+# ---------------------------------------------------------------------------
+
+# The caps come from settings so a deployment can lower them without a release.
+# Zero means the feature is off, which is a real setting: it is the fastest way
+# to stop a runaway without redeploying.
+
+
+def can_spend(user, kind='generation', now=None):
+    """(allowed, reason). The reason is written to be shown to the person.
+
+    Two caps, and they answer different questions. The per-user one stops one
+    person monopolising a shared quota; the global one stops the quota being
+    gone by mid-afternoon however many people did it. Neither is about money -
+    it is about the feature still working for the next student.
+    """
+    from info.models import AiUsage
+
+    per_user = getattr(settings, 'AI_USER_DAILY_CALL_CAP', 0)
+    overall = getattr(settings, 'AI_DAILY_CALL_CAP', 0)
+    today = (now or timezone.localtime()).date()
+
+    if overall <= 0 or per_user <= 0:
+        return False, 'The assistant is switched off at the moment.'
+
+    used = AiUsage.objects.filter(day=today, kind=kind)
+
+    if user is not None and getattr(user, 'pk', None):
+        mine = used.filter(user=user).aggregate(n=Sum('calls'))['n'] or 0
+        if mine >= per_user:
+            return False, ("You have used today's %d questions. The count "
+                           'resets tomorrow.' % per_user)
+
+    everyone = used.aggregate(n=Sum('calls'))['n'] or 0
+    if everyone >= overall:
+        return False, ('The assistant has answered as many questions as it '
+                       'can today. It resets tomorrow.')
+
+    return True, ''
+
+
+def record_spend(user, kind='generation', now=None):
+    """Count one call. Cheap, and safe to call from several workers at once.
+
+    An UPDATE with an F() expression rather than a read-modify-write, so two
+    workers finishing at the same moment cannot both read 7 and both write 8.
+    The insert races too, which the unique index catches and the retry
+    resolves.
+    """
+    from info.models import AiUsage
+
+    if user is None or not getattr(user, 'pk', None):
+        return
+
+    today = (now or timezone.localtime()).date()
+    updated = (AiUsage.objects
+               .filter(day=today, user=user, kind=kind)
+               .update(calls=F('calls') + 1))
+    if updated:
+        return
+
+    try:
+        with transaction.atomic():
+            AiUsage.objects.create(day=today, user=user, kind=kind, calls=1)
+    except IntegrityError:
+        # Another worker created the row between the update and the insert.
+        AiUsage.objects.filter(day=today, user=user, kind=kind).update(
+            calls=F('calls') + 1)

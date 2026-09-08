@@ -16,10 +16,13 @@ What actually keeps one student out of another's marks is scoped retrieval,
 which is tested where it lives.
 """
 import urllib.error
+from datetime import timedelta
 from unittest import mock
 
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 
+from info import guardrails
 from info.guardrails import (
     BLOCK_SCORE,
     FLAG_SCORE,
@@ -29,6 +32,8 @@ from info.guardrails import (
     Verdict,
     get_guard,
 )
+from info.models import AiUsage
+from info.tests import factories as f
 
 # The real scores measured against Groq, so the tests exercise the numbers
 # this will actually see rather than invented ones.
@@ -161,3 +166,90 @@ class VerdictTests(SimpleTestCase):
     def test_it_is_truthy_when_allowed(self):
         self.assertTrue(Verdict(True, 0.0))
         self.assertFalse(Verdict(False, 1.0))
+
+
+class BudgetTests(TestCase):
+    """The caps, which are not about money.
+
+    A free tier that runs out at four in the afternoon leaves the feature dead
+    for everybody who asks after that. The per-user cap stops one person
+    taking the shared quota; the global one stops enough people doing it.
+    """
+
+    def setUp(self):
+        self.student = f.make_student(f.make_class(f.make_dept())).user
+        self.other = f.make_admin(username='someone-else')
+
+    def spend(self, user, times, kind='generation'):
+        for _ in range(times):
+            guardrails.record_spend(user, kind)
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=3, AI_DAILY_CALL_CAP=100)
+    def test_a_fresh_user_may_ask(self):
+        allowed, reason = guardrails.can_spend(self.student)
+
+        self.assertTrue(allowed)
+        self.assertEqual(reason, '')
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=3, AI_DAILY_CALL_CAP=100)
+    def test_the_per_user_cap_stops_one_person(self):
+        self.spend(self.student, 3)
+
+        allowed, reason = guardrails.can_spend(self.student)
+
+        self.assertFalse(allowed)
+        self.assertIn('resets tomorrow', reason)
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=3, AI_DAILY_CALL_CAP=100)
+    def test_one_person_hitting_their_cap_does_not_stop_anybody_else(self):
+        self.spend(self.student, 3)
+
+        self.assertTrue(guardrails.can_spend(self.other)[0])
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=100, AI_DAILY_CALL_CAP=4)
+    def test_the_global_cap_stops_everybody(self):
+        self.spend(self.student, 2)
+        self.spend(self.other, 2)
+
+        allowed, reason = guardrails.can_spend(self.student)
+
+        self.assertFalse(allowed)
+        self.assertIn('today', reason)
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=3, AI_DAILY_CALL_CAP=100)
+    def test_the_kinds_are_counted_separately(self):
+        # Embedding a document should not use up somebody's questions.
+        self.spend(self.student, 3, kind='embedding')
+
+        self.assertTrue(guardrails.can_spend(self.student, 'generation')[0])
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=3, AI_DAILY_CALL_CAP=100)
+    def test_yesterdays_calls_do_not_count(self):
+        yesterday = timezone.localtime() - timedelta(days=1)
+        for _ in range(3):
+            guardrails.record_spend(self.student, now=yesterday)
+
+        self.assertTrue(guardrails.can_spend(self.student)[0])
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=0, AI_DAILY_CALL_CAP=100)
+    def test_a_zero_cap_switches_the_feature_off(self):
+        # The fastest way to stop a runaway without a redeploy.
+        allowed, reason = guardrails.can_spend(self.student)
+
+        self.assertFalse(allowed)
+        self.assertIn('switched off', reason)
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=3, AI_DAILY_CALL_CAP=100)
+    def test_counting_is_one_row_per_person_per_day_per_kind(self):
+        self.spend(self.student, 5)
+
+        row = AiUsage.objects.get(user=self.student, kind='generation')
+        self.assertEqual(row.calls, 5)
+
+    @override_settings(AI_USER_DAILY_CALL_CAP=3, AI_DAILY_CALL_CAP=100)
+    def test_an_anonymous_caller_is_not_counted_or_crashed_on(self):
+        # Nothing anonymous reaches the chatbot today, but a None here should
+        # not be an exception in the middle of answering somebody.
+        guardrails.record_spend(None)
+
+        self.assertEqual(AiUsage.objects.count(), 0)

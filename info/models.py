@@ -1956,3 +1956,43 @@ class AttendanceCorrection(models.Model):
         if self.status == QUERY_WITHDRAWN:
             return 'Withdrawn'
         return None
+
+
+# The AI layer runs on somebody's free tier, and the demo is public. A stranger
+# holding down a chat box is not hypothetical, and the failure is not a bill -
+# it is the quota running out at four in the afternoon and the feature being
+# dead for everybody else that day.
+ai_call_kind_choice = (
+    ('generation', 'Answer or question generation'),
+    ('embedding', 'Embedding'),
+    ('guard', 'Prompt guard'),
+)
+
+
+class AiUsage(models.Model):
+    """Calls to a metered provider, counted per person per day.
+
+    A counter in the database rather than in the cache, because the cache here
+    is per-process: with several gunicorn workers a memory counter enforces
+    each cap once per worker, which is the same as not enforcing it.
+
+    Rows are per user, and the day's global total is their sum. There is
+    deliberately no "global" row with a null user - Postgres treats nulls as
+    distinct in a unique index, so that row would silently be allowed to exist
+    many times over and the global cap would drift upwards every day.
+    """
+    day = models.DateField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE,
+                             related_name='ai_usage')
+    kind = models.CharField(max_length=20, choices=ai_call_kind_choice,
+                            default='generation')
+    calls = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = (('day', 'user', 'kind'),)
+        ordering = ['-day', '-calls']
+        indexes = [models.Index(fields=['day', 'kind'])]
+
+    def __str__(self):
+        return '%s %s %s: %d' % (self.day, self.user, self.kind, self.calls)
