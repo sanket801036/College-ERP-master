@@ -23,8 +23,10 @@ import logging
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from pgvector.django import CosineDistance
 
 from info.chunking import chunk_text, normalise
+from info.embeddings import get_embedder
 from info.models import (
     MATERIAL_COURSE,
     MATERIAL_POLICY,
@@ -173,3 +175,114 @@ def _student_scope(student):
     return (Q(material__kind=MATERIAL_POLICY)
             | Q(material__kind=MATERIAL_COURSE,
                 material__course_id__in=courses_for(student)))
+
+
+# How many passages an answer is built from. Enough that a fact split across a
+# boundary is present in one of them, few enough that the model is not handed
+# four topics and asked to pick.
+TOP_K = 4
+
+# Below this, the best match is not about the question, and the honest answer
+# is "I do not have that" - given without a generation call at all.
+#
+# Measured against a real embedding model rather than chosen round. On three
+# questions the correct passage scored 0.809, 0.813 and 0.876; the other
+# passages of the same handbook sat at 0.73-0.77; and "what is the weather in
+# Mumbai", which the corpus says nothing about, still scored 0.638-0.678. A
+# floor of 0.62 - the first guess here - let every one of those through, so an
+# off-topic question was answered from the fees paragraph.
+#
+# 0.72 sits above the off-topic ceiling and well under the correct-answer
+# floor. Note what it does *not* separate: a wrong passage from the same
+# handbook still clears it, which is fine because the right one outranks it
+# and the prompt tells the model to answer only from what it was given.
+#
+# Provisional: three passages is not a corpus. Re-measure once there is real
+# course material, with the same shape of check - a question the documents
+# genuinely do not answer must come back empty.
+MIN_SIMILARITY = 0.72
+
+EMBED_BATCH = 32
+
+
+def embed_pending(material=None, embedder=None, limit=None):
+    """Give vectors to the passages that do not have one yet.
+
+    Separate from `ingest` on purpose - see its docstring. Re-runnable, and it
+    only ever touches rows where `embedding` is null, so an interrupted run
+    resumes instead of paying to redo the part that succeeded.
+
+    Returns how many passages were embedded.
+    """
+    embedder = embedder or get_embedder()
+    pending = MaterialChunk.objects.filter(embedding__isnull=True)
+    if material is not None:
+        pending = pending.filter(material=material)
+    pending = pending.order_by('material_id', 'index')
+    if limit:
+        pending = pending[:limit]
+
+    chunks = list(pending)
+    done = 0
+    for start in range(0, len(chunks), EMBED_BATCH):
+        batch = chunks[start:start + EMBED_BATCH]
+        vectors = embedder.embed([c.text for c in batch])
+
+        now = timezone.now()
+        for chunk, vector in zip(batch, vectors, strict=True):
+            chunk.embedding = vector
+            chunk.embedded_at = now
+        MaterialChunk.objects.bulk_update(batch, ['embedding', 'embedded_at'])
+        done += len(batch)
+
+    if done:
+        logger.info('embedded %d passages', done)
+    return done
+
+
+def search(question, user, *, top_k=TOP_K, embedder=None,
+           minimum=MIN_SIMILARITY):
+    """The passages that might answer this question, best first.
+
+    Scoped through `searchable_for` before any distance is computed, so the
+    boundary is applied by the database rather than by trimming results
+    afterwards. A passage the asker may not read is never a candidate, never
+    ranked, and never in the context handed to a model.
+
+    Returns [(chunk, similarity)] and an empty list when nothing clears the
+    floor - which the caller must treat as "say you do not know" rather than
+    as "use the best of a bad set".
+    """
+    if not (question or '').strip():
+        return []
+
+    allowed = searchable_for(user).filter(embedding__isnull=False)
+    # Cheap and worth it: scoping alone can leave nothing to search, and
+    # embedding the question costs a network call.
+    if not allowed.exists():
+        return []
+
+    embedder = embedder or get_embedder()
+    vector = embedder.embed_one(question)
+
+    rows = (allowed
+            .annotate(distance=CosineDistance('embedding', vector))
+            .order_by('distance')
+            .select_related('material')[:top_k])
+
+    # pgvector's cosine *distance* is 1 - similarity.
+    scored = [(chunk, 1 - chunk.distance) for chunk in rows]
+    return [(chunk, score) for chunk, score in scored if score >= minimum]
+
+
+def context_for(results):
+    """The retrieved passages, formatted for a prompt, with their citations.
+
+    Each passage is numbered and labelled so the model can point at one, and
+    so an answer that cites [2] can be checked against the same [2] on screen.
+    An unlabelled blob invites the model to blend four passages into one
+    confident paragraph with nothing to verify.
+    """
+    return '\n\n'.join(
+        '[%d] (%s)\n%s' % (n, chunk.citation, chunk.text)
+        for n, (chunk, _) in enumerate(results, start=1))

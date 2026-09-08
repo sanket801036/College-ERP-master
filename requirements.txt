@@ -6,6 +6,9 @@ djoser==2.3.4
 social-auth-app-django==5.9.0
 drf-spectacular==0.27.2
 psycopg2-binary==2.9.9
+# Vector column and the distance operators for retrieval. The extension
+# itself is installed in Postgres; this is the Django field that maps to it.
+pgvector==0.4.1
 python-decouple==3.8
 openpyxl==3.1.5
 pandas==2.2.3

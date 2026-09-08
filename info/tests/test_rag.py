@@ -15,7 +15,9 @@ course.
 from django.test import TestCase
 
 from info import rag
+from info.embeddings import Embedder, FakeEmbedder
 from info.models import (
+    EMBEDDING_DIMENSIONS,
     MATERIAL_COURSE,
     MATERIAL_POLICY,
     AuditLog,
@@ -244,3 +246,174 @@ class CitationTests(IngestBase):
         material = self.policy(title='Rules')
 
         self.assertIn('Rules', material.chunks.first().citation)
+
+
+class Steered(Embedder):
+    """An embedder whose vectors are chosen by the test.
+
+    FakeEmbedder is deterministic but meaningless - every pair of its vectors
+    is roughly as similar as every other, so it cannot express "this passage
+    is about the question and that one is not". These tests need to, so they
+    say so directly.
+    """
+
+    name, dimensions = 'steered', EMBEDDING_DIMENSIONS
+
+    def __init__(self, by_text, default=(0.0, 0.0, 1.0)):
+        self.by_text = by_text
+        self.default = default
+
+    def embed(self, texts):
+        out = []
+        for text in texts:
+            direction = self.default
+            for needle, value in self.by_text.items():
+                if needle in text:
+                    direction = value
+                    break
+            out.append(self._pad(direction))
+        return out
+
+    def _pad(self, direction):
+        """A three-dimensional idea in the column's real width.
+
+        The stored column is 768 wide and the database refuses anything else.
+        Trailing zeros do not move a cosine, so the test can keep reasoning in
+        three axes while the row stays the shape production uses.
+        """
+        vector = list(direction) + [0.0] * (self.dimensions - len(direction))
+        return vector[:self.dimensions]
+
+
+class EmbedPendingTests(IngestBase):
+    def test_it_gives_every_passage_a_vector(self):
+        material = self.policy()
+
+        done = rag.embed_pending(material=material, embedder=FakeEmbedder())
+
+        self.assertEqual(done, material.chunk_count)
+        self.assertFalse(material.chunks.filter(embedding__isnull=True).exists())
+
+    def test_running_it_again_costs_nothing(self):
+        # An interrupted run has to resume rather than pay to redo the part
+        # that already succeeded.
+        material = self.policy()
+        rag.embed_pending(material=material, embedder=FakeEmbedder())
+
+        self.assertEqual(
+            rag.embed_pending(material=material, embedder=FakeEmbedder()), 0)
+
+    def test_it_only_touches_passages_without_one(self):
+        first = self.policy()
+        rag.embed_pending(material=first, embedder=FakeEmbedder())
+        second = self.material()
+
+        done = rag.embed_pending(embedder=FakeEmbedder())
+
+        self.assertEqual(done, second.chunk_count)
+
+    def test_a_passage_records_when_it_was_embedded(self):
+        material = self.policy()
+
+        rag.embed_pending(material=material, embedder=FakeEmbedder())
+
+        self.assertIsNotNone(material.chunks.first().embedded_at)
+
+
+class SearchTests(IngestBase):
+    def setUp(self):
+        super().setUp()
+        f.make_assign(self.klass, self.course, self.teacher)
+
+    def prepared(self, embedder):
+        material = self.policy()
+        rag.embed_pending(material=material, embedder=embedder)
+        return material
+
+    def test_the_closest_passage_comes_first(self):
+        embedder = Steered({'Attendance': (1, 0, 0), 'Fees': (0, 1, 0)})
+        self.prepared(embedder)
+
+        results = rag.search('anything', self.admin, embedder=Steered(
+            {'anything': (0, 1, 0)}), minimum=0)
+
+        self.assertIn('Fees', results[0][0].text)
+
+    def test_nothing_below_the_floor_is_returned(self):
+        # An off-topic question has to come back empty so the caller can say
+        # "I do not know" instead of answering from the least bad paragraph.
+        embedder = Steered({'Attendance': (1, 0, 0)}, default=(1, 0, 0))
+        self.prepared(embedder)
+
+        results = rag.search('unrelated', self.admin,
+                             embedder=Steered({'unrelated': (0, 0, 1)}))
+
+        self.assertEqual(results, [])
+
+    def test_an_empty_question_searches_nothing(self):
+        self.prepared(FakeEmbedder())
+
+        self.assertEqual(rag.search('   ', self.admin), [])
+
+    def test_a_student_never_retrieves_another_course_s_material(self):
+        # The leak that matters, at the layer that actually prevents it. The
+        # other course's passage is the *best* match here and must still not
+        # appear.
+        other_dept = f.make_dept(id='ME', name='Mechanical')
+        other_course = f.make_course(other_dept, id='ME101', name='Thermo')
+        embedder = Steered({}, default=(1, 0, 0))
+        other = self.material(course=other_course)
+        rag.embed_pending(material=other, embedder=embedder)
+
+        results = rag.search('anything', self.student.user,
+                             embedder=Steered({'anything': (1, 0, 0)}),
+                             minimum=0)
+
+        self.assertEqual(results, [])
+
+    def test_an_anonymous_question_retrieves_nothing(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        self.prepared(FakeEmbedder())
+
+        self.assertEqual(rag.search('anything', AnonymousUser()), [])
+
+    def test_nothing_searchable_means_the_question_is_never_embedded(self):
+        # Embedding costs a network call. Scoping alone can leave nothing to
+        # search, and paying to embed a question with no corpus behind it is
+        # money for an empty list.
+        embedder = FakeEmbedder()
+        calls = []
+        original = embedder.embed
+        embedder.embed = lambda texts: calls.append(texts) or original(texts)
+
+        self.assertEqual(rag.search('anything', self.student.user,
+                                    embedder=embedder), [])
+        self.assertEqual(calls, [])
+
+    def test_an_unembedded_passage_is_not_a_candidate(self):
+        # Stored but not yet embedded. It must be invisible to search rather
+        # than matching nothing-in-particular.
+        self.policy()
+
+        self.assertEqual(rag.search('anything', self.admin,
+                                    embedder=FakeEmbedder()), [])
+
+
+class ContextTests(IngestBase):
+    def test_each_passage_is_numbered_and_cited(self):
+        # An answer citing [2] has to be checkable against the same [2] on
+        # screen; an unlabelled blob invites the model to blend passages.
+        material = rag.ingest(HANDBOOK, title='Handbook', actor=self.admin,
+                              kind=MATERIAL_POLICY, source='Student Handbook',
+                              publish=True)
+        results = [(chunk, 0.9) for chunk in material.chunks.all()[:2]]
+
+        context = rag.context_for(results)
+
+        self.assertIn('[1]', context)
+        self.assertIn('[2]', context)
+        self.assertIn('Student Handbook', context)
+
+    def test_no_passages_is_an_empty_context(self):
+        self.assertEqual(rag.context_for([]), '')

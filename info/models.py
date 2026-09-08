@@ -12,6 +12,14 @@ from django.db.models.signals import post_delete, post_save
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.utils.functional import cached_property
+from pgvector.django import HnswIndex, VectorField
+
+# The width every stored vector has, declared here because it is part of the
+# schema rather than a property of whichever provider is configured. It is
+# asserted against `info.embeddings.GEMINI_DIMENSIONS` in the tests: a store
+# filled at one width and queried at another compares vectors that are not
+# comparable, and nothing about that failure raises.
+EMBEDDING_DIMENSIONS = 768
 
 # Create your models here.
 sex_choice = (
@@ -2093,11 +2101,31 @@ class MaterialChunk(models.Model):
     text = models.TextField()
     start = models.PositiveIntegerField(default=0)
     end = models.PositiveIntegerField(default=0)
+
+    # Null until the passage has been embedded. Embedding is a network call
+    # that costs money and fails, and it happens after the text is safely
+    # stored - so null means "not searchable yet", never "matches nothing".
+    # `EMBEDDING_DIMENSIONS` is 768 rather than the model's 3072 default
+    # because pgvector's HNSW and IVFFlat indexes both cap at 2000; a wider
+    # column cannot be indexed and every query becomes a sequential scan.
+    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True,
+                            blank=True)
+    embedded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['material', 'index']
         unique_together = (('material', 'index'),)
+        indexes = [
+            # Cosine, matching how the embeddings are compared. HNSW rather
+            # than IVFFlat because it does not need the table populated before
+            # it is built - an empty corpus that fills up over a term is
+            # exactly the case IVFFlat's training step handles badly.
+            HnswIndex(name='chunk_embedding_hnsw',
+                      fields=['embedding'],
+                      m=16, ef_construction=64,
+                      opclasses=['vector_cosine_ops']),
+        ]
 
     def __str__(self):
         return '%s [%d]' % (self.material.title, self.index)
