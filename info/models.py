@@ -1602,6 +1602,7 @@ NOTIFICATION_KINDS = (
     ('query', 'Mark query'),
     ('leave', 'Leave application'),
     ('correction', 'Attendance dispute'),
+    ('doubt', 'Question for a teacher'),
 )
 
 
@@ -2135,3 +2136,90 @@ class MaterialChunk(models.Model):
         """What a student is shown so they can go and check the answer."""
         return '%s, passage %d' % (self.material.source or self.material.title,
                                    self.index + 1)
+
+
+# When the assistant cannot help, the question should reach somebody who can.
+# The statuses are MarkQuery's on purpose: this is the fourth request-and-
+# review workflow in the app and a student should not have to learn a new
+# vocabulary for it.
+ESCALATION_OPEN = 'Open'
+ESCALATION_ANSWERED = 'Answered'
+ESCALATION_WITHDRAWN = 'Withdrawn'
+escalation_status_choice = (
+    (ESCALATION_OPEN, 'Waiting for a teacher'),
+    (ESCALATION_ANSWERED, 'Answered'),
+    (ESCALATION_WITHDRAWN, 'Withdrawn'),
+)
+
+# One person may have this many unanswered at once. Not a rate limit on
+# asking - it is a limit on how much of a teacher's queue one student can
+# occupy, which is the thing that makes a queue useless for everybody else.
+MAX_OPEN_ESCALATIONS = 3
+
+
+class EscalationQuerySet(models.QuerySet):
+    def open(self):
+        return self.filter(status=ESCALATION_OPEN)
+
+    def for_teacher(self, teacher):
+        """Questions from the classes this teacher actually teaches.
+
+        Scoped through Assign, like everything else that decides who may see
+        what. A teacher who teaches one section does not get another section's
+        queue.
+        """
+        classes = Assign.objects.filter(teacher=teacher).values('class_id')
+        return self.filter(student__class_id__in=classes)
+
+
+class AssistantEscalation(models.Model):
+    """A question the assistant could not answer, handed to a teacher.
+
+    The assistant's answer is stored alongside the question, and that is the
+    point of the record rather than a convenience: a teacher who can see what
+    the student was already told can correct it, and a run of these is the
+    only honest signal about where the corpus is thin.
+    """
+    student = models.ForeignKey(Student, on_delete=models.CASCADE,
+                                related_name='escalations')
+    # Which subject it is about, when the student knows. Left empty for a
+    # question about the college rather than a course.
+    course = models.ForeignKey(Course, on_delete=models.SET_NULL, null=True,
+                               blank=True, related_name='escalations')
+    question = models.TextField(max_length=500)
+    # What the assistant said, snapshotted. The session history it came from
+    # is cleared routinely, and a question without the answer it followed
+    # reads as if nobody had tried.
+    assistant_said = models.TextField(max_length=2000, blank=True)
+
+    status = models.CharField(max_length=12, choices=escalation_status_choice,
+                              default=ESCALATION_OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    response = models.TextField(max_length=2000, blank=True)
+    answered_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name='answered_doubts')
+    answered_at = models.DateTimeField(null=True, blank=True)
+
+    objects = EscalationQuerySet.as_manager()
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['status', '-created_at'])]
+
+    def __str__(self):
+        return '%s: %s' % (self.student.name, self.question[:50])
+
+    @property
+    def is_open(self):
+        return self.status == ESCALATION_OPEN
+
+    @property
+    def outcome(self):
+        """One line for the student's own list."""
+        if self.status == ESCALATION_OPEN:
+            return 'Waiting for a teacher'
+        if self.status == ESCALATION_WITHDRAWN:
+            return 'Withdrawn'
+        return 'Answered by %s' % (self.answered_by.username
+                                   if self.answered_by else 'a teacher')

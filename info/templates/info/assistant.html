@@ -1,4 +1,5 @@
 {% extends 'info/base.html' %}
+{% load static %}
 {% block title %}Assistant{% endblock %}
 
 {% block content %}
@@ -35,6 +36,7 @@ every question comes back "I do not have that" and nothing says why.
             <div class="small text-danger mt-1">{{ error }}</div>
           {% endfor %}
         </div>
+        <div class="col-auto" id="voice-input-slot"></div>
         <div class="col-auto">
           <button class="btn btn-primary" type="submit">Ask</button>
         </div>
@@ -55,7 +57,17 @@ every question comes back "I do not have that" and nothing says why.
       <p class="erp-stat-label mb-1">You asked</p>
       <p class="mb-3">{{ turn.question }}</p>
 
-      <p class="erp-stat-label mb-1">Answer</p>
+      <div class="d-flex align-items-baseline justify-content-between">
+        <p class="erp-stat-label mb-1">Answer</p>
+        {% comment %}
+        Hidden until the script confirms the browser can speak. A button that
+        does nothing is worse than no button.
+        {% endcomment %}
+        <button type="button" class="btn btn-link btn-sm p-0 erp-no-print"
+                data-speak="{{ turn.answer }}" hidden>
+          <i class="fas fa-volume-up"></i> Listen
+        </button>
+      </div>
       <p class="mb-2" style="white-space: pre-line;">{{ turn.answer }}</p>
 
       {% if turn.truncated %}
@@ -67,6 +79,23 @@ every question comes back "I do not have that" and nothing says why.
           <span class="erp-badge erp-badge-warning">Cut off</span>
           This answer ran out of room. Ask something narrower for the rest.
         </p>
+      {% endif %}
+
+      {% if not turn.sources and request.user.is_student %}
+        {% comment %}
+        Offered only where it is useful. An answer with no passages behind it
+        is the assistant saying the college material does not cover this, and
+        that is exactly the question that should reach a person.
+        {% endcomment %}
+        <form method="post" action="{% url 'escalate_doubt' %}"
+              class="mt-2 erp-no-print">
+          {% csrf_token %}
+          <input type="hidden" name="question" value="{{ turn.question }}">
+          <input type="hidden" name="assistant_said" value="{{ turn.answer }}">
+          <button class="btn btn-outline-primary btn-sm" type="submit">
+            <i class="fas fa-user-graduate"></i> Ask a teacher instead
+          </button>
+        </form>
       {% endif %}
 
       {% if turn.sources %}
@@ -101,4 +130,8 @@ every question comes back "I do not have that" and nothing says why.
   </form>
 {% endif %}
 
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'info/js/assistant-voice.js' %}"></script>
 {% endblock %}

@@ -13,6 +13,7 @@ from PIL import Image, ImageOps
 from info.models import (
     AttendanceRange,
     Class,
+    Course,
     Fee,
     FeeTransaction,
     LeaveRequest,
@@ -747,3 +748,49 @@ class AssistantQuestionForm(forms.Form):
 
     def clean_question(self):
         return self.cleaned_data['question'].strip()
+
+
+class EscalateDoubtForm(forms.Form):
+    """Handing a question to a teacher when the assistant could not help.
+
+    The course is optional and limited to the student's own timetable, so a
+    question cannot be routed to a class they are not in.
+    """
+
+    question = forms.CharField(
+        min_length=5, max_length=500,
+        widget=forms.Textarea(attrs={'rows': 3}),
+        label='What do you need to know?',
+        error_messages={'min_length': 'Say a little more about what you need.'})
+    course = forms.ModelChoiceField(
+        queryset=Course.objects.none(), required=False,
+        label='Which subject, if it is about one',
+        empty_label='Not about a particular subject')
+    assistant_said = forms.CharField(required=False, max_length=2000,
+                                     widget=forms.HiddenInput)
+
+    def __init__(self, *args, student=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if student is not None:
+            self.fields['course'].queryset = Course.objects.filter(
+                assign__class_id=student.class_id_id).distinct()
+
+    def clean_question(self):
+        return self.cleaned_data['question'].strip()
+
+
+class AnswerDoubtForm(forms.Form):
+    """A teacher's written answer.
+
+    There is no way to close one of these without saying something. The
+    student is here because a machine already gave them nothing useful.
+    """
+
+    response = forms.CharField(
+        min_length=10, max_length=2000,
+        widget=forms.Textarea(attrs={'rows': 5}),
+        label='Your answer',
+        error_messages={'min_length': 'Write an answer the student can use.'})
+
+    def clean_response(self):
+        return self.cleaned_data['response'].strip()

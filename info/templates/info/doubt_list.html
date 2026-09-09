@@ -1,0 +1,63 @@
+{% extends 'info/base.html' %}
+{% block title %}Your questions{% endblock %}
+
+{% block content %}
+
+<div class="mb-4">
+  <h2 class="mb-0">Questions you asked a teacher</h2>
+  <p class="text-muted mb-0">
+    Sent when the assistant could not answer from the college material.
+  </p>
+</div>
+
+<div class="list-group list-group-flush">
+  {% for doubt in doubts %}
+    <div class="list-group-item px-0">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="mr-3">
+          <p class="mb-1">{{ doubt.question }}</p>
+          <p class="small text-muted mb-0">
+            {{ doubt.created_at|date:"d M Y" }}
+            {% if doubt.course %}&middot; {{ doubt.course.name }}{% endif %}
+          </p>
+        </div>
+        <span class="erp-badge {% if doubt.status == 'Answered' %}erp-badge-success{% elif doubt.status == 'Withdrawn' %}erp-badge-info{% else %}erp-badge-warning{% endif %}">
+          {{ doubt.outcome }}
+        </span>
+      </div>
+
+      {% if doubt.response %}
+        <div class="erp-notice mt-3">
+          <p class="mb-0">{{ doubt.response }}</p>
+        </div>
+      {% endif %}
+
+      {% if doubt.assistant_said %}
+        <p class="small text-muted mt-2 mb-0">
+          The assistant had said: {{ doubt.assistant_said|truncatewords:30 }}
+        </p>
+      {% endif %}
+
+      {% if doubt.is_open %}
+        <form method="post" class="d-inline mt-2"
+              action="{% url 'withdraw_doubt' doubt.id %}">
+          {% csrf_token %}
+          <button class="btn btn-link btn-sm p-0 align-baseline" type="submit">
+            Withdraw
+          </button>
+        </form>
+      {% endif %}
+    </div>
+  {% empty %}
+    <p class="text-muted">
+      Nothing yet. When the assistant cannot answer something, it offers to
+      send the question to your teachers.
+    </p>
+  {% endfor %}
+</div>
+
+<a class="btn btn-outline-primary btn-sm mt-3" href="{% url 'assistant' %}">
+  Back to the assistant
+</a>
+
+{% endblock %}

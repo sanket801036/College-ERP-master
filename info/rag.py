@@ -355,3 +355,91 @@ def answer(question, user, *, embedder=None, generator=None, guard=None):
     return Reply(written.text,
                  sources=[chunk for chunk, _ in results],
                  truncated=written.truncated)
+
+
+# ---------------------------------------------------------------------------
+# When the assistant cannot help
+# ---------------------------------------------------------------------------
+
+
+class EscalationNotAllowed(Exception):
+    """Refused, with a reason written to be shown to the student."""
+
+
+def can_escalate(student, course=None):
+    """(allowed, reason). The reason is written to be shown."""
+    from info.models import MAX_OPEN_ESCALATIONS, AssistantEscalation
+
+    open_now = AssistantEscalation.objects.filter(student=student).open().count()
+    if open_now >= MAX_OPEN_ESCALATIONS:
+        return False, ('You already have %d questions waiting for a teacher. '
+                       'Wait for one to be answered, or withdraw it.'
+                       % MAX_OPEN_ESCALATIONS)
+
+    if course is not None and course.pk not in set(courses_for(student)):
+        return False, 'That course is not on your timetable.'
+
+    return True, ''
+
+
+@transaction.atomic
+def escalate(student, question, actor, *, assistant_said='', course=None):
+    """Hand a question to a teacher, with what the assistant already said."""
+    from info.models import AssistantEscalation
+
+    allowed, reason = can_escalate(student, course)
+    if not allowed:
+        raise EscalationNotAllowed(reason)
+
+    question = (question or '').strip()
+    if len(question) < 5:
+        raise EscalationNotAllowed('Say a little more about what you need.')
+
+    escalation = AssistantEscalation.objects.create(
+        student=student, course=course, question=question,
+        assistant_said=(assistant_said or '')[:2000])
+
+    AuditLog.record(actor, 'assistant.escalated', escalation,
+                    'asked a teacher: %s' % question[:120], student=student)
+    return escalation
+
+
+@transaction.atomic
+def answer_escalation(escalation, response, actor):
+    """A teacher's written answer. There is no 'resolved without a reason'."""
+    from info.models import ESCALATION_ANSWERED, ESCALATION_OPEN
+
+    if escalation.status != ESCALATION_OPEN:
+        raise EscalationNotAllowed('That question has already been dealt with.')
+
+    response = (response or '').strip()
+    if len(response) < 10:
+        # The student is waiting because a machine gave them nothing useful.
+        # A one-word reply repeats the experience with a person attached.
+        raise EscalationNotAllowed('Write an answer the student can use.')
+
+    escalation.status = ESCALATION_ANSWERED
+    escalation.response = response
+    escalation.answered_by = actor if getattr(actor, 'pk', None) else None
+    escalation.answered_at = timezone.now()
+    escalation.save(update_fields=['status', 'response', 'answered_by',
+                                   'answered_at'])
+
+    AuditLog.record(actor, 'assistant.answered', escalation,
+                    'answered %s' % escalation.student.name,
+                    student=escalation.student)
+    return escalation
+
+
+@transaction.atomic
+def withdraw_escalation(escalation, actor):
+    from info.models import ESCALATION_OPEN, ESCALATION_WITHDRAWN
+
+    if escalation.status != ESCALATION_OPEN:
+        raise EscalationNotAllowed('That question is no longer open.')
+
+    escalation.status = ESCALATION_WITHDRAWN
+    escalation.save(update_fields=['status'])
+    AuditLog.record(actor, 'assistant.withdrawn', escalation,
+                    'withdrew a question', student=escalation.student)
+    return escalation

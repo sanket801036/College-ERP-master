@@ -545,3 +545,45 @@ GATHERERS = {
     'marks': marks_release_alerts,
     'notice': notice_alerts,
 }
+
+
+def messages_for_doubt_raised(escalation):
+    """Tell the teachers of that class that somebody is waiting.
+
+    Everyone who teaches the class, not one chosen teacher: a question the
+    assistant could not answer often does not belong to a subject, and picking
+    a teacher for it would mean guessing.
+    """
+    from info.models import Assign
+
+    teachers = (Assign.objects
+                .filter(class_id=escalation.student.class_id_id)
+                .select_related('teacher__user'))
+    if escalation.course_id:
+        teachers = teachers.filter(course_id=escalation.course_id)
+
+    seen, out = set(), []
+    for assign in teachers:
+        user = assign.teacher.user
+        if user is None or user.pk in seen:
+            continue
+        seen.add(user.pk)
+        out.append(Message(
+            user=user, kind='doubt',
+            key='doubt:%d:raised:%s' % (escalation.pk, user.pk),
+            subject='%s has a question' % escalation.student.name,
+            body=escalation.question[:200],
+            url=reverse('doubt_queue')))
+    return out
+
+
+def messages_for_doubt_answered(escalation):
+    user = escalation.student.user
+    if user is None:
+        return []
+    return [Message(
+        user=user, kind='doubt',
+        key='doubt:%d:answered' % escalation.pk,
+        subject='A teacher answered your question',
+        body=escalation.response[:200],
+        url=reverse('doubt_list'))]

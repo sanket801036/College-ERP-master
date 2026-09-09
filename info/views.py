@@ -33,9 +33,11 @@ from info.decorators import (
     teacher_required,
 )
 from info.forms import (
+    AnswerDoubtForm,
     AssistantQuestionForm,
     BulkFeeForm,
     ErpLoginForm,
+    EscalateDoubtForm,
     ExtraClassForm,
     FeeForm,
     FeeTransactionForm,
@@ -77,6 +79,7 @@ from .models import (
     SEE_MAX,
     Assign,
     AssignTime,
+    AssistantEscalation,
     Attendance,
     AttendanceClass,
     AttendanceCorrection,
@@ -2318,3 +2321,119 @@ def assistant(request):
         'document_count': (searchable
                            .values('material_id').distinct().count()),
     })
+
+
+@login_required()
+@require_POST
+def escalate_doubt(request):
+    """Hand the assistant's last question to a teacher.
+
+    Posted from the assistant page, where the student has just been told the
+    college material does not cover their question.
+    """
+    if not request.user.is_student:
+        raise PermissionDenied
+
+    form = EscalateDoubtForm(request.POST, student=request.user.student)
+    if not form.is_valid():
+        messages.error(request, ' '.join(
+            error for errors in form.errors.values() for error in errors))
+        return redirect('assistant')
+
+    try:
+        escalation = rag.escalate(
+            request.user.student, form.cleaned_data['question'], request.user,
+            assistant_said=form.cleaned_data['assistant_said'],
+            course=form.cleaned_data['course'])
+    except rag.EscalationNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        notifications.announce(
+            notifications.messages_for_doubt_raised(escalation))
+        messages.success(request, 'Your question has gone to your teachers.')
+    return redirect('doubt_list')
+
+
+@login_required()
+def doubt_list(request):
+    """The student's own questions and what came back."""
+    if not request.user.is_student:
+        raise PermissionDenied
+
+    return render(request, 'info/doubt_list.html', {
+        'doubts': (AssistantEscalation.objects
+                   .filter(student=request.user.student)
+                   .select_related('course', 'answered_by')[:50]),
+    })
+
+
+@login_required()
+@require_POST
+def withdraw_doubt(request, doubt_id):
+    doubt = get_object_or_404(AssistantEscalation, id=doubt_id)
+    if not (request.user.is_student
+            and request.user.student.pk == doubt.student_id):
+        raise PermissionDenied
+
+    try:
+        rag.withdraw_escalation(doubt, request.user)
+    except rag.EscalationNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, 'Withdrawn.')
+    return redirect('doubt_list')
+
+
+@login_required()
+@teacher_required
+def doubt_queue(request):
+    """Questions the assistant could not answer, from classes you teach."""
+    show = request.GET.get('show', 'open')
+    doubts = AssistantEscalation.objects.select_related(
+        'student', 'course', 'answered_by')
+    if not request.user.is_superuser:
+        doubts = doubts.for_teacher(request.user.teacher)
+    if show != 'all':
+        doubts = doubts.open()
+
+    return render(request, 'info/doubt_queue.html', {
+        'doubts': doubts[:100],
+        'show': show,
+    })
+
+
+@login_required()
+@teacher_required
+def review_doubt(request, doubt_id):
+    doubt = get_object_or_404(
+        AssistantEscalation.objects.select_related('student', 'course'),
+        id=doubt_id)
+
+    if not request.user.is_superuser:
+        teaches = Assign.objects.filter(
+            teacher=request.user.teacher,
+            class_id=doubt.student.class_id_id).exists()
+        if not teaches:
+            raise PermissionDenied
+
+    if request.method == 'POST':
+        form = AnswerDoubtForm(request.POST)
+        if form.is_valid():
+            try:
+                rag.answer_escalation(doubt, form.cleaned_data['response'],
+                                      request.user)
+            except rag.EscalationNotAllowed as exc:
+                messages.error(request, str(exc))
+            else:
+                notifications.announce(
+                    notifications.messages_for_doubt_answered(doubt))
+                messages.success(request, 'Answer sent to the student.')
+                return redirect('doubt_queue')
+        else:
+            messages.error(request, ' '.join(
+                error for errors in form.errors.values() for error in errors))
+    else:
+        form = AnswerDoubtForm()
+
+    return render(request, 'info/review_doubt.html',
+                  {'doubt': doubt, 'form': form})
