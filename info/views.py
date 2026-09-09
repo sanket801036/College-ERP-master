@@ -22,7 +22,7 @@ from django.views.decorators.http import require_POST
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-from info import notifications, services
+from info import notifications, rag, services
 from info.decorators import (
     assert_teaches,
     owns_assign,
@@ -33,6 +33,7 @@ from info.decorators import (
     teacher_required,
 )
 from info.forms import (
+    AssistantQuestionForm,
     BulkFeeForm,
     ErpLoginForm,
     ExtraClassForm,
@@ -2254,3 +2255,66 @@ def password_reset_set(request):
         form = SetPasswordForm(otp.user)
 
     return render(request, 'info/password_reset_set.html', {'form': form})
+
+
+# The assistant keeps the last few exchanges in the session so the page reads
+# as a conversation. Deliberately not a database table and deliberately short:
+# nothing here is a record anybody needs later, and a transcript of what
+# students asked is exactly the kind of data that is better not kept.
+ASSISTANT_HISTORY_KEY = 'assistant_history'
+ASSISTANT_HISTORY_MAX = 6
+
+
+@login_required()
+def assistant(request):
+    """Ask the college's own material a question.
+
+    The view does the shape it always does here - fetch, authorise, validate,
+    call the service, redirect - and every rule lives in `info.rag.answer`:
+    the budget cap, the prompt guard, the scoped retrieval and the refusal
+    when nothing is close enough. A second caller (an API, say) gets the same
+    checks by calling the same function rather than by remembering to.
+    """
+    history = request.session.get(ASSISTANT_HISTORY_KEY, [])
+
+    if request.method == 'POST':
+        if 'clear' in request.POST:
+            request.session.pop(ASSISTANT_HISTORY_KEY, None)
+            return redirect('assistant')
+
+        form = AssistantQuestionForm(request.POST)
+        if form.is_valid():
+            question = form.cleaned_data['question']
+            reply = rag.answer(question, request.user)
+
+            if reply.refused:
+                messages.warning(request, reply.reason)
+            else:
+                history.append({
+                    'question': question,
+                    'answer': reply.text,
+                    'truncated': reply.truncated,
+                    'sources': [{'citation': chunk.citation,
+                                 'text': chunk.text[:400]}
+                                for chunk in reply.sources],
+                })
+                request.session[ASSISTANT_HISTORY_KEY] = \
+                    history[-ASSISTANT_HISTORY_MAX:]
+            # Redirect after post, so a refresh does not ask again and pay
+            # for it a second time.
+            return redirect('assistant')
+
+        messages.error(request, ' '.join(
+            error for errors in form.errors.values() for error in errors))
+        return redirect('assistant')
+
+    searchable = rag.searchable_for(request.user)
+    return render(request, 'info/assistant.html', {
+        'form': AssistantQuestionForm(),
+        'history': history,
+        # What it can actually answer from, so an empty corpus explains itself
+        # instead of looking broken.
+        'passage_count': searchable.count(),
+        'document_count': (searchable
+                           .values('material_id').distinct().count()),
+    })

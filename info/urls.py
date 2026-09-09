@@ -97,6 +97,7 @@ urlpatterns = [
     path('teacher/queries/<int:query_id>/', views.review_mark_query,
          name='review_mark_query'),
 
+    path('assistant/', views.assistant, name='assistant'),
     path('notifications/', views.notifications_list, name='notifications'),
     path('notifications/<int:notification_id>/', views.notification_open,
          name='notification_open'),

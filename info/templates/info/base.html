@@ -167,6 +167,12 @@
                 <span>Notice Board</span>
               </a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'assistant' %}">
+                <i class="fas fa-comments"></i>
+                <span>Assistant</span>
+              </a>
+            </li>
 
         {% elif request.user.is_teacher %}
             <li class="nav-item">
@@ -235,6 +241,12 @@
                 <span>Notice Board</span>
               </a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'assistant' %}">
+                <i class="fas fa-comments"></i>
+                <span>Assistant</span>
+              </a>
+            </li>
         {% elif request.user.is_superuser %}
             <li class="nav-item">
               <a class="nav-link" href="{% url 'add_student' %}">
@@ -264,6 +276,12 @@
               <a class="nav-link" href="{% url 'notices' %}">
                 <i class="fas fa-bullhorn"></i>
                 <span>Notice Board</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'assistant' %}">
+                <i class="fas fa-comments"></i>
+                <span>Assistant</span>
               </a>
             </li>
             <li class="nav-item">

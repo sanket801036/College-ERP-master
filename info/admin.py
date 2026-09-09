@@ -6,6 +6,7 @@ from django.http import HttpResponseRedirect
 from django.urls import path
 
 from .models import (
+    AiUsage,
     Assign,
     AssignTime,
     Attendance,
@@ -14,11 +15,13 @@ from .models import (
     AuditLog,
     Class,
     Course,
+    CourseMaterial,
     Dept,
     Fee,
     FeeTransaction,
     LoginEvent,
     Marks,
+    MaterialChunk,
     Notice,
     Student,
     StudentCourse,
@@ -269,6 +272,87 @@ class AuditLogAdmin(admin.ModelAdmin):
         return False
 
 
+class MaterialChunkInline(admin.TabularInline):
+    """The passages, read-only.
+
+    They are produced by the chunker and given vectors by the embedder;
+    editing one by hand would leave text that no longer matches the vector
+    stored beside it, which is a wrong answer with nothing to explain it.
+    """
+    model = MaterialChunk
+    extra = 0
+    can_delete = False
+    fields = ('index', 'text', 'embedded_at')
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.action(description='Publish - students can be answered from these')
+def publish_materials(modeladmin, request, queryset):
+    for material in queryset:
+        material.publish()
+
+
+@admin.action(description='Unpublish - take back out of the assistant')
+def unpublish_materials(modeladmin, request, queryset):
+    for material in queryset:
+        material.unpublish()
+
+
+class CourseMaterialAdmin(admin.ModelAdmin):
+    """What the assistant is allowed to answer from.
+
+    Publication is the control that matters here: an unpublished document is
+    invisible to every search, so a teacher who uploads the wrong file can
+    notice before anybody is answered out of it.
+    """
+    list_display = ('title', 'kind', 'course', 'chunk_count', 'embedded',
+                    'is_published', 'created_at')
+    list_filter = ('kind', 'is_published', 'created_at')
+    search_fields = ('title', 'source', 'course__name')
+    readonly_fields = ('content_hash', 'chunk_count', 'published_at',
+                       'created_at', 'updated_at')
+    inlines = [MaterialChunkInline]
+    actions = [publish_materials, unpublish_materials]
+    date_hierarchy = 'created_at'
+    fieldsets = (
+        (None, {'fields': ('title', 'source', 'file')}),
+        ('Who can search it', {
+            'fields': ('kind', 'course'),
+            'description': 'Course material is searchable only by the classes '
+                           'assigned that course. Policy is searchable by '
+                           'everybody and must have no course.',
+        }),
+        ('Publication', {
+            'fields': ('is_published', 'published_at'),
+            'description': 'Nothing unpublished is ever searched.',
+        }),
+        ('Derived', {'fields': ('content_hash', 'chunk_count', 'uploaded_by',
+                                'created_at', 'updated_at')}),
+    )
+
+    @admin.display(description='Embedded', boolean=True)
+    def embedded(self, obj):
+        """Whether every passage has a vector. Without one it cannot be found."""
+        return not obj.chunks.filter(embedding__isnull=True).exists()
+
+
+class AiUsageAdmin(admin.ModelAdmin):
+    """Calls to a metered provider. A counter, not something to edit."""
+    list_display = ('day', 'user', 'kind', 'calls')
+    list_filter = ('day', 'kind')
+    search_fields = ('user__username',)
+    date_hierarchy = 'day'
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 class ErpUserAdmin(UserAdmin):
     """Stock UserAdmin does not know about the fields this project added.
 
@@ -330,3 +414,5 @@ admin.site.register(AuditLog, AuditLogAdmin)
 admin.site.register(SupportRequest, SupportRequestAdmin)
 admin.site.register(LoginEvent, LoginEventAdmin)
 admin.site.register(Notice, NoticeAdmin)
+admin.site.register(CourseMaterial, CourseMaterialAdmin)
+admin.site.register(AiUsage, AiUsageAdmin)

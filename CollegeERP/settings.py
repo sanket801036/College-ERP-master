@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/2.1/ref/settings/
 """
 
 import os
+import sys
 
 import dj_database_url
 from decouple import config
@@ -250,10 +251,23 @@ PROFILE_PHOTO_SIZE = 400
 
 LOGIN_REDIRECT_URL = '/'
 
+# Django forces DEBUG off while tests run, but these are read from the
+# environment at import time, so they follow whatever .env says. A developer
+# with DEBUG=False in .env - running the app behind a tunnel for a demo, say -
+# gets a 301 to https on every request the test client makes, and a suite that
+# fails everywhere with "301 != 200" and nothing pointing at the cause.
+#
+# The test client never speaks HTTPS, so redirecting it is meaningless as well
+# as fatal. Cookies are the same story: a secure-only session cookie is never
+# returned over the test client's plain HTTP, so every login in the suite
+# silently fails to stick.
+TESTING = 'test' in sys.argv
+
 # Production security (only enforced when DEBUG=False, i.e. behind Render's HTTPS)
-SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
+SECURE_SSL_REDIRECT = (
+    config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool) and not TESTING)
+SESSION_COOKIE_SECURE = not DEBUG and not TESTING
+CSRF_COOKIE_SECURE = not DEBUG and not TESTING
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # HSTS tells the browser to refuse plain HTTP to this host for the given
 # window, which closes the gap the redirect above leaves open: the first

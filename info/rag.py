@@ -286,3 +286,72 @@ def context_for(results):
     return '\n\n'.join(
         '[%d] (%s)\n%s' % (n, chunk.citation, chunk.text)
         for n, (chunk, _) in enumerate(results, start=1))
+
+
+# What the model is told before every question. Short on purpose: a long
+# instruction competes with the passages for the model's attention, and the
+# only behaviours that matter here are "use what you were given" and "say so
+# when it is not there".
+SYSTEM_PROMPT = (
+    'You are the assistant for a college ERP. Answer only from the numbered '
+    'passages below. Cite the passage you used, like [1]. If the passages do '
+    'not contain the answer, reply exactly: I do not have that in the college '
+    'material. Keep answers short and plain. Never invent a rule, a date, a '
+    'fee or a number that is not in the passages.'
+)
+
+# Shown when retrieval found nothing close enough. Deliberately the same
+# sentence the model is told to use, so a refusal reads the same whether it
+# came from the floor or from the model.
+NO_ANSWER = 'I do not have that in the college material.'
+
+
+class Reply:
+    """An answer and everything needed to show why it should be believed."""
+
+    def __init__(self, text, *, sources=(), refused=False, reason='',
+                 truncated=False):
+        self.text = text
+        self.sources = list(sources)
+        self.refused = refused
+        self.reason = reason
+        self.truncated = truncated
+
+    def __str__(self):
+        return self.text
+
+
+def answer(question, user, *, embedder=None, generator=None, guard=None):
+    """The whole question-to-answer path, in the order the checks must run.
+
+    The order is the design. Budget before guard because a refused message
+    should not cost two calls; guard before retrieval because a message that
+    is not a question should not touch the corpus; retrieval before
+    generation because an empty result is answered without a model at all.
+    """
+    from info import guardrails
+    from info.generation import get_generator
+
+    allowed, reason = guardrails.can_spend(user, 'generation')
+    if not allowed:
+        return Reply('', refused=True, reason=reason)
+
+    guard = guard or guardrails.get_guard()
+    verdict = guard.check(question)
+    if not verdict.allowed:
+        return Reply('', refused=True, reason=verdict.reason)
+
+    results = search(question, user, embedder=embedder)
+    if not results:
+        # No model call. Cheaper, and a refusal nobody had to pay for.
+        return Reply(NO_ANSWER, refused=False)
+
+    generator = generator or get_generator()
+    guardrails.record_spend(user, 'generation')
+    written = generator.ask(
+        SYSTEM_PROMPT,
+        '%s\n\nQuestion: %s' % (context_for(results), question))
+
+    return Reply(written.text,
+                 sources=[chunk for chunk, _ in results],
+                 truncated=written.truncated)

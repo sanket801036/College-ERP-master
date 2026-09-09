@@ -47,6 +47,9 @@ GROUPS = (
         'info.fee', 'info.feetransaction', 'info.notice',
         'info.supportrequest',
     )),
+    ('Assistant', (
+        'info.coursematerial', 'info.aiusage',
+    )),
     ('Records (append-only)', (
         'info.auditlog', 'info.loginevent',
     )),

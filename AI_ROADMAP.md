@@ -470,9 +470,9 @@ upside.
 
 | Tier | Item | State |
 |---|---|---|
-| 1 | 1 · RAG pipeline | Not started |
-| 1 | 2 · Grounded chatbot | Not started |
-| 1 | 3 · Voice assistant | Not started |
+| 1 | 1 · RAG pipeline | **Done** — chunking, embeddings, pgvector, scoped corpus |
+| 1 | 2 · Grounded chatbot | **Done** — answers with citations, refuses when nothing is close |
+| 1 | 3 · Voice assistant | Not started — Whisper is on the same Groq key |
 | 1 | 4 · Doubt escalation | Not started |
 | 2 | 5 · Topic tagging | Not started |
 | 2 | 6 · Quiz + points + badges | Not started — technical design done |
@@ -483,5 +483,5 @@ upside.
 | 3 | 11 · Parent email + portal | Not started |
 | 4 | 12 · Homework + OCR | Not started |
 | 4 | 13 · Integrity + proctoring | Not started |
-| — | 14 · Budget guard | Ships with item 2 |
-| — | 15 · Config + deploy checks | Ships with item 1 |
+| — | 14 · Budget guard | **Done** — per-user and global daily caps, counted in the database |
+| — | 15 · Config + deploy checks | **Done** — info.W003/W004/W005 |

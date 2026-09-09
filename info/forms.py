@@ -719,3 +719,31 @@ class LeaveRequestForm(forms.ModelForm):
         if not name.endswith(LEAVE_DOCUMENT_TYPES):
             raise forms.ValidationError('Attach a PDF or an image.')
         return document
+
+
+class AssistantQuestionForm(forms.Form):
+    """What somebody types at the assistant.
+
+    Bounded at both ends. Too short is a stray keypress rather than a
+    question; too long is somebody pasting a document into a box that costs a
+    model call per submission, and the prompt guard only scores the first two
+    thousand characters anyway.
+    """
+
+    question = forms.CharField(
+        label='',
+        min_length=5,
+        max_length=500,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Ask about attendance, fees, leave, or your course '
+                           'material...',
+            'autocomplete': 'off',
+            'autofocus': 'autofocus',
+        }),
+        error_messages={
+            'min_length': 'Ask a bit more than that.',
+            'max_length': 'That is too long - ask one question at a time.',
+        })
+
+    def clean_question(self):
+        return self.cleaned_data['question'].strip()
