@@ -9,6 +9,7 @@ from .models import (
     AiUsage,
     Assign,
     AssignTime,
+    AssistantEscalation,
     Attendance,
     AttendanceClass,
     AttendanceRange,
@@ -339,6 +340,37 @@ class CourseMaterialAdmin(admin.ModelAdmin):
         return not obj.chunks.filter(embedding__isnull=True).exists()
 
 
+class AssistantEscalationAdmin(admin.ModelAdmin):
+    """Questions the assistant could not answer.
+
+    Read-only on purpose. Answering one belongs on the teacher's own page,
+    which requires a written response and tells the student; doing it here
+    would set the status with nobody told and nothing said.
+
+    The value of the list is the pattern rather than the individual row: a run
+    of these on one topic is the only honest signal that the material is thin
+    there, and it is worth being able to sort and filter for that.
+    """
+    list_display = ('created_at', 'student', 'course', 'short_question',
+                    'status', 'answered_by')
+    list_filter = ('status', 'created_at', 'course')
+    search_fields = ('question', 'response', 'student__name', 'student__USN')
+    date_hierarchy = 'created_at'
+    readonly_fields = ('student', 'course', 'question', 'assistant_said',
+                       'status', 'response', 'answered_by', 'answered_at',
+                       'created_at')
+
+    @admin.display(description='Question')
+    def short_question(self, obj):
+        return obj.question[:70]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 class AiUsageAdmin(admin.ModelAdmin):
     """Calls to a metered provider. A counter, not something to edit."""
     list_display = ('day', 'user', 'kind', 'calls')
@@ -416,3 +448,4 @@ admin.site.register(LoginEvent, LoginEventAdmin)
 admin.site.register(Notice, NoticeAdmin)
 admin.site.register(CourseMaterial, CourseMaterialAdmin)
 admin.site.register(AiUsage, AiUsageAdmin)
+admin.site.register(AssistantEscalation, AssistantEscalationAdmin)

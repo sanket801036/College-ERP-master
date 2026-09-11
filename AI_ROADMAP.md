@@ -468,12 +468,17 @@ upside.
 
 ## Status
 
+**Tier 1 is complete.** A voice-capable assistant grounded in the college's own
+documents, citing what it used, refusing what it does not have, and handing
+that refusal to a teacher who must answer in writing.
+
+
 | Tier | Item | State |
 |---|---|---|
 | 1 | 1 · RAG pipeline | **Done** — chunking, embeddings, pgvector, scoped corpus |
 | 1 | 2 · Grounded chatbot | **Done** — answers with citations, refuses when nothing is close |
-| 1 | 3 · Voice assistant | Not started — Whisper is on the same Groq key |
-| 1 | 4 · Doubt escalation | Not started |
+| 1 | 3 · Voice assistant | **Done** — Web Speech API, entirely in the browser |
+| 1 | 4 · Doubt escalation | **Done** — queue, written answers, notifications both ways |
 | 2 | 5 · Topic tagging | Not started |
 | 2 | 6 · Quiz + points + badges | Not started — technical design done |
 | 2 | 7 · RAG question generation | Not started |

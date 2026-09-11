@@ -328,3 +328,40 @@ class QueryShapeTests(TestCase):
 
         self.assertContains(index, 'erp-admin-stats')
         self.assertNotContains(changelist, 'erp-admin-stats')
+
+
+class AssistantAdminTests(TestCase):
+    """The three assistant models, and which of them may be edited here.
+
+    Two are records rather than data entry. An escalation answered from the
+    admin would set a status with nobody told and nothing written, which is
+    exactly what the teacher's own page exists to prevent; a usage counter
+    edited by hand stops being a count of anything.
+    """
+
+    def setUp(self):
+        self.client.force_login(f.make_admin())
+
+    def test_the_corpus_is_manageable(self):
+        # Material has to be addable somewhere, or the assistant can only ever
+        # answer from whatever a seed command put there.
+        response = self.client.get(reverse('admin:info_coursematerial_add'))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_escalations_cannot_be_created_or_edited_here(self):
+        self.assertEqual(
+            self.client.get(
+                reverse('admin:info_assistantescalation_add')).status_code,
+            403)
+
+    def test_usage_counters_cannot_be_edited_here(self):
+        self.assertEqual(
+            self.client.get(reverse('admin:info_aiusage_add')).status_code,
+            403)
+
+    def test_they_are_grouped_together_on_the_index(self):
+        # Three models that only make sense beside each other.
+        response = self.client.get(reverse('admin:index'))
+
+        self.assertContains(response, 'Assistant')
