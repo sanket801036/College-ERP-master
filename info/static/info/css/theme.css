@@ -29,6 +29,8 @@
   --erp-surface: #ffffff;
   --erp-topbar: #1d2421;
   --erp-radius: 6px;
+  /* The drawer starts where the topbar ends, so the height is shared. */
+  --erp-navbar-h: 56px;
   /* Depth from the border, not from a soft drop shadow. */
   --erp-shadow: 0 1px 0 rgba(29, 36, 33, .04);
   --erp-shadow-hover: 0 1px 0 rgba(29, 36, 33, .04);
@@ -52,6 +54,13 @@ a { color: var(--erp-primary); }
 a:hover { color: var(--erp-primary-dark); }
 
 /* ---------- Topbar ---------- */
+.navbar.static-top {
+  position: sticky;
+  top: 0;
+  z-index: 1050;
+  min-height: var(--erp-navbar-h);
+}
+
 .navbar.bg-dark {
   background: var(--erp-topbar) !important;
   border: 0;
@@ -107,9 +116,14 @@ a:hover { color: var(--erp-primary-dark); }
 
 /* ---------- Sidebar ----------
    The vendored SB Admin 2 stylesheet collapses this into an icon-only rail
-   below 768px and fights any width we set with `!important`. We don't want
-   a collapsing rail at all, so every rule here matches or exceeds that
-   specificity+importance to force one consistent, always-labeled sidebar. */
+   below 768px and fights any width we set with `!important`, so every rule
+   here matches or exceeds that specificity+importance.
+
+   Two layouts, not one. From 992px up it is a permanent labelled rail beside
+   the content, which is what these rules describe. Below that it becomes an
+   off-canvas drawer - see the media query after this block. Forcing the rail
+   at every width, as this file used to, meant a 270px menu on a 360px phone
+   with no control anywhere to close it. */
 .sidebar {
   width: 270px !important;
   background: var(--erp-surface);
@@ -169,6 +183,78 @@ a:hover { color: var(--erp-primary-dark); }
 
 #wrapper #content-wrapper {
   padding-left: 0 !important;
+}
+
+/* ---------- Sidebar as a drawer, below 992px ----------
+   Fixed rather than a flex child, so the page gets the full width back
+   instead of being squeezed beside a menu nobody asked for. */
+@media (max-width: 991.98px) {
+  .sidebar {
+    position: fixed;
+    top: var(--erp-navbar-h);
+    left: 0;
+    bottom: 0;
+    z-index: 1045;
+    /* Narrower than the desktop rail, and never wider than the screen: at
+       270px fixed a 320px phone has no backdrop left to tap. */
+    width: 82vw !important;
+    max-width: 290px;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    transform: translateX(-100%);
+    transition: transform .22s ease;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, .18);
+  }
+
+  body.erp-nav-open .sidebar {
+    transform: translateX(0);
+  }
+
+  /* Without this the page behind scrolls under the drawer, and closing it
+     leaves you somewhere you never navigated to. */
+  body.erp-nav-open {
+    overflow: hidden;
+  }
+
+  .erp-nav-backdrop {
+    position: fixed;
+    top: var(--erp-navbar-h);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1040;
+    background: rgba(15, 23, 42, .45);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .22s ease, visibility .22s ease;
+  }
+
+  body.erp-nav-open .erp-nav-backdrop {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* Thumbs, not cursors. */
+  .sidebar .nav-item .nav-link,
+  .sidebar .nav-link {
+    padding: .85rem .9rem !important;
+  }
+}
+
+/* Above the breakpoint the drawer does not exist, so neither does its
+   backdrop - otherwise it lingers as an invisible full-page overlay. */
+@media (min-width: 992px) {
+  .erp-nav-backdrop {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .erp-nav-backdrop {
+    transition: none;
+  }
 }
 
 /* ---------- Cards ---------- */
@@ -408,6 +494,9 @@ h1, h2, h3, h4, h5, .erp-stat-value, .navbar-brand {
   border: 1px solid var(--erp-border);
   padding: .5rem .75rem;
   height: auto;
+  /* Not cosmetic: below 16px iOS zooms the page in on focus and stays there,
+     so the first thing a phone does with the demo is misframe it. */
+  font-size: 16px;
 }
 
 .erp-login-card .form-control:focus {
@@ -988,6 +1077,22 @@ h1, h2, h3, h4, h5, .erp-stat-value, .navbar-brand {
   color: #fff;
 }
 
+.erp-nav-toggle {
+  background: none;
+  border: 0;
+  padding: .5rem .75rem;
+  margin-right: .1rem;
+  color: rgba(255, 255, 255, .9);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.erp-nav-toggle:hover,
+.erp-nav-toggle:focus {
+  color: #fff;
+}
+
 /* Paper is not dark. Printing a dark page either wastes a cartridge or comes
    out unreadable, so the palette goes back to the light one for print. */
 @media print {
@@ -1234,4 +1339,96 @@ h1, h2, h3, h4, h5, .erp-stat-value, .navbar-brand {
   height: 120px;
   font-size: 2.5rem;
   display: inline-flex;
+}
+
+/* ---------- Small screens ----------
+   The app was built desktop-first and never revisited: a phone got the
+   desktop layout scaled down, which is legible in a screenshot and awkward in
+   a hand. These are the differences that actually matter on a 360px screen,
+   not a wholesale second design. */
+
+/* A timetable has to stay a grid, so it scrolls sideways - but the day column
+   scrolling away with it leaves you reading a row you can no longer name. */
+.erp-timetable-scroll table th:first-child,
+.erp-timetable-scroll table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--erp-surface);
+  box-shadow: 1px 0 0 var(--erp-border);
+}
+
+.erp-timetable-scroll table thead th:first-child {
+  z-index: 3;
+  background: var(--erp-bg);
+}
+
+/* The striping paints over a transparent sticky cell, so it has to be
+   restated on the pinned column or the rows show through it. */
+.erp-timetable-scroll .table-striped tbody tr:nth-of-type(odd) td:first-child {
+  background: var(--erp-bg);
+}
+
+@media (max-width: 767.98px) {
+  /* iOS zooms the whole page in on focusing any control under 16px, and then
+     leaves it zoomed. Every small variant in the app hits that. */
+  .form-control,
+  .form-control-sm,
+  .custom-select,
+  .custom-select-sm {
+    font-size: 16px;
+  }
+
+  /* Fingers, not pointers: 44px is the smallest reliably tappable target. */
+  .btn,
+  .page-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-sm {
+    min-height: 38px;
+  }
+
+  /* Dense tables get most of their width back from the gutters. */
+  .table td,
+  .table th {
+    padding: .55rem .5rem;
+    font-size: .875rem;
+  }
+
+  .card-body {
+    padding: .9rem;
+  }
+
+  .container-fluid {
+    padding-left: .75rem;
+    padding-right: .75rem;
+  }
+
+  h1, .h1 { font-size: 1.6rem; }
+  h2, .h2 { font-size: 1.35rem; }
+  h3, .h3 { font-size: 1.2rem; }
+
+  .navbar-brand {
+    font-size: 1rem;
+  }
+
+  /* Toolbars above lists put a filter row, a search box and two buttons on one
+     line, which at this width becomes a column of half-width controls. */
+  .form-inline .form-control,
+  .form-inline .custom-select,
+  .form-inline .btn {
+    width: 100%;
+    margin-bottom: .5rem;
+  }
+}
+
+/* The sticky column reads from the surface colour, which the dark palette
+   redefines - no extra rules needed - except the header tint. */
+:root[data-theme="dark"] .erp-timetable-scroll table thead th:first-child,
+:root[data-theme="dark"] .erp-timetable-scroll .table-striped tbody tr:nth-of-type(odd) td:first-child {
+  background: var(--erp-bg);
 }

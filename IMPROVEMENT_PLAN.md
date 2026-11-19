@@ -427,6 +427,14 @@ All four are **student-only, read-only**, token-authenticated (via djoser, wired
 
 ## 4. Proposed Roadmap
 
+> **The AI layer has its own document: [`AI_ROADMAP.md`](AI_ROADMAP.md).**
+> Everything below is the *records* system — what exists, what is broken, what a
+> real ERP would also have. The RAG chatbot, quizzes, generated practice, the
+> growth profile, early warning and the parent portal are scoped separately,
+> because they are a product direction rather than an audit finding. Four items
+> in this document are blocked on things that layer adds and are cross-referenced
+> there: **AT24**, **AT14**, **MK15**, and Tier 3 #17 below.
+
 ### Tier 1 — table stakes for "interview ready"
 1. Automated tests (pytest-django) covering models, views, and the API — with coverage reporting
 2. Replace raw `request.POST` parsing with Django Forms/ModelForms — real validation + error messages
@@ -698,6 +706,21 @@ All three dashboards should:
 - Have sufficient color contrast (WCAG AA minimum)
 - Be keyboard-navigable (tab order, focus outlines)
 - Use semantic HTML (`<main>`, `<section>`, `<article>`)
+
+**Since done — the chrome, not yet the dashboards.** The blocker was not the
+dashboards at all: `theme.css` pinned the sidebar open at 270px at *every*
+width, deliberately and with `!important`, and no template rendered any
+control that could close it. A 360px phone got 90px of page and no way to
+change that. Below 992px it is now an off-canvas drawer (hamburger, backdrop,
+Esc, closes on navigation and on growing past the breakpoint); above it the
+rail is unchanged. With it: 16px form controls so iOS stops zooming the page
+in on focus and leaving it there, 44px tap targets, the last four unwrapped
+tables put in scroll containers, and a pinned day column on both timetables so
+scrolling sideways does not lose the row's name. `info/tests/test_mobile_nav.py`
+holds the parts that can be asserted.
+
+Still open here: the dashboards' own small-screen layout, and the semantic
+landmarks — the base template is still `div`-based throughout.
 
 ---
 
@@ -1818,6 +1841,38 @@ The admin is currently the **only** way to manage `Dept`, `Course`, `Class`, `As
 | AD4 | **Guard the `AttendanceRange` reset** | Changing the semester date range triggers attendance regeneration through the signals. That's a destructive operation reachable from a plain admin form with no warning |
 | AD5 | **Read-only audit fields** | Once audit models exist (FE29/MK19/TA-S7), surface them read-only |
 | AD6 | **Restrict staff access** | Any `is_staff` user reaches the full admin; scope it with permissions |
+
+**Since done — the skin, and the tests this section never had.** The admin was
+the last screen still wearing stock Django: it announced itself as **"My Site"**
+(set as an import-time side effect at the bottom of `info/urls.py`), used the
+teal-and-grey palette, and ignored the app's dark mode entirely — while the
+dashboard links into it twice, so "Full Admin" landed on what read as a
+different product.
+
+It is now an `ErpAdminSite` (`info/admin_site.py`, wired through
+`ErpAdminConfig` in `info/apps.py`), with `info/static/info/css/erp-admin.css`
+remapping Django 5.2's own CSS variables onto the `--erp-*` tokens — variables
+rather than element selectors, so nothing needs re-syncing when Django changes
+a rule. The index is grouped into People / Academics / Operations / Records
+with a row of counts, and anything unclassified falls into "Other" rather than
+off the page.
+
+One real bug fixed with it: Django's admin theme script reads a different
+`localStorage` key from the app's and wrote `data-theme="auto"` over whatever
+the ERP had already resolved — a value `theme.css` matches nowhere — so **a
+dark mode chosen in the app was discarded on every admin page.** Both sides now
+write the same two values to the same key.
+
+Also closed here: **AD3** in part (`NoticeAdmin` assigned `list_filter` twice,
+and the poorer tuple won, so three filters had never rendered), fieldsets on
+Student/Teacher/Fee/Notice, and a `UserAdmin` that can finally see
+`must_change_password` — the field `ForcePasswordChangeMiddleware` redirects on,
+previously invisible on the one screen meant for unsticking an account. **AD5**
+was already true and is now held by tests.
+
+Still open: **AD1** (clash validation), **AD4** (the `AttendanceRange` reset is
+still an unguarded destructive form — `info/tests/test_admin.py` now covers what
+it does, but does not make it ask first), **AD6**.
 
 #### 7.11.3 Error pages (G9)
 

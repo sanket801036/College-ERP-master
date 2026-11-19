@@ -22,7 +22,7 @@ from django.views.decorators.http import require_POST
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-from info import notifications, services
+from info import notifications, rag, services
 from info.decorators import (
     assert_teaches,
     owns_assign,
@@ -33,8 +33,11 @@ from info.decorators import (
     teacher_required,
 )
 from info.forms import (
+    AnswerDoubtForm,
+    AssistantQuestionForm,
     BulkFeeForm,
     ErpLoginForm,
+    EscalateDoubtForm,
     ExtraClassForm,
     FeeForm,
     FeeTransactionForm,
@@ -76,6 +79,7 @@ from .models import (
     SEE_MAX,
     Assign,
     AssignTime,
+    AssistantEscalation,
     Attendance,
     AttendanceClass,
     AttendanceCorrection,
@@ -333,14 +337,27 @@ def healthz(request):
 
     Open on purpose: a monitor cannot sign in. It says nothing beyond ok or
     not, so there is nothing here worth reading.
+
+    Readable cross-origin for the same reason. The portfolio links here and
+    has to know when a sleeping free-tier instance is back before it sends
+    somebody at it; without the header the browser hides even the status code
+    and the caller is left guessing. A wildcard is honest about what this is -
+    two booleans, no session, nothing that varies by who asks.
     """
     try:
         connection.ensure_connection()
     except Exception:
         logger.exception('Health check could not reach the database')
-        return JsonResponse({'status': 'error', 'database': False}, status=503)
+        response = JsonResponse({'status': 'error', 'database': False},
+                                status=503)
+    else:
+        response = JsonResponse({'status': 'ok', 'database': True})
 
-    return JsonResponse({'status': 'ok', 'database': True})
+    response['Access-Control-Allow-Origin'] = '*'
+    # A poller asking every second must not be answered from a cache that
+    # remembers the instance was down.
+    response['Cache-Control'] = 'no-store'
+    return response
 
 
 @login_required()
@@ -2243,3 +2260,182 @@ def password_reset_set(request):
         form = SetPasswordForm(otp.user)
 
     return render(request, 'info/password_reset_set.html', {'form': form})
+
+
+# The assistant keeps the last few exchanges in the session so the page reads
+# as a conversation. Deliberately not a database table and deliberately short:
+# nothing here is a record anybody needs later, and a transcript of what
+# students asked is exactly the kind of data that is better not kept.
+ASSISTANT_HISTORY_KEY = 'assistant_history'
+ASSISTANT_HISTORY_MAX = 6
+
+
+@login_required()
+def assistant(request):
+    """Ask the college's own material a question.
+
+    The view does the shape it always does here - fetch, authorise, validate,
+    call the service, redirect - and every rule lives in `info.rag.answer`:
+    the budget cap, the prompt guard, the scoped retrieval and the refusal
+    when nothing is close enough. A second caller (an API, say) gets the same
+    checks by calling the same function rather than by remembering to.
+    """
+    history = request.session.get(ASSISTANT_HISTORY_KEY, [])
+
+    if request.method == 'POST':
+        if 'clear' in request.POST:
+            request.session.pop(ASSISTANT_HISTORY_KEY, None)
+            return redirect('assistant')
+
+        form = AssistantQuestionForm(request.POST)
+        if form.is_valid():
+            question = form.cleaned_data['question']
+            reply = rag.answer(question, request.user)
+
+            if reply.refused:
+                messages.warning(request, reply.reason)
+            else:
+                history.append({
+                    'question': question,
+                    'answer': reply.text,
+                    'truncated': reply.truncated,
+                    'sources': [{'citation': chunk.citation,
+                                 'text': chunk.text[:400]}
+                                for chunk in reply.sources],
+                })
+                request.session[ASSISTANT_HISTORY_KEY] = \
+                    history[-ASSISTANT_HISTORY_MAX:]
+            # Redirect after post, so a refresh does not ask again and pay
+            # for it a second time.
+            return redirect('assistant')
+
+        messages.error(request, ' '.join(
+            error for errors in form.errors.values() for error in errors))
+        return redirect('assistant')
+
+    searchable = rag.searchable_for(request.user)
+    return render(request, 'info/assistant.html', {
+        'form': AssistantQuestionForm(),
+        'history': history,
+        # What it can actually answer from, so an empty corpus explains itself
+        # instead of looking broken.
+        'passage_count': searchable.count(),
+        'document_count': (searchable
+                           .values('material_id').distinct().count()),
+    })
+
+
+@login_required()
+@require_POST
+def escalate_doubt(request):
+    """Hand the assistant's last question to a teacher.
+
+    Posted from the assistant page, where the student has just been told the
+    college material does not cover their question.
+    """
+    if not request.user.is_student:
+        raise PermissionDenied
+
+    form = EscalateDoubtForm(request.POST, student=request.user.student)
+    if not form.is_valid():
+        messages.error(request, ' '.join(
+            error for errors in form.errors.values() for error in errors))
+        return redirect('assistant')
+
+    try:
+        escalation = rag.escalate(
+            request.user.student, form.cleaned_data['question'], request.user,
+            assistant_said=form.cleaned_data['assistant_said'],
+            course=form.cleaned_data['course'])
+    except rag.EscalationNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        notifications.announce(
+            notifications.messages_for_doubt_raised(escalation))
+        messages.success(request, 'Your question has gone to your teachers.')
+    return redirect('doubt_list')
+
+
+@login_required()
+def doubt_list(request):
+    """The student's own questions and what came back."""
+    if not request.user.is_student:
+        raise PermissionDenied
+
+    return render(request, 'info/doubt_list.html', {
+        'doubts': (AssistantEscalation.objects
+                   .filter(student=request.user.student)
+                   .select_related('course', 'answered_by')[:50]),
+    })
+
+
+@login_required()
+@require_POST
+def withdraw_doubt(request, doubt_id):
+    doubt = get_object_or_404(AssistantEscalation, id=doubt_id)
+    if not (request.user.is_student
+            and request.user.student.pk == doubt.student_id):
+        raise PermissionDenied
+
+    try:
+        rag.withdraw_escalation(doubt, request.user)
+    except rag.EscalationNotAllowed as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, 'Withdrawn.')
+    return redirect('doubt_list')
+
+
+@login_required()
+@teacher_required
+def doubt_queue(request):
+    """Questions the assistant could not answer, from classes you teach."""
+    show = request.GET.get('show', 'open')
+    doubts = AssistantEscalation.objects.select_related(
+        'student', 'course', 'answered_by')
+    if not request.user.is_superuser:
+        doubts = doubts.for_teacher(request.user.teacher)
+    if show != 'all':
+        doubts = doubts.open()
+
+    return render(request, 'info/doubt_queue.html', {
+        'doubts': doubts[:100],
+        'show': show,
+    })
+
+
+@login_required()
+@teacher_required
+def review_doubt(request, doubt_id):
+    doubt = get_object_or_404(
+        AssistantEscalation.objects.select_related('student', 'course'),
+        id=doubt_id)
+
+    if not request.user.is_superuser:
+        teaches = Assign.objects.filter(
+            teacher=request.user.teacher,
+            class_id=doubt.student.class_id_id).exists()
+        if not teaches:
+            raise PermissionDenied
+
+    if request.method == 'POST':
+        form = AnswerDoubtForm(request.POST)
+        if form.is_valid():
+            try:
+                rag.answer_escalation(doubt, form.cleaned_data['response'],
+                                      request.user)
+            except rag.EscalationNotAllowed as exc:
+                messages.error(request, str(exc))
+            else:
+                notifications.announce(
+                    notifications.messages_for_doubt_answered(doubt))
+                messages.success(request, 'Answer sent to the student.')
+                return redirect('doubt_queue')
+        else:
+            messages.error(request, ' '.join(
+                error for errors in form.errors.values() for error in errors))
+    else:
+        form = AnswerDoubtForm()
+
+    return render(request, 'info/review_doubt.html',
+                  {'doubt': doubt, 'form': form})

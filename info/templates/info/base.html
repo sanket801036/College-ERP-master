@@ -50,6 +50,16 @@
 
     <nav class="navbar navbar-expand navbar-dark bg-dark static-top">
 
+      {% comment %}
+      Below 992px the sidebar is a drawer and this is the only thing that
+      opens it. Above that the rail is permanent and the button would toggle
+      something already on screen, so it is not rendered at all.
+      {% endcomment %}
+      <button class="erp-nav-toggle d-lg-none" type="button" id="erpSidebarToggle"
+              aria-label="Open menu" aria-expanded="false" aria-controls="erpSidebar">
+        <i class="fas fa-bars"></i>
+      </button>
+
       <a class="navbar-brand mr-1" href="{% url 'index' %}">CollegeERP</a>
 
       <!-- Navbar -->
@@ -104,10 +114,16 @@
 
     </nav>
 
+    {% comment %}
+    Sits under the open drawer and over the page. It is what makes tapping
+    beside the menu close it, which is the gesture people try first.
+    {% endcomment %}
+    <div class="erp-nav-backdrop" id="erpNavBackdrop"></div>
+
     <div id="wrapper">
 
       <!-- Sidebar -->
-      <ul class="sidebar navbar-nav">
+      <ul class="sidebar navbar-nav" id="erpSidebar">
             <li class="nav-item">
               <a class="nav-link" href="{% url 'index' %}">
                 <i class="fas fa-home"></i>
@@ -149,6 +165,12 @@
               <a class="nav-link" href="{% url 'notices' %}">
                 <i class="fas fa-bullhorn"></i>
                 <span>Notice Board</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'assistant' %}">
+                <i class="fas fa-comments"></i>
+                <span>Assistant</span>
               </a>
             </li>
 
@@ -196,6 +218,12 @@
               </a>
             </li>
             <li class="nav-item">
+              <a class="nav-link" href="{% url 'doubt_queue' %}">
+                <i class="fas fa-question-circle"></i>
+                <span>Student Questions</span>
+              </a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" href="{% url 'directory' %}">
                 <i class="fas fa-address-book"></i>
                 <span>Directory</span>
@@ -203,7 +231,7 @@
             </li>
             <li class="nav-item">
               <a class="nav-link" href="{% url 'bulk_import' %}">
-                <i class="fas fa-file-arrow-up"></i>
+                <i class="fas fa-file-upload"></i>
                 <span>Bulk Import</span>
               </a>
             </li>
@@ -217,6 +245,12 @@
               <a class="nav-link" href="{% url 'notices' %}">
                 <i class="fas fa-bullhorn"></i>
                 <span>Notice Board</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'assistant' %}">
+                <i class="fas fa-comments"></i>
+                <span>Assistant</span>
               </a>
             </li>
         {% elif request.user.is_superuser %}
@@ -248,6 +282,12 @@
               <a class="nav-link" href="{% url 'notices' %}">
                 <i class="fas fa-bullhorn"></i>
                 <span>Notice Board</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'assistant' %}">
+                <i class="fas fa-comments"></i>
+                <span>Assistant</span>
               </a>
             </li>
             <li class="nav-item">
@@ -383,6 +423,77 @@
           });
 
         paint();
+      })();
+    </script>
+
+    <script>
+      // The sidebar drawer, below 992px.
+      //
+      // The stylesheet had been pinning a 270px labelled rail at every width,
+      // which on a 360px phone leaves 90px for the page and offers no way to
+      // shut it - the menu was simply always there. This is the control that
+      // was missing; above 992px it does nothing, because the rail is meant to
+      // be permanent there.
+      (function () {
+        var DESKTOP = window.matchMedia('(min-width: 992px)');
+        var body = document.body;
+        var toggle = document.getElementById('erpSidebarToggle');
+        var sidebar = document.getElementById('erpSidebar');
+        var backdrop = document.getElementById('erpNavBackdrop');
+        if (!toggle || !sidebar) { return; }
+
+        function isOpen() {
+          return body.classList.contains('erp-nav-open');
+        }
+
+        function setOpen(open) {
+          body.classList.toggle('erp-nav-open', open);
+          toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+          // Focus follows the drawer, so a keyboard or screen-reader user is
+          // not left tabbing through the page behind it.
+          if (open) {
+            var first = sidebar.querySelector('.nav-link');
+            if (first) { first.focus(); }
+          } else {
+            toggle.focus();
+          }
+        }
+
+        toggle.addEventListener('click', function () { setOpen(!isOpen()); });
+
+        if (backdrop) {
+          backdrop.addEventListener('click', function () { setOpen(false); });
+        }
+
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && isOpen()) { setOpen(false); }
+        });
+
+        // Every link leaves the page anyway, but closing first means the
+        // drawer is not still sitting open behind the new page on a slow
+        // connection - which reads as a stuck menu.
+        sidebar.addEventListener('click', function (event) {
+          if (event.target.closest('.nav-link')) {
+            body.classList.remove('erp-nav-open');
+          }
+        });
+
+        // Growing past the breakpoint turns the drawer back into the rail. The
+        // open state has to go with it, or the page keeps `overflow: hidden`
+        // from a drawer that is no longer a drawer.
+        function onBreakpoint(event) {
+          if (event.matches && isOpen()) {
+            body.classList.remove('erp-nav-open');
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.setAttribute('aria-label', 'Open menu');
+          }
+        }
+        if (DESKTOP.addEventListener) {
+          DESKTOP.addEventListener('change', onBreakpoint);
+        } else {
+          DESKTOP.addListener(onBreakpoint);  // Safari < 14
+        }
       })();
     </script>
 

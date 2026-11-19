@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/2.1/ref/settings/
 """
 
 import os
+import sys
 
 import dj_database_url
 from decouple import config
@@ -40,8 +41,12 @@ AUTH_USER_MODEL = 'info.User'
 # Application definition
 
 INSTALLED_APPS = [
+    # info comes first so that info/templates/admin/* wins over the templates
+    # shipped by django.contrib.admin. Reordering these two silently reverts
+    # the admin to its stock appearance; test_admin.py holds the ordering.
     'info.apps.InfoConfig',
-    'django.contrib.admin',
+    # Stands in for 'django.contrib.admin' - same app, a different AdminSite.
+    'info.apps.ErpAdminConfig',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -222,6 +227,23 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL',
 # A send that hangs should not hang the request with it.
 EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=10, cast=int)
 
+# The AI layer. Two providers, because no single one serves both halves:
+# generation writes answers and questions, embeddings turn text into the
+# vectors a search compares, and Groq has no embeddings endpoint.
+#
+# Absent keys are not an error. Following the same rule as storage and email
+# above, a checkout with neither key still runs - retrieval falls back to a
+# deterministic fake embedder and the chatbot is simply off. `info/checks.py`
+# complains about a half-configured deployment; nothing fails at import.
+GROQ_API_KEY = config('GROQ_API_KEY', default='')
+GROQ_MODEL = config('GROQ_MODEL', default='openai/gpt-oss-120b')
+GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
+
+# A public demo runs on somebody's free tier, and a stranger clicking a chat
+# box four hundred times is not hypothetical. Zero disables the feature.
+AI_DAILY_CALL_CAP = config('AI_DAILY_CALL_CAP', default=200, cast=int)
+AI_USER_DAILY_CALL_CAP = config('AI_USER_DAILY_CALL_CAP', default=30, cast=int)
+
 # The largest a profile photo may be, before it is resized on the way in.
 PROFILE_PHOTO_MAX_BYTES = config('PROFILE_PHOTO_MAX_BYTES', default=5 * 1024 * 1024,
                                  cast=int)
@@ -229,10 +251,23 @@ PROFILE_PHOTO_SIZE = 400
 
 LOGIN_REDIRECT_URL = '/'
 
+# Django forces DEBUG off while tests run, but these are read from the
+# environment at import time, so they follow whatever .env says. A developer
+# with DEBUG=False in .env - running the app behind a tunnel for a demo, say -
+# gets a 301 to https on every request the test client makes, and a suite that
+# fails everywhere with "301 != 200" and nothing pointing at the cause.
+#
+# The test client never speaks HTTPS, so redirecting it is meaningless as well
+# as fatal. Cookies are the same story: a secure-only session cookie is never
+# returned over the test client's plain HTTP, so every login in the suite
+# silently fails to stick.
+TESTING = 'test' in sys.argv
+
 # Production security (only enforced when DEBUG=False, i.e. behind Render's HTTPS)
-SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
+SECURE_SSL_REDIRECT = (
+    config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool) and not TESTING)
+SESSION_COOKIE_SECURE = not DEBUG and not TESTING
+CSRF_COOKIE_SECURE = not DEBUG and not TESTING
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # HSTS tells the browser to refuse plain HTTP to this host for the given
 # window, which closes the gap the redirect above leaves open: the first

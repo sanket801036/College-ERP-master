@@ -1,0 +1,137 @@
+{% extends 'info/base.html' %}
+{% load static %}
+{% block title %}Assistant{% endblock %}
+
+{% block content %}
+
+<div class="mb-4">
+  <h2 class="mb-0">Assistant</h2>
+  <p class="text-muted mb-0">
+    Answers from the college's own material, with a link to where each answer
+    came from.
+  </p>
+</div>
+
+{% comment %}
+An empty corpus has to explain itself. Without this the page looks broken:
+every question comes back "I do not have that" and nothing says why.
+{% endcomment %}
+{% if not passage_count %}
+  <div class="alert alert-info erp-no-print">
+    <b>Nothing to answer from yet.</b>
+    No course material or policy has been published for you, so every question
+    will come back unanswered. A teacher or an administrator has to add and
+    publish a document first.
+  </div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="post" action="{% url 'assistant' %}">
+      {% csrf_token %}
+      <div class="form-row align-items-start">
+        <div class="col">
+          {{ form.question }}
+          {% for error in form.question.errors %}
+            <div class="small text-danger mt-1">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div class="col-auto" id="voice-input-slot"></div>
+        <div class="col-auto">
+          <button class="btn btn-primary" type="submit">Ask</button>
+        </div>
+      </div>
+    </form>
+    <p class="small text-muted mb-0 mt-2">
+      Searching {{ passage_count }} passage{{ passage_count|pluralize }} from
+      {{ document_count }} document{{ document_count|pluralize }} you have
+      access to.
+    </p>
+  </div>
+</div>
+
+{% for turn in history reversed %}
+  <div class="card mb-3">
+    <div class="card-body">
+
+      <p class="erp-stat-label mb-1">You asked</p>
+      <p class="mb-3">{{ turn.question }}</p>
+
+      <div class="d-flex align-items-baseline justify-content-between">
+        <p class="erp-stat-label mb-1">Answer</p>
+        {% comment %}
+        Hidden until the script confirms the browser can speak. A button that
+        does nothing is worse than no button.
+        {% endcomment %}
+        <button type="button" class="btn btn-link btn-sm p-0 erp-no-print"
+                data-speak="{{ turn.answer }}" hidden>
+          <i class="fas fa-volume-up"></i> Listen
+        </button>
+      </div>
+      <p class="mb-2" style="white-space: pre-line;">{{ turn.answer }}</p>
+
+      {% if turn.truncated %}
+        {% comment %}
+        The model hit its token ceiling mid-sentence. Rendered plainly that
+        looks like a finished answer, which is worse than saying so.
+        {% endcomment %}
+        <p class="small mb-2">
+          <span class="erp-badge erp-badge-warning">Cut off</span>
+          This answer ran out of room. Ask something narrower for the rest.
+        </p>
+      {% endif %}
+
+      {% if not turn.sources and request.user.is_student %}
+        {% comment %}
+        Offered only where it is useful. An answer with no passages behind it
+        is the assistant saying the college material does not cover this, and
+        that is exactly the question that should reach a person.
+        {% endcomment %}
+        <form method="post" action="{% url 'escalate_doubt' %}"
+              class="mt-2 erp-no-print">
+          {% csrf_token %}
+          <input type="hidden" name="question" value="{{ turn.question }}">
+          <input type="hidden" name="assistant_said" value="{{ turn.answer }}">
+          <button class="btn btn-outline-primary btn-sm" type="submit">
+            <i class="fas fa-user-graduate"></i> Ask a teacher instead
+          </button>
+        </form>
+      {% endif %}
+
+      {% if turn.sources %}
+        <p class="erp-stat-label mb-1 mt-3">Where this came from</p>
+        <div class="accordion" id="sources{{ forloop.counter }}">
+          {% for source in turn.sources %}
+            <div class="border rounded mb-1">
+              <button class="btn btn-link btn-sm text-left w-100 p-2"
+                      type="button" data-toggle="collapse"
+                      data-target="#s{{ forloop.parentloop.counter }}-{{ forloop.counter }}">
+                [{{ forloop.counter }}] {{ source.citation }}
+              </button>
+              <div id="s{{ forloop.parentloop.counter }}-{{ forloop.counter }}"
+                   class="collapse">
+                <p class="small text-muted px-3 pb-3 mb-0">{{ source.text }}</p>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+    </div>
+  </div>
+{% endfor %}
+
+{% if history %}
+  <form method="post" action="{% url 'assistant' %}" class="erp-no-print">
+    {% csrf_token %}
+    <button class="btn btn-outline-secondary btn-sm" type="submit" name="clear">
+      Clear this conversation
+    </button>
+  </form>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'info/js/assistant-voice.js' %}"></script>
+{% endblock %}

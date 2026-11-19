@@ -3,7 +3,7 @@
 # by hand before anything would run.
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: college_erp
       POSTGRES_USER: postgres

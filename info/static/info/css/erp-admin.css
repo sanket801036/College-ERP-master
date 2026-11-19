@@ -1,0 +1,221 @@
+/* College ERP — Django admin skin (loads after admin/css/*, alongside theme.css)
+ *
+ * /admin/ was the one screen still wearing Django's stock teal-and-grey while
+ * the rest of the app ran on the --erp-* palette, and the dashboard links into
+ * it twice - so "Full Admin" landed on what looked like a different product.
+ *
+ * Almost all of this is variable remapping rather than element selectors.
+ * Django 5.2's admin declares its palette as custom properties in base.css and
+ * every other admin stylesheet - changelists, forms, dashboard, nav_sidebar,
+ * responsive - only reads them. Redefining the variables therefore reaches the
+ * whole admin with no specificity fight and nothing to keep in sync when
+ * Django changes a rule.
+ *
+ * theme.css is loaded first and is the single source of truth for the tokens;
+ * this file only translates them. Nothing here may define an --erp-* token:
+ * test_dark_mode.py requires every one of those to have a dark counterpart in
+ * theme.css, and a value invented here would have no home for it.
+ */
+
+/* One block, both themes.
+ *
+ * Every --erp-* token already swaps itself under :root[data-theme="dark"], so
+ * a light mapping and a dark mapping would be the same forty lines twice. The
+ * two attribute selectors are what make it outrank dark_mode.css: they match
+ * its `html[data-theme="dark"]` block on specificity and win on order, and
+ * they beat its bare `@media (prefers-color-scheme: dark) { :root }` outright.
+ * The plain :root is there for the moment before the pre-paint script has set
+ * the attribute at all. */
+html[data-theme="light"],
+html[data-theme="dark"],
+:root {
+  --primary: var(--erp-primary);
+  --secondary: var(--erp-primary-dark);
+  --primary-fg: #fff;
+
+  /* Not --erp-accent. This one paints #site-name, and cyan on indigo is a
+     legibility problem rather than a brand flourish. */
+  --accent: #fff;
+
+  --body-fg: var(--erp-ink);
+  /* The ground of a .module, not of the page - #container gets --body-bg and
+     the modules sit on it. The page itself is repainted below. */
+  --body-bg: var(--erp-surface);
+  --body-quiet-color: var(--erp-muted);
+  --body-medium-color: var(--erp-muted);
+  --body-loud-color: var(--erp-ink);
+
+  --header-color: rgba(255, 255, 255, .85);
+  --header-branding-color: #fff;
+  /* Deliberately solid. base.css reuses --header-bg for every .module caption
+     and every inline header, so the ERP navbar gradient belongs on #header
+     alone - see the rule further down - or it repeats a dozen times a page. */
+  --header-bg: var(--erp-primary-dark);
+  --header-link-color: #fff;
+
+  --breadcrumbs-bg: var(--erp-surface);
+  --breadcrumbs-fg: var(--erp-muted);
+  /* Stock resolves this to var(--body-bg). With --body-bg remapped to white
+     that renders breadcrumb links white on white - invisible, and the single
+     easiest thing to miss in this file. */
+  --breadcrumbs-link-fg: var(--erp-primary-dark);
+
+  --link-fg: var(--erp-primary);
+  --link-hover-color: var(--erp-primary-dark);
+  --link-selected-fg: var(--erp-primary-dark);
+
+  --hairline-color: var(--erp-border);
+  --border-color: var(--erp-border);
+
+  /* The -ink step, not the -600 one: this is small text, and only the -ink
+     steps clear 4.5:1 on both white and their own tint. */
+  --error-fg: var(--erp-danger-ink);
+
+  --message-success-bg: var(--erp-success-tint);
+  --message-warning-bg: var(--erp-warning-tint);
+  --message-error-bg: var(--erp-danger-tint);
+
+  /* One step down from --body-bg in both themes: #f4f6fb under white,
+     #0f172a under #1e293b. */
+  --darkened-bg: var(--erp-bg);
+  --selected-bg: var(--erp-primary-light);
+  /* Replaces the #ffc highlighter yellow, which belongs to no palette here. */
+  --selected-row: var(--erp-primary-light);
+
+  --button-fg: #fff;
+  --button-bg: var(--erp-primary);
+  --button-hover-bg: var(--erp-primary-dark);
+  --default-button-bg: var(--erp-primary-dark);
+  --default-button-hover-bg: var(--erp-primary);
+  --close-button-bg: var(--erp-muted);
+  --close-button-hover-bg: var(--erp-ink);
+  --delete-button-bg: var(--erp-danger);
+  --delete-button-hover-bg: var(--erp-danger-ink);
+
+  /* Stock inherits the grey close-button colour here, which makes "Add" read
+     as a dismiss control rather than the primary action on the page. */
+  --object-tools-fg: #fff;
+  --object-tools-bg: var(--erp-primary);
+  --object-tools-hover-bg: var(--erp-primary-dark);
+
+  /* Byte-identical to the stack in theme.css, so the two halves of the app do
+     not render in noticeably different type. */
+  --font-family-primary:
+    'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* ---------- The handful of things a variable cannot say ---------- */
+
+/* The page ground. --body-bg is the card colour; without this the modules are
+   white cards on a white page and every edge disappears. */
+body {
+  background: var(--erp-bg);
+}
+
+/* The same gradient as the app's navbar (theme.css), so moving between the two
+   does not feel like changing sites. */
+#header {
+  background: linear-gradient(90deg,
+              var(--erp-primary) 0%, var(--erp-primary-dark) 100%);
+  box-shadow: 0 2px 12px rgba(67, 56, 202, .25);
+}
+
+/* Modules as cards, matching .card in theme.css. overflow guards the corners
+   against the caption's own background running past them. */
+.module,
+.inline-group {
+  border-radius: var(--erp-radius);
+  overflow: hidden;
+  box-shadow: var(--erp-shadow);
+}
+
+div.breadcrumbs {
+  border-bottom: 1px solid var(--erp-border);
+}
+
+.button,
+input[type=submit],
+input[type=button],
+.submit-row input,
+a.button,
+.object-tools a {
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* The reset-attendance form on the AttendanceClass changelist sits outside the
+   .object-tools list, and base.css floats that list right with a -48px top
+   margin - so the "Add" pill lands on top of the date inputs. It was already
+   overlapping before this skin; giving the form its own line is the fix. */
+#reset-attd {
+  clear: both;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin: .5rem 0 1rem;
+}
+
+#reset-attd label {
+  margin: 0;
+  color: var(--erp-muted);
+  font-size: .8125rem;
+}
+
+/* ---------- The stat row on the index ---------- */
+
+/* .erp-stat itself comes from theme.css; only the grid around it is new, and
+   it is admin-only, so it lives here. */
+.erp-admin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .75rem;
+  margin-bottom: 1.5rem;
+}
+
+.erp-admin-stats .erp-stat {
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius);
+  box-shadow: var(--erp-shadow);
+  padding: 1rem;
+}
+
+/* ---------- Dark mode ----------
+ *
+ * The palette is already handled by the block at the top of this file, because
+ * the --erp-* tokens flip themselves. These are the two places where admin CSS
+ * hard-codes a colour instead of reading a variable. */
+
+html[data-theme="dark"] #header {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .4);
+}
+
+/* The admin ships a moon for dark and a sun for light; the app's toggle is the
+   other way round - it shows what you would switch to, not what you are in.
+   Matching them keeps one mental model across the two. */
+html[data-theme="dark"] .theme-toggle svg.theme-icon-when-dark,
+html[data-theme="light"] .theme-toggle svg.theme-icon-when-light {
+  color: #fff;
+}
+
+/* ---------- Print ----------
+ * theme.css already forces the light palette for print; the admin chrome is
+ * simply not worth ink. */
+@media print {
+  #header,
+  div.breadcrumbs,
+  #nav-sidebar,
+  .object-tools {
+    display: none;
+  }
+}
+
+/* The footer block is empty in stock admin, so #footer has no styling of its
+   own to inherit from. */
+#erp-admin-footer {
+  padding: 1.25rem 2.5rem;
+  color: var(--erp-muted);
+  font-size: .8125rem;
+  border-top: 1px solid var(--erp-border);
+}

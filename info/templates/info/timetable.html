@@ -9,8 +9,14 @@
                         Timetable
                     </h2>
                 </div>
-                <div id="no-more-tables">
-                    <table class="col-sm-12 table table-bordered table-striped table-condensed cf">
+                {% comment %}
+                A timetable is a grid; stacking it into cards on a phone
+                loses the whole point of reading it at a glance. It scrolls
+                sideways instead, with the day column pinned so you can
+                still tell which row you are on.
+                {% endcomment %}
+                <div class="table-responsive erp-timetable-scroll">
+                    <table class="table table-bordered table-striped table-condensed cf">
                         <thead class="cf">
                             <tr>
                                 <th>      </th>

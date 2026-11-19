@@ -21,9 +21,15 @@ def tokens_in(block):
 
 
 def block_after(text, selector):
-    """The body of the first rule with this selector."""
+    """The body of the first rule with this selector.
+
+    The selectors passed in already carry their opening brace, so the body
+    starts right after it. Looking for the next `{` instead - as this did -
+    lands in the *following* rule and returns its body, which for `:root {`
+    meant reading `body { ... }` and finding no tokens at all. Both palette
+    tests were comparing empty sets and passing on anything.
+    """
     start = text.index(selector) + len(selector)
-    start = text.index('{', start)
     return text[start:text.index('}', start)]
 
 
@@ -35,7 +41,7 @@ class PaletteTests(TestCase):
 
     def test_every_colour_token_has_a_dark_value(self):
         # Sizes and shapes stay put; only the colours change.
-        structural = {'--erp-radius', '--erp-serif'}
+        structural = {'--erp-radius', '--erp-serif', '--erp-navbar-h'}
         missing = self.light - self.dark - structural
 
         self.assertEqual(missing, set(),
@@ -82,3 +88,15 @@ class PageTests(TestCase):
         response = self.client.get(reverse('password_reset'))
 
         self.assertContains(response, "setAttribute('data-theme'")
+
+    def test_the_django_admin_shares_the_same_choice(self):
+        # The admin is a different template tree with its own theme script, and
+        # Django's reads a different localStorage key - so a preference set in
+        # the app was discarded the moment somebody clicked "Full Admin". The
+        # key, not just the presence of a script, is what makes it one setting.
+        self.client.force_login(f.make_admin())
+
+        response = self.client.get(reverse('admin:index'))
+
+        self.assertContains(response, "setAttribute('data-theme'")
+        self.assertContains(response, 'erp-theme')

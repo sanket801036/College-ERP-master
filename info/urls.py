@@ -1,4 +1,3 @@
-from django.contrib import admin
 from django.urls import include, path
 
 from . import views
@@ -98,6 +97,14 @@ urlpatterns = [
     path('teacher/queries/<int:query_id>/', views.review_mark_query,
          name='review_mark_query'),
 
+    path('assistant/', views.assistant, name='assistant'),
+    path('assistant/ask-a-teacher/', views.escalate_doubt, name='escalate_doubt'),
+    path('assistant/questions/', views.doubt_list, name='doubt_list'),
+    path('assistant/questions/<int:doubt_id>/withdraw/', views.withdraw_doubt,
+         name='withdraw_doubt'),
+    path('teacher/questions/', views.doubt_queue, name='doubt_queue'),
+    path('teacher/questions/<int:doubt_id>/', views.review_doubt,
+         name='review_doubt'),
     path('notifications/', views.notifications_list, name='notifications'),
     path('notifications/<int:notification_id>/', views.notification_open,
          name='notification_open'),
@@ -110,5 +117,3 @@ urlpatterns = [
     path('notices/<int:notice_id>/edit/', views.edit_notice, name='edit_notice'),
     path('notices/<int:notice_id>/delete/', views.delete_notice, name='delete_notice'),
 ]
-admin.site.site_url = None
-admin.site.site_header = 'My Site'

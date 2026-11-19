@@ -12,6 +12,14 @@ from django.db.models.signals import post_delete, post_save
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.utils.functional import cached_property
+from pgvector.django import HnswIndex, VectorField
+
+# The width every stored vector has, declared here because it is part of the
+# schema rather than a property of whichever provider is configured. It is
+# asserted against `info.embeddings.GEMINI_DIMENSIONS` in the tests: a store
+# filled at one width and queried at another compares vectors that are not
+# comparable, and nothing about that failure raises.
+EMBEDDING_DIMENSIONS = 768
 
 # Create your models here.
 sex_choice = (
@@ -1594,6 +1602,7 @@ NOTIFICATION_KINDS = (
     ('query', 'Mark query'),
     ('leave', 'Leave application'),
     ('correction', 'Attendance dispute'),
+    ('doubt', 'Question for a teacher'),
 )
 
 
@@ -1956,3 +1965,261 @@ class AttendanceCorrection(models.Model):
         if self.status == QUERY_WITHDRAWN:
             return 'Withdrawn'
         return None
+
+
+# The AI layer runs on somebody's free tier, and the demo is public. A stranger
+# holding down a chat box is not hypothetical, and the failure is not a bill -
+# it is the quota running out at four in the afternoon and the feature being
+# dead for everybody else that day.
+ai_call_kind_choice = (
+    ('generation', 'Answer or question generation'),
+    ('embedding', 'Embedding'),
+    ('guard', 'Prompt guard'),
+)
+
+
+class AiUsage(models.Model):
+    """Calls to a metered provider, counted per person per day.
+
+    A counter in the database rather than in the cache, because the cache here
+    is per-process: with several gunicorn workers a memory counter enforces
+    each cap once per worker, which is the same as not enforcing it.
+
+    Rows are per user, and the day's global total is their sum. There is
+    deliberately no "global" row with a null user - Postgres treats nulls as
+    distinct in a unique index, so that row would silently be allowed to exist
+    many times over and the global cap would drift upwards every day.
+    """
+    day = models.DateField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE,
+                             related_name='ai_usage')
+    kind = models.CharField(max_length=20, choices=ai_call_kind_choice,
+                            default='generation')
+    calls = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = (('day', 'user', 'kind'),)
+        ordering = ['-day', '-calls']
+        indexes = [models.Index(fields=['day', 'kind'])]
+
+    def __str__(self):
+        return '%s %s %s: %d' % (self.day, self.user, self.kind, self.calls)
+
+
+# The corpus the assistant is allowed to read. Two kinds, and the distinction
+# is the security boundary rather than a category: course material is only
+# searchable by the students taking that course, policy is searchable by
+# everybody. An injected prompt cannot surface a document that was never in
+# the candidate set - see info/guardrails.py, which explains why the
+# classifier is not the thing keeping people apart.
+MATERIAL_COURSE = 'course'
+MATERIAL_POLICY = 'policy'
+material_kind_choice = (
+    (MATERIAL_COURSE, 'Course material'),
+    (MATERIAL_POLICY, 'College policy'),
+)
+
+
+class CourseMaterial(models.Model):
+    """A document somebody uploaded for the assistant to answer from.
+
+    Publication is separate from upload, copying MarksClass: a teacher
+    uploading last year's paper by mistake should be able to notice before
+    students are answered out of it. Nothing unpublished is ever searched.
+
+    `content_hash` is over the normalised text, not the file. The same
+    paragraph out of a PDF and out of a text file has to hash the same, or a
+    re-upload stores the document twice and every answer cites whichever copy
+    it happened to hit.
+    """
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, null=True,
+                               blank=True, related_name='materials',
+                               help_text='Empty for college-wide policy.')
+    kind = models.CharField(max_length=10, choices=material_kind_choice,
+                            default=MATERIAL_COURSE)
+    title = models.CharField(max_length=200)
+    # Where the text came from, for a citation a student can go and check.
+    source = models.CharField(max_length=200, blank=True)
+    file = models.FileField(upload_to='materials/', null=True, blank=True)
+
+    content_hash = models.CharField(max_length=64, editable=False)
+    chunk_count = models.PositiveIntegerField(default=0)
+
+    is_published = models.BooleanField(default=False)
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name='materials')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['kind', 'is_published'])]
+        constraints = [
+            # A course document with no course is unreachable by any student,
+            # and a policy pinned to one course is not policy.
+            models.CheckConstraint(
+                condition=(models.Q(kind=MATERIAL_COURSE, course__isnull=False)
+                           | models.Q(kind=MATERIAL_POLICY, course__isnull=True)),
+                name='material_kind_matches_course'),
+            models.UniqueConstraint(
+                fields=['course', 'content_hash'],
+                name='one_copy_of_a_document_per_course'),
+        ]
+
+    def __str__(self):
+        return self.title
+
+    def publish(self):
+        self.is_published = True
+        self.published_at = timezone.now()
+        self.save(update_fields=['is_published', 'published_at', 'updated_at'])
+
+    def unpublish(self):
+        self.is_published = False
+        self.published_at = None
+        self.save(update_fields=['is_published', 'published_at', 'updated_at'])
+
+
+class MaterialChunk(models.Model):
+    """One passage of a document, as the retriever will see it.
+
+    The offsets are what a citation is built from. They point into the
+    *normalised* text rather than the original file, because that is what was
+    chunked - a citation into the raw PDF byte stream would name a position
+    nobody can find.
+
+    The embedding lives on this row and is added in a later migration, once
+    pgvector is installed. Until then the corpus is stored and readable and
+    simply cannot be searched by meaning, which is a better state than a
+    column nobody can migrate.
+    """
+    material = models.ForeignKey(CourseMaterial, on_delete=models.CASCADE,
+                                 related_name='chunks')
+    index = models.PositiveIntegerField()
+    text = models.TextField()
+    start = models.PositiveIntegerField(default=0)
+    end = models.PositiveIntegerField(default=0)
+
+    # Null until the passage has been embedded. Embedding is a network call
+    # that costs money and fails, and it happens after the text is safely
+    # stored - so null means "not searchable yet", never "matches nothing".
+    # `EMBEDDING_DIMENSIONS` is 768 rather than the model's 3072 default
+    # because pgvector's HNSW and IVFFlat indexes both cap at 2000; a wider
+    # column cannot be indexed and every query becomes a sequential scan.
+    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True,
+                            blank=True)
+    embedded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['material', 'index']
+        unique_together = (('material', 'index'),)
+        indexes = [
+            # Cosine, matching how the embeddings are compared. HNSW rather
+            # than IVFFlat because it does not need the table populated before
+            # it is built - an empty corpus that fills up over a term is
+            # exactly the case IVFFlat's training step handles badly.
+            HnswIndex(name='chunk_embedding_hnsw',
+                      fields=['embedding'],
+                      m=16, ef_construction=64,
+                      opclasses=['vector_cosine_ops']),
+        ]
+
+    def __str__(self):
+        return '%s [%d]' % (self.material.title, self.index)
+
+    @property
+    def citation(self):
+        """What a student is shown so they can go and check the answer."""
+        return '%s, passage %d' % (self.material.source or self.material.title,
+                                   self.index + 1)
+
+
+# When the assistant cannot help, the question should reach somebody who can.
+# The statuses are MarkQuery's on purpose: this is the fourth request-and-
+# review workflow in the app and a student should not have to learn a new
+# vocabulary for it.
+ESCALATION_OPEN = 'Open'
+ESCALATION_ANSWERED = 'Answered'
+ESCALATION_WITHDRAWN = 'Withdrawn'
+escalation_status_choice = (
+    (ESCALATION_OPEN, 'Waiting for a teacher'),
+    (ESCALATION_ANSWERED, 'Answered'),
+    (ESCALATION_WITHDRAWN, 'Withdrawn'),
+)
+
+# One person may have this many unanswered at once. Not a rate limit on
+# asking - it is a limit on how much of a teacher's queue one student can
+# occupy, which is the thing that makes a queue useless for everybody else.
+MAX_OPEN_ESCALATIONS = 3
+
+
+class EscalationQuerySet(models.QuerySet):
+    def open(self):
+        return self.filter(status=ESCALATION_OPEN)
+
+    def for_teacher(self, teacher):
+        """Questions from the classes this teacher actually teaches.
+
+        Scoped through Assign, like everything else that decides who may see
+        what. A teacher who teaches one section does not get another section's
+        queue.
+        """
+        classes = Assign.objects.filter(teacher=teacher).values('class_id')
+        return self.filter(student__class_id__in=classes)
+
+
+class AssistantEscalation(models.Model):
+    """A question the assistant could not answer, handed to a teacher.
+
+    The assistant's answer is stored alongside the question, and that is the
+    point of the record rather than a convenience: a teacher who can see what
+    the student was already told can correct it, and a run of these is the
+    only honest signal about where the corpus is thin.
+    """
+    student = models.ForeignKey(Student, on_delete=models.CASCADE,
+                                related_name='escalations')
+    # Which subject it is about, when the student knows. Left empty for a
+    # question about the college rather than a course.
+    course = models.ForeignKey(Course, on_delete=models.SET_NULL, null=True,
+                               blank=True, related_name='escalations')
+    question = models.TextField(max_length=500)
+    # What the assistant said, snapshotted. The session history it came from
+    # is cleared routinely, and a question without the answer it followed
+    # reads as if nobody had tried.
+    assistant_said = models.TextField(max_length=2000, blank=True)
+
+    status = models.CharField(max_length=12, choices=escalation_status_choice,
+                              default=ESCALATION_OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    response = models.TextField(max_length=2000, blank=True)
+    answered_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name='answered_doubts')
+    answered_at = models.DateTimeField(null=True, blank=True)
+
+    objects = EscalationQuerySet.as_manager()
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['status', '-created_at'])]
+
+    def __str__(self):
+        return '%s: %s' % (self.student.name, self.question[:50])
+
+    @property
+    def is_open(self):
+        return self.status == ESCALATION_OPEN
+
+    @property
+    def outcome(self):
+        """One line for the student's own list."""
+        if self.status == ESCALATION_OPEN:
+            return 'Waiting for a teacher'
+        if self.status == ESCALATION_WITHDRAWN:
+            return 'Withdrawn'
+        return 'Answered by %s' % (self.answered_by.username
+                                   if self.answered_by else 'a teacher')

@@ -1,0 +1,25 @@
+{% extends "admin/index.html" %}
+
+{% comment %}
+Named erp_index rather than index on purpose: a template cannot extend itself,
+and Django's admin/index.html would be shadowed by this directory the moment it
+shared a name. Under a different name the extends below resolves to Django's
+own, so the whole page - app list, recent actions, sidebar - is inherited and
+this file adds one block instead of copying two hundred lines that would then
+need re-copying on every Django upgrade.
+
+ErpAdminSite.index_template points here; erp_stats comes from its index().
+{% endcomment %}
+
+{% block pretitle %}
+  {% if erp_stats %}
+    <div class="erp-admin-stats">
+      {% for label, value in erp_stats %}
+        <div class="erp-stat">
+          <div class="erp-stat-label">{{ label }}</div>
+          <div class="erp-stat-value">{{ value }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

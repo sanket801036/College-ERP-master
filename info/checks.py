@@ -56,3 +56,58 @@ def check_object_storage(app_configs, **kwargs):
             id=W002))
 
     return problems
+
+
+W003 = 'info.W003'
+W004 = 'info.W004'
+W005 = 'info.W005'
+
+
+@register('deploy')
+def check_ai_layer(app_configs, **kwargs):
+    """Is the AI configuration whole, or half-configured?
+
+    Two providers are needed and neither does the other's job: Groq writes
+    answers and has no embeddings endpoint, Gemini embeds and is not used for
+    generation. Configuring one and not the other leaves a chatbot that
+    retrieves against meaningless vectors, or a retriever with nothing to
+    answer with - both of which look like they work.
+    """
+    generation = bool(getattr(settings, 'GROQ_API_KEY', ''))
+    embedding = bool(getattr(settings, 'GEMINI_API_KEY', ''))
+    problems = []
+
+    if generation and not embedding:
+        problems.append(Warning(
+            'GROQ_API_KEY is set but GEMINI_API_KEY is not.',
+            hint='Retrieval will fall back to the deterministic fake '
+                 'embedder, which knows nothing about meaning. The chatbot '
+                 'will answer fluently from whichever passages it happened to '
+                 'retrieve, and nothing will report that they were the wrong '
+                 'ones. Set GEMINI_API_KEY, or unset GROQ_API_KEY to turn the '
+                 'feature off deliberately.',
+            id=W003))
+
+    if embedding and not generation:
+        problems.append(Warning(
+            'GEMINI_API_KEY is set but GROQ_API_KEY is not.',
+            hint='Documents will be embedded and stored, and there is nothing '
+                 'configured to answer with. The prompt guard is off too, '
+                 'since it runs on the same key.',
+            id=W004))
+
+    if generation or embedding:
+        caps = [name for name in ('AI_DAILY_CALL_CAP', 'AI_USER_DAILY_CALL_CAP')
+                if getattr(settings, name, 0) <= 0]
+        if caps:
+            problems.append(Warning(
+                'The AI layer is configured but %s is zero.'
+                % ' and '.join(caps),
+                hint='Zero switches the feature off, which is a legitimate '
+                     'setting and the fastest way to stop a runaway. If that '
+                     'was not the intent, a public demo with an uncapped key '
+                     'behind it is one bored visitor away from an exhausted '
+                     'quota.',
+                id=W005))
+
+    return problems

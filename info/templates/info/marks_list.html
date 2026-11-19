@@ -122,6 +122,7 @@ had not happened yet from one scored zero.
           {% endif %}
         {% endwith %}
 
+        <div class="table-responsive">
         <table class="table table-sm mt-3 mb-2">
           <thead class="thead-light">
             <tr><th>Component</th><th class="text-right">Marks</th></tr>
@@ -194,6 +195,7 @@ had not happened yet from one scored zero.
             {% endif %}
           </tbody>
         </table>
+        </div>
 
         {% if sc.is_see_eligible is False %}
           <p class="text-danger mb-2">
