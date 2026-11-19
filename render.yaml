@@ -28,7 +28,7 @@ services:
       - key: CSRF_TRUSTED_ORIGINS
         value: https://*.onrender.com
       - key: PYTHON_VERSION
-        value: 3.10.11
+        value: 3.12.8
       # This service is the public demo, so its sign-in page lists the test
       # logins. Leave it out of any real deployment.
       - key: SHOW_DEMO_LOGINS

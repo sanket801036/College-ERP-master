@@ -1,9 +1,10 @@
 Django==5.2.17
-djangorestframework==3.15.2
-djoser==2.3.4
-# Pinned because djoser 2.3.x requires <6.0.0; 5.9.0 carries the fix for
-# PYSEC-2026-1932.
-social-auth-app-django==5.9.0
+djangorestframework==3.18.3
+djoser==2.3.5
+# djoser 2.3.5 accepts anything below 8.0. 7.2.0 is the newest line that still
+# installs social-auth-core 6.x, which carries the fixes for PYSEC-2026-4166,
+# PYSEC-2026-4168 and GHSA-h2r5-x5m7-3935.
+social-auth-app-django==7.2.0
 drf-spectacular==0.27.2
 psycopg2-binary==2.9.9
 # Vector column and the distance operators for retrieval. The extension
@@ -15,12 +16,10 @@ pandas==2.2.3
 reportlab==4.2.5
 # Required by ImageField; reportlab pulls it in too, but the profile photo
 # resizing uses it directly.
-Pillow==12.3.0
+Pillow==13.0.0
 gunicorn==23.0.0
 whitenoise==6.7.0
 dj-database-url==2.3.0
-ruff==0.6.9
-pip-audit==2.7.3
 # Only used when AWS_STORAGE_BUCKET_NAME is set; uploads stay on the local
 # disk otherwise.
 django-storages==1.14.4

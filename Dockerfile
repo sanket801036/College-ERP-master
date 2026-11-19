@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # Unbuffered so container logs appear as they happen rather than in blocks -
 # the app writes everything to stdout for exactly this reason.

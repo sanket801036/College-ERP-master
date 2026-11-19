@@ -94,7 +94,7 @@ http://localhost:8000 - the seed step prints the logins it creates.
 
 ### Without Docker
 
-Requires Python 3.10+ and a local PostgreSQL.
+Requires Python 3.12+ and a local PostgreSQL.
 
 ```bash
 git clone https://github.com/sanket801036/College-ERP-master.git
@@ -148,6 +148,7 @@ Two optional groups, both of which degrade rather than break when unset:
 ## Tests and linting
 
 ```bash
+pip install -r requirements-dev.txt
 python manage.py test info.tests
 ruff check .
 pip-audit -r requirements.txt

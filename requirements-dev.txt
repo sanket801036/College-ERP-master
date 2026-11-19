@@ -1,0 +1,6 @@
+# Tools for CI and local checks. Kept out of requirements.txt so the deploy
+# does not install them, and so pip-audit audits what actually runs in
+# production rather than its own dependencies (filelock, through cachecontrol).
+-r requirements.txt
+ruff==0.6.9
+pip-audit==2.7.3
