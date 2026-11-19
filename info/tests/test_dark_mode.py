@@ -35,7 +35,7 @@ class PaletteTests(TestCase):
 
     def test_every_colour_token_has_a_dark_value(self):
         # Sizes and shapes stay put; only the colours change.
-        structural = {'--erp-radius'}
+        structural = {'--erp-radius', '--erp-serif'}
         missing = self.light - self.dark - structural
 
         self.assertEqual(missing, set(),
@@ -47,7 +47,7 @@ class PaletteTests(TestCase):
         self.assertEqual(self.dark - self.light, set())
 
     def test_the_dark_palette_is_actually_dark(self):
-        self.assertIn('--erp-bg: #0f172a', self.css)
+        self.assertIn('--erp-bg: #141816', self.css)
         self.assertIn('color-scheme: dark', self.css)
 
     def test_printing_goes_back_to_paper_colours(self):

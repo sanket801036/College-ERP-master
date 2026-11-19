@@ -1,10 +1,12 @@
 /* College ERP — modern theme overlay (loads after Bootstrap 4 / SB Admin 2) */
 
 :root {
-  --erp-primary: #4f46e5;
-  --erp-primary-dark: #4338ca;
-  --erp-primary-light: #eef2ff;
-  --erp-accent: #06b6d4;
+  /* Pine green on warm paper, the colours of a printed register rather than a
+     SaaS dashboard. #1f5c4a clears 7:1 on white, so it can carry small text. */
+  --erp-primary: #1f5c4a;
+  --erp-primary-dark: #174636;
+  --erp-primary-light: #e7efea;
+  --erp-accent: #a8532c;
   --erp-success: #16a34a;
   --erp-danger: #dc2626;
   --erp-warning: #d97706;
@@ -20,14 +22,17 @@
   --erp-success-tint: #dcfce7;
   --erp-danger-tint: #fee2e2;
   --erp-warning-tint: #fef3c7;
-  --erp-ink: #1e293b;
-  --erp-muted: #64748b;
-  --erp-border: #e2e8f0;
-  --erp-bg: #f4f6fb;
+  --erp-ink: #1d2421;
+  --erp-muted: #5c6661;
+  --erp-border: #dfdbd1;
+  --erp-bg: #f6f4ef;
   --erp-surface: #ffffff;
-  --erp-radius: 14px;
-  --erp-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px rgba(15, 23, 42, .06);
-  --erp-shadow-hover: 0 4px 10px rgba(15, 23, 42, .06), 0 16px 32px rgba(15, 23, 42, .10);
+  --erp-topbar: #1d2421;
+  --erp-radius: 6px;
+  /* Depth from the border, not from a soft drop shadow. */
+  --erp-shadow: 0 1px 0 rgba(29, 36, 33, .04);
+  --erp-shadow-hover: 0 1px 0 rgba(29, 36, 33, .04);
+  --erp-serif: Charter, 'Bitstream Charter', 'Iowan Old Style', Georgia, Cambria, serif;
 }
 
 body {
@@ -644,11 +649,12 @@ body {
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* Indigo lifted two steps: #4f46e5 on a dark ground reads as a smudge. */
-  --erp-primary: #818cf8;
-  --erp-primary-dark: #6366f1;
-  --erp-primary-light: #312e81;
-  --erp-accent: #22d3ee;
+  /* The pine lifted to a sage: the light-mode green on a dark ground reads as
+     a smudge. */
+  --erp-primary: #86c2a8;
+  --erp-primary-dark: #a6d6c0;
+  --erp-primary-light: #1f3a31;
+  --erp-accent: #e08a5f;
 
   /* Marks: the -400 steps, which clear 3:1 on the dark ground the way the
      -600s do on white. */
@@ -667,11 +673,12 @@ body {
   --erp-danger-tint: #7f1d1d;
   --erp-warning-tint: #78350f;
 
-  --erp-ink: #e2e8f0;
-  --erp-muted: #94a3b8;
-  --erp-border: #334155;
-  --erp-bg: #0f172a;
-  --erp-surface: #1e293b;
+  --erp-ink: #e7e5df;
+  --erp-muted: #a5aca7;
+  --erp-border: #343b37;
+  --erp-bg: #141816;
+  --erp-surface: #1c211e;
+  --erp-topbar: #0e1110;
 
   /* Shadow does almost nothing on a dark ground - depth comes from the
      surface being lighter than the page - so these mostly stop the cards
@@ -784,10 +791,10 @@ body {
    out unreadable, so the palette goes back to the light one for print. */
 @media print {
   :root[data-theme="dark"] {
-    --erp-ink: #1e293b;
-    --erp-muted: #64748b;
-    --erp-border: #e2e8f0;
-    --erp-bg: #f4f6fb;
+    --erp-ink: #1d2421;
+    --erp-muted: #5c6661;
+    --erp-border: #dfdbd1;
+    --erp-bg: #f6f4ef;
     --erp-surface: #ffffff;
     --erp-success-ink: #15803d;
     --erp-danger-ink: #b91c1c;
@@ -802,7 +809,7 @@ body {
   :root[data-theme="dark"] .table,
   :root[data-theme="dark"] .list-group-item {
     background: #fff !important;
-    color: #1e293b !important;
+    color: #1d2421 !important;
   }
 }
 
