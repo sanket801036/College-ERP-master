@@ -41,25 +41,27 @@ body {
   font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
 }
 
+h1, h2, h3, h4 {
+  font-family: var(--erp-serif);
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: var(--erp-ink);
+}
+
+a { color: var(--erp-primary); }
+a:hover { color: var(--erp-primary-dark); }
+
 /* ---------- Topbar ---------- */
 .navbar.bg-dark {
-  background: linear-gradient(90deg, var(--erp-primary) 0%, var(--erp-primary-dark) 100%) !important;
-  box-shadow: 0 2px 12px rgba(67, 56, 202, .25);
+  background: var(--erp-topbar) !important;
   border: 0;
+  border-bottom: 3px solid var(--erp-primary);
 }
 
 .navbar-brand {
+  font-family: var(--erp-serif);
   font-weight: 700;
-  letter-spacing: .3px;
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-}
-
-.navbar-brand::before {
-  content: '\f19d';
-  font-family: 'Font Awesome 5 Free';
-  font-weight: 900;
+  font-size: 1.15rem;
 }
 
 .navbar .nav-link {
@@ -123,11 +125,12 @@ body {
 .sidebar .nav-item .nav-link,
 .sidebar .nav-link {
   width: auto !important;
-  color: var(--erp-muted);
+  color: var(--erp-ink);
   font-weight: 500;
   text-align: left !important;
-  border-radius: 10px;
-  margin: 2px 12px;
+  border-radius: 0;
+  border-left: 3px solid transparent;
+  margin: 0;
   padding: .7rem .9rem !important;
   display: flex !important;
   align-items: center;
@@ -147,7 +150,7 @@ body {
   width: 18px;
   flex-shrink: 0;
   text-align: center;
-  color: var(--erp-primary);
+  color: var(--erp-muted);
 }
 
 .sidebar .nav-link:hover {
@@ -158,8 +161,11 @@ body {
 .sidebar .nav-link.active {
   background: var(--erp-primary-light);
   color: var(--erp-primary-dark);
-  font-weight: 700;
+  border-left-color: var(--erp-primary);
+  font-weight: 600;
 }
+
+.sidebar .nav-link.active i { color: var(--erp-primary); }
 
 #wrapper #content-wrapper {
   padding-left: 0 !important;
@@ -170,11 +176,6 @@ body {
   border: 1px solid var(--erp-border);
   border-radius: var(--erp-radius);
   box-shadow: var(--erp-shadow);
-  transition: box-shadow .18s ease, transform .18s ease;
-}
-
-.card:hover {
-  box-shadow: var(--erp-shadow-hover);
 }
 
 .card-header {
@@ -186,7 +187,7 @@ body {
 }
 
 .card-header i {
-  color: var(--erp-primary);
+  color: var(--erp-muted);
   margin-right: .4rem;
 }
 
@@ -197,20 +198,50 @@ body {
 }
 
 .erp-feature-card:hover {
-  transform: translateY(-4px);
+  border-color: var(--erp-primary);
 }
 
 .erp-feature-icon {
-  width: 64px;
-  height: 64px;
-  margin: 1.5rem auto .5rem;
-  border-radius: 16px;
-  background: var(--erp-primary-light);
+  width: 44px;
+  height: 44px;
+  margin: 1.25rem auto .5rem;
+  border-radius: var(--erp-radius);
+  background: none;
+  border: 1px solid var(--erp-border);
   color: var(--erp-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.6rem;
+  font-size: 1.15rem;
+}
+
+/* Shortcut cards read as a list of places to go, left-aligned like the rest
+   of the page, with a quiet link-style action rather than a filled button in
+   every card competing for attention. */
+.erp-feature-card { text-align: left; }
+.erp-feature-card .erp-feature-icon { margin: 1.25rem 1.25rem .75rem; }
+.erp-feature-card .card-title {
+  font-family: var(--erp-serif);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.erp-feature-card .card-footer { padding-top: 0; }
+.erp-feature-card .btn-primary {
+  background: transparent;
+  border-color: var(--erp-border);
+  color: var(--erp-primary);
+}
+.erp-feature-card .btn-primary:hover,
+.erp-feature-card .btn-primary:focus {
+  background: var(--erp-primary-light);
+  border-color: var(--erp-primary);
+  color: var(--erp-primary-dark);
+}
+
+/* Georgia, the usual serif fallback, sets old-style figures that bob above
+   and below the line - wrong for a fee total or an attendance percentage. */
+h1, h2, h3, h4, h5, .erp-stat-value, .navbar-brand {
+  font-variant-numeric: lining-nums;
 }
 
 /* ---------- Buttons ---------- */
@@ -226,19 +257,48 @@ body {
 }
 
 .btn {
-  border-radius: 10px;
-  font-weight: 600;
+  border-radius: var(--erp-radius);
+  font-weight: 500;
 }
+
+/* Bootstrap's own blue, wherever a template still asks for it. */
+.btn-outline-primary {
+  color: var(--erp-primary);
+  border-color: var(--erp-primary);
+}
+.btn-outline-primary:hover,
+.btn-outline-primary:focus,
+.btn-outline-primary:not(:disabled):not(.disabled).active,
+.btn-outline-primary:not(:disabled):not(.disabled):active {
+  background: var(--erp-primary);
+  border-color: var(--erp-primary);
+  color: var(--erp-surface);
+}
+.btn-info {
+  background: var(--erp-primary);
+  border-color: var(--erp-primary);
+}
+.text-primary { color: var(--erp-primary) !important; }
+.bg-primary, .badge-primary { background-color: var(--erp-primary) !important; }
+.btn-link, .page-link { color: var(--erp-primary); }
+.page-item.active .page-link {
+  background: var(--erp-primary);
+  border-color: var(--erp-primary);
+}
+.form-control:focus,
+.custom-select:focus {
+  border-color: var(--erp-primary);
+  box-shadow: 0 0 0 3px var(--erp-primary-light);
+}
+.btn:focus, .btn.focus { box-shadow: 0 0 0 3px var(--erp-primary-light); }
 
 /* ---------- Tables ---------- */
 .table thead th {
   background: var(--erp-bg);
   color: var(--erp-muted);
-  font-size: .78rem;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  border-bottom: 2px solid var(--erp-border);
-  font-weight: 700;
+  font-size: .82rem;
+  border-bottom: 1px solid var(--erp-border);
+  font-weight: 600;
 }
 
 .table td, .table th {
@@ -248,22 +308,22 @@ body {
 /* ---------- Badges / status pills ---------- */
 .erp-badge {
   display: inline-block;
-  padding: .3rem .65rem;
-  border-radius: 999px;
-  font-size: .78rem;
-  font-weight: 700;
+  padding: .15rem .45rem;
+  border-radius: 3px;
+  font-size: .8rem;
+  font-weight: 600;
 }
 
 /* Text steps, not the mark steps - the -600s sat at ~3:1 on their own tints. */
 .erp-badge-success { background: var(--erp-success-tint); color: var(--erp-success-ink); }
 .erp-badge-danger  { background: var(--erp-danger-tint);  color: var(--erp-danger-ink); }
 .erp-badge-warning { background: var(--erp-warning-tint); color: var(--erp-warning-ink); }
-.erp-badge-info    { background: #e0f2fe; color: #0369a1; }
+.erp-badge-info    { background: var(--erp-primary-light); color: var(--erp-primary-dark); }
 
 /* Recolor legacy inline bg-success/bg-danger table cells to pill-style */
 .table td.bg-success,
 .table td.bg-danger {
-  border-radius: 999px !important;
+  border-radius: 3px !important;
   font-weight: 700;
 }
 
@@ -315,8 +375,9 @@ body {
 
 /* ---------- Notices ---------- */
 .erp-notice {
-  border-left: 4px solid var(--erp-primary);
-  border-radius: 10px;
+  border: 1px solid var(--erp-border);
+  border-left: 3px solid var(--erp-primary);
+  border-radius: var(--erp-radius);
   background: var(--erp-surface);
   padding: .9rem 1.1rem;
   margin-bottom: .75rem;
@@ -341,16 +402,16 @@ body {
    leads with one inside an ordinary card. Proportional figures, not
    tabular-nums: equal-width digits make a large standalone number look loose. */
 .erp-stat-value {
-  font-size: 1.6rem;
-  font-weight: 800;
+  font-family: var(--erp-serif);
+  font-size: 1.75rem;
+  font-weight: 700;
   color: var(--erp-ink);
 }
 
 .erp-stat-label {
   color: var(--erp-muted);
-  font-size: .8rem;
-  text-transform: uppercase;
-  letter-spacing: .04em;
+  font-size: .85rem;
+  font-weight: 500;
 }
 
 /* The "/ 10" after an SGPA is context, not the value. */
@@ -685,6 +746,22 @@ body {
      from carrying a black halo. */
   --erp-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
   --erp-shadow-hover: 0 4px 10px rgba(0, 0, 0, .35), 0 16px 32px rgba(0, 0, 0, .3);
+}
+
+/* The sage primary is a light colour on dark, so text on it has to be dark
+   too - white on #86c2a8 is about 2:1. */
+:root[data-theme="dark"] .btn-primary,
+:root[data-theme="dark"] .btn-primary:hover,
+:root[data-theme="dark"] .btn-primary:focus,
+:root[data-theme="dark"] .btn-info,
+:root[data-theme="dark"] .badge-primary {
+  color: #0e1110;
+}
+
+:root[data-theme="dark"] .erp-feature-card .btn-primary,
+:root[data-theme="dark"] .erp-feature-card .btn-primary:hover,
+:root[data-theme="dark"] .erp-feature-card .btn-primary:focus {
+  color: var(--erp-primary);
 }
 
 /* Bootstrap's own light surfaces. Each of these paints itself white or near
