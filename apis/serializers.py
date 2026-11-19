@@ -1,6 +1,13 @@
 from rest_framework import serializers
 
-from info.models import Assign, AssignTime, AttendanceTotal, Student, StudentCourse
+from info.models import (
+    Assign,
+    AssignTime,
+    AssistantEscalation,
+    AttendanceTotal,
+    Student,
+    StudentCourse,
+)
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -17,6 +24,22 @@ class StudentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = ['USN', 'name', 'dept', 'semester', 'section']
+
+
+class DoubtSerializer(serializers.ModelSerializer):
+    """A question handed to a teacher, and what became of it."""
+    course = serializers.CharField(source='course.name', read_only=True,
+                                   default=None)
+    outcome = serializers.ReadOnlyField()
+    answered_by = serializers.CharField(source='answered_by.username',
+                                        read_only=True, default=None)
+
+    class Meta:
+        model = AssistantEscalation
+        fields = ['id', 'question', 'assistant_said', 'course', 'status',
+                  'outcome', 'response', 'answered_by', 'created_at',
+                  'answered_at']
+        read_only_fields = fields
 
 
 class AttendanceSerializer(serializers.ModelSerializer):

@@ -17,10 +17,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 import apis.serializers as api_ser
+from info import notifications, rag
+from info.forms import EscalateDoubtForm
 from info.models import (
     ATTENDANCE_THRESHOLD,
     Assign,
     AssignTime,
+    AssistantEscalation,
     Attendance,
     AttendanceClass,
     AttendanceTotal,
@@ -190,6 +193,57 @@ class ClassStudentsView(TeacherAPIView):
 
         serializer = api_ser.ClassStudentSerializer(rows, many=True)
         return Response({'data': serializer.data})
+
+
+class DoubtsView(StudentAPIView):
+    """Questions the caller has handed to a teacher.
+
+    The same hand-off as the assistant page, for a client that runs its own
+    assistant: it posts the question together with what it already told the
+    student, and the teachers of that class see it in their queue. The same
+    form does the validating, so a course outside the student's timetable or
+    a one-word question is refused here exactly as it is on the page.
+    """
+
+    def get(self, request):
+        student = self.get_student(request)
+        doubts = (AssistantEscalation.objects.filter(student=student)
+                  .select_related('course', 'answered_by'))
+        serializer = api_ser.DoubtSerializer(doubts, many=True)
+        return Response({'data': serializer.data})
+
+    @extend_schema(
+        summary='Hand a question to a teacher',
+        description='For a question an assistant could not answer from the '
+                    'college material. assistant_said is what the student was '
+                    'already told, so the teacher can correct it rather than '
+                    'repeat it.',
+    )
+    def post(self, request):
+        student = self.get_student(request)
+        form = EscalateDoubtForm(
+            {'question': request.data.get('question', ''),
+             'course': request.data.get('course_id') or '',
+             'assistant_said': request.data.get('assistant_said', '')},
+            student=student)
+        if not form.is_valid():
+            return Response({'errors': form.errors},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            doubt = rag.escalate(
+                student, form.cleaned_data['question'], request.user,
+                assistant_said=form.cleaned_data['assistant_said'],
+                course=form.cleaned_data['course'])
+        except rag.EscalationNotAllowed as exc:
+            # Too many already waiting: a conflict with the student's own
+            # state, not a malformed request.
+            return Response({'errors': {'__all__': [str(exc)]}},
+                            status=status.HTTP_409_CONFLICT)
+
+        notifications.announce(notifications.messages_for_doubt_raised(doubt))
+        return Response({'data': api_ser.DoubtSerializer(doubt).data},
+                        status=status.HTTP_201_CREATED)
 
 
 @extend_schema(

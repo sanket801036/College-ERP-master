@@ -19,6 +19,7 @@ endpoints = [
          api_view.SubmitAttendanceView.as_view(), name='api-submit-attendance'),
     path('marks/<int:marks_class_id>/entry/',
          api_view.SubmitMarksView.as_view(), name='api-submit-marks'),
+    path('doubts/', api_view.DoubtsView.as_view(), name='api-doubts'),
     path('auth/token/', api_view.ObtainTokenView.as_view(), name='api-token'),
 ]
 
