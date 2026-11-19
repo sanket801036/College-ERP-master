@@ -332,6 +332,12 @@ class Command(BaseCommand):
         settled = Marks.objects.get(studentcourse__student=students[2],
                                     studentcourse__course=course,
                                     name='Internal test 1')
+        # The marks above are random, and a paper already at full marks has
+        # nowhere to be corrected to - the accepted query would 'correct' 20
+        # to 20 and show nothing. Leave room for the three it gains.
+        if settled.marks1 > settled.total_marks - 3:
+            settled.marks1 = settled.total_marks - 5
+            settled.save(update_fields=['marks1'])
         query = services.raise_mark_query(
             settled, students[2],
             'Question 4(b) is marked out of 5 on my paper but the scheme says '
