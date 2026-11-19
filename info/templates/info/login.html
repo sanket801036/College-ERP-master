@@ -108,6 +108,31 @@
             <button class="btn btn-primary btn-block" type="submit">Sign in</button>
           </form>
 
+          {% if demo_logins %}
+            <!-- Only on the public demo (SHOW_DEMO_LOGINS). These accounts sit on
+                 seeded test data, so printing them here costs nothing. -->
+            <section class="erp-demo-logins" aria-labelledby="demoLoginsHeading">
+              <h3 class="erp-demo-heading" id="demoLoginsHeading">Demo logins <span>test data only</span></h3>
+              <table class="erp-demo-table">
+                <tbody>
+                  {% for d in demo_logins %}
+                    <tr>
+                      <th scope="row">{{ d.label }}</th>
+                      <td><code>{{ d.username }}</code></td>
+                      <td><code>{{ d.password }}</code></td>
+                      <td>
+                        <button type="button" class="erp-demo-use"
+                                data-role="{{ d.role }}" data-username="{{ d.username }}"
+                                data-password="{{ d.password }}"
+                                aria-label="Fill in the {{ d.label }} demo login">Use</button>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </section>
+          {% endif %}
+
           <p class="text-muted small mt-4 mb-0">
             Can't get in?
             <a href="#" data-toggle="modal" data-target="#supportModal">Message the administrator</a>
@@ -186,6 +211,21 @@
               tab.classList.remove('active');
             });
             input.parentElement.classList.add('active');
+          });
+        });
+
+        // Demo logins: fill the form rather than sign in, so the visitor still
+        // sees which role and account they are about to use.
+        document.querySelectorAll('.erp-demo-use').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var radio = document.querySelector('.erp-role-tab input[value="' + btn.dataset.role + '"]');
+            if (radio) {
+              radio.checked = true;
+              radio.dispatchEvent(new Event('change'));
+            }
+            document.getElementById('id_username').value = btn.dataset.username;
+            field.value = btn.dataset.password;
+            document.querySelector('#loginForm button[type="submit"]').focus();
           });
         });
 

@@ -29,6 +29,10 @@ services:
         value: https://*.onrender.com
       - key: PYTHON_VERSION
         value: 3.10.11
+      # This service is the public demo, so its sign-in page lists the test
+      # logins. Leave it out of any real deployment.
+      - key: SHOW_DEMO_LOGINS
+        value: true
       # Mail. Without these the app falls back to printing messages to the
       # log, so a deploy without them still works - the password reset just
       # cannot reach anybody. Host and port are Gmail's and are not secret;

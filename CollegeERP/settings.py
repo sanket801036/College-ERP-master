@@ -254,6 +254,16 @@ SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS',
 SECURE_HSTS_INCLUDE_SUBDOMAINS = config('SECURE_HSTS_INCLUDE_SUBDOMAINS',
                                         default=False, cast=bool)
 
+# The public demo prints its three test logins on the sign-in page so a visitor
+# can get in without asking. Off by default: a real college deployment must
+# never advertise passwords, so only the demo service turns this on.
+SHOW_DEMO_LOGINS = config('SHOW_DEMO_LOGINS', default=False, cast=bool)
+DEMO_LOGINS = [
+    {'role': 'admin', 'label': 'Admin', 'username': 'admin', 'password': 'admin12345'},
+    {'role': 'teacher', 'label': 'Faculty', 'username': 'testteach', 'password': 'testpass123'},
+    {'role': 'student', 'label': 'Student', 'username': 'teststud', 'password': 'testpass123'},
+]
+
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',

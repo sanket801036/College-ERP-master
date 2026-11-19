@@ -1,5 +1,5 @@
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from info.models import SupportRequest
@@ -144,3 +144,28 @@ class SupportRequestTests(TestCase):
 
         self.assertEqual(response.context['open_support'], 1)
         self.assertContains(response, 'unresolved support request')
+
+
+class DemoLoginsTests(TestCase):
+    """The public demo prints its test logins; nothing else ever may."""
+
+    def test_hidden_unless_the_deployment_asks_for_them(self):
+        with override_settings(SHOW_DEMO_LOGINS=False):
+            response = self.client.get(reverse('login'))
+
+        self.assertNotContains(response, 'id="demoLoginsHeading"')
+        self.assertNotContains(response, 'admin12345')
+        self.assertNotContains(response, 'testpass123')
+
+    def test_listed_with_their_role_when_turned_on(self):
+        with override_settings(SHOW_DEMO_LOGINS=True):
+            response = self.client.get(reverse('login'))
+
+        self.assertContains(response, 'id="demoLoginsHeading"')
+        for username, password, role in [('admin', 'admin12345', 'admin'),
+                                         ('testteach', 'testpass123', 'teacher'),
+                                         ('teststud', 'testpass123', 'student')]:
+            with self.subTest(username=username):
+                self.assertContains(response, 'data-username="%s"' % username)
+                self.assertContains(response, 'data-password="%s"' % password)
+                self.assertContains(response, 'data-role="%s"' % role)

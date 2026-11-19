@@ -428,6 +428,65 @@ h1, h2, h3, h4, h5, .erp-stat-value, .navbar-brand {
   padding: .6rem;
 }
 
+/* Demo logins: a plain table under the form, because three rows of
+   role / username / password is tabular data. */
+.erp-demo-logins {
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--erp-border);
+}
+
+.erp-demo-heading {
+  font-family: inherit;
+  font-size: .9rem;
+  font-weight: 600;
+  margin-bottom: .6rem;
+}
+
+.erp-demo-heading span {
+  font-weight: 400;
+  color: var(--erp-muted);
+  margin-left: .35rem;
+}
+
+.erp-demo-table {
+  width: 100%;
+  font-size: .85rem;
+  border-collapse: collapse;
+}
+
+.erp-demo-table th,
+.erp-demo-table td {
+  padding: .4rem .5rem .4rem 0;
+  border-bottom: 1px solid var(--erp-border);
+  vertical-align: middle;
+}
+
+.erp-demo-table th { font-weight: 600; color: var(--erp-ink); }
+
+.erp-demo-table code {
+  color: var(--erp-ink);
+  background: var(--erp-bg);
+  padding: .1rem .3rem;
+  border-radius: 3px;
+  font-size: .82rem;
+}
+
+.erp-demo-table td:last-child { text-align: right; padding-right: 0; }
+
+.erp-demo-use {
+  border: 1px solid var(--erp-border);
+  background: var(--erp-surface);
+  color: var(--erp-primary);
+  border-radius: var(--erp-radius);
+  font-size: .8rem;
+  font-weight: 500;
+  padding: .2rem .6rem;
+  cursor: pointer;
+}
+
+.erp-demo-use:hover { border-color: var(--erp-primary); }
+
 @media (max-width: 860px) {
   .erp-login-page { grid-template-columns: 1fr; }
   .erp-login-intro {
