@@ -327,50 +327,119 @@ h1, h2, h3, h4, h5, .erp-stat-value, .navbar-brand {
   font-weight: 700;
 }
 
-/* ---------- Login page ---------- */
+/* ---------- Login page ----------
+   Two columns on a wide screen: what the system is on the left, the form on
+   the right. The page colour carries the left side, so there is no hero
+   gradient and no floating card in the middle of nothing. Stacks on a phone. */
 .erp-login-page {
   min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  background: var(--erp-bg);
+}
+
+.erp-login-intro {
+  padding: 4rem 4.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-right: 1px solid var(--erp-border);
+  max-width: 640px;
+  justify-self: end;
+  width: 100%;
+}
+
+.erp-login-kicker {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--erp-primary);
+  margin-bottom: .75rem;
+}
+
+.erp-login-title {
+  font-size: 2.1rem;
+  line-height: 1.2;
+  margin-bottom: 1.75rem;
+  max-width: 22ch;
+}
+
+.erp-login-points {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-width: 46ch;
+}
+
+.erp-login-points li {
+  color: var(--erp-muted);
+  padding: .7rem 0;
+  border-top: 1px solid var(--erp-border);
+  line-height: 1.5;
+}
+
+.erp-login-points li b { color: var(--erp-ink); font-weight: 600; }
+
+.erp-login-panel {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: radial-gradient(circle at top left, #6366f1 0%, #4338ca 45%, #1e1b4b 100%);
-  padding: 1.5rem;
+  padding: 3rem 4.5rem;
+  background: var(--erp-surface);
 }
 
 .erp-login-card {
   width: 100%;
-  max-width: 380px;
-  background: var(--erp-surface);
-  border-radius: 18px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, .35);
-  padding: 2.25rem 2rem;
-  border: 0;
+  max-width: 360px;
 }
 
-.erp-login-logo {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  background: var(--erp-primary-light);
-  color: var(--erp-primary);
+.erp-login-heading {
+  font-size: 1.6rem;
+  margin-bottom: .25rem;
+}
+
+.erp-label {
+  font-size: .88rem;
+  font-weight: 500;
+  color: var(--erp-ink);
+  margin-bottom: .3rem;
+}
+
+.erp-login-card .form-control {
+  border-radius: var(--erp-radius);
+  border: 1px solid var(--erp-border);
+  padding: .5rem .75rem;
+  height: auto;
+}
+
+.erp-login-card .form-control:focus {
+  border-color: var(--erp-primary);
+  box-shadow: 0 0 0 3px var(--erp-primary-light);
+}
+
+.erp-check {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  margin: 0 auto 1rem;
+  gap: .5rem;
+  font-size: .88rem;
+  color: var(--erp-muted);
+  cursor: pointer;
 }
 
-.erp-login-card input {
-  border-radius: 10px;
-  padding: .5rem .9rem;
-  border: 1px solid var(--erp-border);
-  width: 100%;
-  display: block;
+.erp-login-card .btn-primary {
+  padding: .6rem;
 }
 
-.erp-login-card .btn {
-  width: 100%;
-  padding: .65rem;
+@media (max-width: 860px) {
+  .erp-login-page { grid-template-columns: 1fr; }
+  .erp-login-intro {
+    padding: 2rem 1.25rem 1.5rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--erp-border);
+    justify-self: stretch;
+    max-width: none;
+  }
+  .erp-login-title { font-size: 1.5rem; margin-bottom: 1rem; }
+  .erp-login-panel { padding: 2rem 1.25rem 3rem; align-items: flex-start; }
+  .erp-login-card { max-width: none; }
 }
 
 /* ---------- Notices ---------- */
@@ -424,24 +493,20 @@ h1, h2, h3, h4, h5, .erp-stat-value, .navbar-brand {
 /* ---------- Login: role tabs, password toggle ---------- */
 .erp-role-tabs {
   display: flex;
-  gap: .25rem;
-  background: var(--erp-bg);
-  border: 1px solid var(--erp-border);
-  border-radius: 12px;
-  padding: .25rem;
+  border-bottom: 1px solid var(--erp-border);
 }
 
 .erp-role-tab {
   flex: 1;
-  margin: 0;
+  margin: 0 0 -1px;
   text-align: center;
-  padding: .45rem .25rem;
-  border-radius: 9px;
-  font-size: .85rem;
-  font-weight: 600;
+  padding: .55rem .25rem;
+  font-size: .9rem;
+  font-weight: 500;
   color: var(--erp-muted);
   cursor: pointer;
-  transition: background .15s ease, color .15s ease;
+  border-bottom: 2px solid transparent;
+  transition: color .15s ease, border-color .15s ease;
 }
 
 .erp-role-tab input {
@@ -456,9 +521,9 @@ h1, h2, h3, h4, h5, .erp-stat-value, .navbar-brand {
 .erp-role-tab:hover { color: var(--erp-primary-dark); }
 
 .erp-role-tab.active {
-  background: var(--erp-surface);
-  color: var(--erp-primary-dark);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
+  color: var(--erp-ink);
+  font-weight: 600;
+  border-bottom-color: var(--erp-primary);
 }
 
 .erp-role-tab input:focus-visible + * ,

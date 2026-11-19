@@ -7,7 +7,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
-    <title>Login &middot; College ERP</title>
+    <title>Sign in &middot; College ERP</title>
 
       {% load static %}
 
@@ -33,74 +33,87 @@
   <body>
 
     <div class="erp-login-page">
-      <div class="erp-login-card">
-        <div class="erp-login-logo"><i class="fas fa-graduation-cap"></i></div>
-        <h4 class="text-center mb-1">College ERP</h4>
-        <p class="text-center text-muted small mb-4">Sign in to continue</p>
 
-        {% for message in messages %}
-          <div class="alert alert-success py-2 small">{{ message }}</div>
-        {% endfor %}
+      <!-- What this is, for someone who has not used it before. Plain text on
+           the page colour rather than a hero card: it is context, not a pitch. -->
+      <section class="erp-login-intro">
+        <p class="erp-login-kicker">College ERP</p>
+        <h1 class="erp-login-title">Attendance, marks and fees, in one place.</h1>
+        <ul class="erp-login-points">
+          <li><b>Students</b> see where they stand against the 75% rule, their internal marks and what is still owed.</li>
+          <li><b>Faculty</b> get a queue of registers and marks still to enter, and the students falling behind.</li>
+          <li><b>Admins</b> manage accounts, fee payments and notices, with a record of every change.</li>
+        </ul>
+      </section>
 
-        {% if form.errors %}
-          <div class="alert alert-danger py-2 small mb-3">
-            {% for error in form.non_field_errors %}
-              {{ error }}
-            {% empty %}
-              Invalid username or password. Please try again.
-            {% endfor %}
-          </div>
-        {% endif %}
+      <main class="erp-login-panel">
+        <div class="erp-login-card">
+          <h2 class="erp-login-heading">Sign in</h2>
+          <p class="text-muted small mb-4">Choose who you are signing in as.</p>
 
-        <form method="post" action="{% url 'login' %}">
-          {% csrf_token %}
+          {% for message in messages %}
+            <div class="alert alert-success py-2 small">{{ message }}</div>
+          {% endfor %}
 
-          <div class="erp-role-tabs mb-3">
-            {% for value, label in form.fields.role.choices %}
-              <label class="erp-role-tab {% if form.role.value|default:'student' == value %}active{% endif %}">
-                <input type="radio" name="role" value="{{ value }}"
-                       {% if form.role.value|default:'student' == value %}checked{% endif %}>
-                {{ label }}
-              </label>
-            {% endfor %}
-          </div>
-
-          <div class="form-group">
-            <label class="small text-muted" for="id_username">Username</label>
-            <input type="text" name="username" id="id_username" class="form-control"
-                   value="{{ form.username.value|default:'' }}" autofocus required>
-          </div>
-
-          <div class="form-group">
-            <label class="small text-muted" for="id_password">Password</label>
-            <div class="erp-password-field">
-              <input type="password" name="password" id="id_password" class="form-control" required>
-              <button type="button" class="erp-password-toggle" id="togglePassword"
-                      aria-label="Show password">
-                <i class="fas fa-eye" id="togglePasswordIcon"></i>
-              </button>
+          {% if form.errors %}
+            <div class="alert alert-danger py-2 small mb-3">
+              {% for error in form.non_field_errors %}
+                {{ error }}
+              {% empty %}
+                Invalid username or password. Please try again.
+              {% endfor %}
             </div>
-          </div>
+          {% endif %}
 
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <label class="small text-muted mb-0 d-flex align-items-center">
-              <input type="checkbox" name="remember_me" class="mr-2"
+          <form method="post" action="{% url 'login' %}" id="loginForm">
+            {% csrf_token %}
+
+            <div class="erp-role-tabs mb-3" role="radiogroup" aria-label="Sign in as">
+              {% for value, label in form.fields.role.choices %}
+                <label class="erp-role-tab {% if form.role.value|default:'student' == value %}active{% endif %}">
+                  <input type="radio" name="role" value="{{ value }}"
+                         {% if form.role.value|default:'student' == value %}checked{% endif %}>
+                  {{ label }}
+                </label>
+              {% endfor %}
+            </div>
+
+            <div class="form-group">
+              <label class="erp-label" for="id_username">Username</label>
+              <input type="text" name="username" id="id_username" class="form-control"
+                     value="{{ form.username.value|default:'' }}" autocomplete="username" autofocus required>
+            </div>
+
+            <div class="form-group">
+              <div class="d-flex justify-content-between align-items-baseline">
+                <label class="erp-label" for="id_password">Password</label>
+                <a class="small" href="{% url 'password_reset' %}">Forgot password?</a>
+              </div>
+              <div class="erp-password-field">
+                <input type="password" name="password" id="id_password" class="form-control"
+                       autocomplete="current-password" required>
+                <button type="button" class="erp-password-toggle" id="togglePassword"
+                        aria-label="Show password">
+                  <i class="fas fa-eye" id="togglePasswordIcon"></i>
+                </button>
+              </div>
+            </div>
+
+            <label class="erp-check mb-3">
+              <input type="checkbox" name="remember_me"
                      {% if form.remember_me.value %}checked{% endif %}>
-              Remember me
+              Keep me signed in on this device
             </label>
-            <a class="small" href="{% url 'password_reset' %}">Forgot password?</a>
-          </div>
 
-          <button class="btn btn-primary" type="submit">
-            <i class="fas fa-sign-in-alt"></i> Login
-          </button>
-        </form>
+            <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+          </form>
 
-        <p class="text-center text-muted small mt-4 mb-0">
-          Facing issues?
-          <a href="#" data-toggle="modal" data-target="#supportModal">Contact Administrator</a>
-        </p>
-      </div>
+          <p class="text-muted small mt-4 mb-0">
+            Can't get in?
+            <a href="#" data-toggle="modal" data-target="#supportModal">Message the administrator</a>
+          </p>
+        </div>
+      </main>
     </div>
 
     <!-- Contact Administrator -->
